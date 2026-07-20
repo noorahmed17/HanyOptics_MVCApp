@@ -1,0 +1,110 @@
+@using HanyOptics.Domain.Enums
+@model IReadOnlyList<HanyOptics.Domain.Entities.Order>
+@{
+    ViewData["Title"] = "لوحة التحكم";
+
+    var totalOrders = Model.Count;
+    var readyCount = Model.Count(o => o.Status == OrderStatus.Ready);
+    var soldCount = Model.Count(o => o.Status == OrderStatus.Sold);
+    var pendingCount = readyCount + soldCount;
+    var totalSales = Model.Sum(o => o.TotalAmount);
+    var totalRemaining = Model.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.RemainingAmount);
+
+    var recent = Model.OrderByDescending(o => o.OrderDate).Take(6).ToList();
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    static string Money(decimal n) => n.ToString("N0") + " ج";
+}
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon">📋</div>
+        <div class="stat-label">إجمالي الطلبات</div>
+        <div class="stat-value">@totalOrders</div>
+        <div class="stat-sub">@pendingCount قيد التنفيذ</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">✅</div>
+        <div class="stat-label">جاهز للتسليم</div>
+        <div class="stat-value c-green">@readyCount</div>
+        <div class="stat-sub">ينتظر الزبون</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-label">تحت التجهيز</div>
+        <div class="stat-value c-blue">@soldCount</div>
+        <div class="stat-sub">لسه العدسات بتتقطع</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">💰</div>
+        <div class="stat-label">إجمالي المبيعات</div>
+        <div class="stat-value c-blue">@Money(totalSales)</div>
+        <div class="stat-sub">كل الطلبات</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-label">متبقي على الزبائن</div>
+        <div class="stat-value c-amber">@Money(totalRemaining)</div>
+        <div class="stat-sub">لم يُحصَّل بعد</div>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">📋 آخر الطلبات</span>
+            <a class="btn btn-outline btn-sm" asp-controller="Orders" asp-action="Index">عرض الكل</a>
+        </div>
+        <div class="card-body">
+            @if (!recent.Any())
+            {
+                <div class="empty-state">لا توجد طلبات بعد</div>
+            }
+            else
+            {
+                <table>
+                    <thead><tr><th>الفاتورة</th><th>العميل</th><th>الحالة</th><th>المتبقي</th></tr></thead>
+                    <tbody>
+                    @foreach (var order in recent)
+                    {
+                        <tr>
+                            <td><b>@order.InvoiceNumber</b></td>
+                            <td>@order.CustomerName</td>
+                            <td><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></td>
+                            <td class="fw-bold @(order.RemainingAmount > 0 ? "c-red" : "c-green")">
+                                @(order.RemainingAmount > 0 ? Money(order.RemainingAmount) : "✅")
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><span class="card-title">⚡ إجراءات سريعة</span></div>
+        <div style="padding:18px;display:flex;flex-direction:column;gap:10px">
+            <a class="btn btn-primary btn-lg" asp-controller="Orders" asp-action="New">➕ تسجيل بيعة جديدة</a>
+            <a class="btn btn-outline btn-lg" asp-controller="Orders" asp-action="Index">📋 كل الطلبات</a>
+            <a class="btn btn-outline btn-lg" asp-controller="Customers" asp-action="Index">👥 العملاء</a>
+        </div>
+    </div>
+</div>

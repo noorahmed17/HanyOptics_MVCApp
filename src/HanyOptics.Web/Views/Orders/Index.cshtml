@@ -1,0 +1,137 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.OrderListItem>
+@{
+    ViewData["Title"] = "الطلبات";
+    var statusFilter = (OrderStatus?)ViewBag.StatusFilter;
+    var deliveryFilter = (DeliveryType?)ViewBag.DeliveryFilter;
+    var arEg = new CultureInfo("ar-EG");
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    static string TypeLabel(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "إطار+عدسات",
+        OrderItemType.FrameOnly => "إطار فقط",
+        OrderItemType.LensesReplace => "استبدال عدسات",
+        _ => t.ToString()
+    };
+
+    static string TypeBadgeClass(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "badge-fl",
+        OrderItemType.FrameOnly => "badge-fo",
+        OrderItemType.LensesReplace => "badge-lr",
+        _ => ""
+    };
+
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
+
+    string TabUrl(OrderStatus? s) => Url.Action("Index", new { status = s?.ToString(), deliveryType = deliveryFilter?.ToString() })!;
+}
+
+<div class="page-header">
+    <h2>الطلبات</h2>
+    <a class="btn btn-primary" asp-action="New">➕ طلب جديد</a>
+</div>
+
+<div style="margin-bottom:14px">
+    <input type="text" id="orderSearch" placeholder="بحث بالفاتورة أو الاسم أو التليفون..." style="max-width:340px" />
+</div>
+
+<div class="flex items-center gap-2 flex-wrap" style="justify-content:space-between">
+    <div class="tabs">
+        <a class="tab @(statusFilter is null ? "active" : "")" href="@TabUrl(null)">الكل</a>
+        <a class="tab @(statusFilter == OrderStatus.Sold ? "active" : "")" href="@TabUrl(OrderStatus.Sold)">بيع</a>
+        <a class="tab @(statusFilter == OrderStatus.Ready ? "active" : "")" href="@TabUrl(OrderStatus.Ready)">جاهز</a>
+        <a class="tab @(statusFilter == OrderStatus.Delivered ? "active" : "")" href="@TabUrl(OrderStatus.Delivered)">تسليم</a>
+        <a class="tab @(statusFilter == OrderStatus.Cancelled ? "active" : "")" href="@TabUrl(OrderStatus.Cancelled)">ملغي</a>
+    </div>
+
+    <form asp-action="Index" method="get" id="deliveryFilterForm" class="mb-3">
+        <input type="hidden" name="status" value="@statusFilter" />
+        <select name="deliveryType" onchange="document.getElementById('deliveryFilterForm').submit()" style="width:170px">
+            <option value="">كل أنواع التسليم</option>
+            <option value="Normal" selected="@(deliveryFilter == DeliveryType.Normal)">🚚 عادي</option>
+            <option value="Immediate" selected="@(deliveryFilter == DeliveryType.Immediate)">⚡ فوري</option>
+        </select>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        @if (!Model.Any())
+        {
+            <div class="empty-state">لا توجد طلبات مطابقة</div>
+        }
+        else
+        {
+            <table id="ordersTable">
+                <thead>
+                    <tr>
+                        <th>الفاتورة</th>
+                        <th>العميل</th>
+                        <th>النوع</th>
+                        <th>الإجمالي</th>
+                        <th>المدفوع</th>
+                        <th>المتبقي</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var o in Model)
+                    {
+                        <tr data-search="@($"{o.InvoiceNumber} {o.CustomerName} {o.CustomerPhone}".ToLowerInvariant())">
+                            <td><b>@o.InvoiceNumber</b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
+                            <td>@o.CustomerName<br /><span class="text-sm text-muted">@(o.CustomerPhone ?? "—")</span></td>
+                            <td>@foreach (var t in o.ItemTypes)
+                                {
+                                    <span class="badge @TypeBadgeClass(t)">@TypeLabel(t)</span>
+                                }</td>
+                            <td class="fw-bold c-blue">@Money(o.TotalAmount)</td>
+                            <td class="fw-bold c-green">@Money(o.PaidAmount)</td>
+                            <td class="fw-bold @(o.RemainingAmount > 0 ? "c-red" : "c-green")">
+                                @(o.RemainingAmount > 0 ? Money(o.RemainingAmount) : "✅ مكتمل")
+                            </td>
+                            <td><span class="badge @StatusBadgeClass(o.Status)">@StatusLabel(o.Status)</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const input = document.getElementById('orderSearch');
+            const rows = document.querySelectorAll('#ordersTable tbody tr');
+            if (!input) return;
+
+            input.addEventListener('input', function () {
+                const term = input.value.trim().toLowerCase();
+                rows.forEach(function (row) {
+                    row.style.display = row.dataset.search.includes(term) ? '' : 'none';
+                });
+            });
+        })();
+    </script>
+}

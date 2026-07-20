@@ -1,0 +1,70 @@
+@using Microsoft.AspNetCore.Mvc.Rendering
+@{
+    var currentController = (string?)ViewContext.RouteData.Values["controller"] ?? "";
+    var currentAction = (string?)ViewContext.RouteData.Values["action"] ?? "";
+    var orderInProgress = ViewData["OrderInProgress"] as bool? ?? false;
+    string NavClass(string controller) => currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) ? "nav-item active" : "nav-item";
+    string NavClassFor(string controller, string action) =>
+        currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) && currentAction.Equals(action, StringComparison.OrdinalIgnoreCase)
+            ? "nav-item active" : "nav-item";
+}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - هاني أوبتكس</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<div id="app">
+
+    <aside id="sidebar">
+        <div class="sb-logo">
+            <h1>👓 هاني أوبتكس</h1>
+            <p>نظام إدارة المحل</p>
+        </div>
+        <nav class="sb-nav">
+            <div class="sb-section">الرئيسية</div>
+            <a class="@NavClass("Home")" asp-controller="Home" asp-action="Index"><span class="nav-icon">📊</span> لوحة التحكم</a>
+            @if (orderInProgress)
+            {
+                <span class="nav-item disabled" title="أكمل الطلب الحالي أو ألغه أولاً لبدء طلب جديد"><span class="nav-icon">➕</span> طلب جديد</span>
+            }
+            else
+            {
+                <a class="@NavClassFor("Orders", "New")" asp-controller="Orders" asp-action="New"><span class="nav-icon">➕</span> طلب جديد</a>
+            }
+            <div class="sb-section">الإدارة</div>
+            <a class="@NavClassFor("Orders", "Index")" asp-controller="Orders" asp-action="Index"><span class="nav-icon">📋</span> الطلبات</a>
+            <a class="@NavClass("Customers")" asp-controller="Customers" asp-action="Index"><span class="nav-icon">👥</span> العملاء</a>
+            @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+            {
+                <a class="nav-item" asp-controller="Home" asp-action="AdminOnly"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>
+            }
+        </nav>
+        <div class="sb-footer">
+            مسجّل دخول: <span>@User.Identity?.Name</span>
+            <form asp-controller="Account" asp-action="Logout" method="post">
+                <button type="submit" class="sb-logout">تسجيل الخروج</button>
+            </form>
+        </div>
+    </aside>
+
+    <div id="content">
+        <div class="topbar">
+            <span class="topbar-title">@ViewData["Title"]</span>
+            <span class="topbar-date" id="topbar-date"></span>
+        </div>
+        <div class="page">
+            @RenderBody()
+        </div>
+    </div>
+
+</div>
+<script>
+    document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+</script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

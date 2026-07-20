@@ -1,0 +1,38 @@
+@model HanyOptics.BusinessLogic.Models.LoginRequest
+@{
+    ViewData["Title"] = "تسجيل الدخول";
+    Layout = "_AuthLayout";
+}
+
+<h2 style="font-size:16px;font-weight:700;margin-bottom:16px;text-align:center">تسجيل الدخول</h2>
+
+@if (!ViewData.ModelState.IsValid)
+{
+    <div class="validation-summary">
+        <ul>
+            @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+            {
+                <li>@error.ErrorMessage</li>
+            }
+        </ul>
+    </div>
+}
+
+<form asp-controller="Account" asp-action="Login" method="post">
+    <input type="hidden" asp-for="ReturnUrl" />
+    <div class="form-group">
+        <label asp-for="Email"></label>
+        <input asp-for="Email" autocomplete="username" placeholder="example@hanyoptics.com" />
+        <span asp-validation-for="Email" class="field-error"></span>
+    </div>
+    <div class="form-group">
+        <label asp-for="Password"></label>
+        <input asp-for="Password" autocomplete="current-password" placeholder="••••••••" />
+        <span asp-validation-for="Password" class="field-error"></span>
+    </div>
+    <button type="submit" class="btn btn-primary btn-lg btn-block">دخول</button>
+</form>
+
+<div class="auth-footer">
+    ليس لديك حساب؟ <a asp-controller="Account" asp-action="Register">إنشاء حساب جديد</a>
+</div>

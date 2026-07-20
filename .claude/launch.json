@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/HanyOptics.Web", "--urls", "http://localhost:56543"],
+      "port": 56543
+    }
+  ]
+}

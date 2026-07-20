@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+.idea/
+.vscode/
+
+# Per-machine secrets (real connection strings, seed credentials) - see appsettings.json
+# for the placeholder shape; copy it to appsettings.Development.json with real values.
+appsettings.*.json
+!appsettings.json
+
+# Local Claude Code permission allowlist - accumulates real hostnames/paths/session data
+# and isn't meant to be shared. .claude/launch.json (dev server config) stays tracked.
+.claude/settings.local.json

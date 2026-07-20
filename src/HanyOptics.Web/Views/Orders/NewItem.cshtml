@@ -1,0 +1,318 @@
+@model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
+@using HanyOptics.Domain.Entities
+@using HanyOptics.Web.Controllers.Orders
+@{
+    ViewData["Title"] = "طلب جديد";
+    var doctors = (SelectListWithSelection)ViewBag.Doctors;
+    var order = (Order)ViewBag.Order;
+
+    static string TypeLabel(HanyOptics.Domain.Enums.OrderItemType t) => t switch
+    {
+        HanyOptics.Domain.Enums.OrderItemType.FrameLenses => "إطار+عدسات",
+        HanyOptics.Domain.Enums.OrderItemType.FrameOnly => "إطار فقط",
+        HanyOptics.Domain.Enums.OrderItemType.LensesReplace => "استبدال عدسات",
+        _ => t.ToString()
+    };
+    static string TypeBadgeClass(HanyOptics.Domain.Enums.OrderItemType t) => t switch
+    {
+        HanyOptics.Domain.Enums.OrderItemType.FrameLenses => "badge-fl",
+        HanyOptics.Domain.Enums.OrderItemType.FrameOnly => "badge-fo",
+        HanyOptics.Domain.Enums.OrderItemType.LensesReplace => "badge-lr",
+        _ => ""
+    };
+    static string Money(decimal n) => n.ToString("N0") + " ج";
+}
+
+<div class="page-header">
+    <span class="page-header-title disabled" title="أكمل الطلب الحالي أو ألغه أولاً لبدء طلب جديد">➕ طلب جديد</span>
+    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب نهائياً. هل أنت متأكد؟');">
+        <input type="hidden" name="orderId" value="@order.OrderId" />
+        <button type="submit" class="btn btn-outline">إلغاء</button>
+    </form>
+</div>
+
+<div class="wizard-steps">
+    <div class="wizard-step done">
+        <div class="step-num">١</div>
+        <div class="step-label">العميل</div>
+    </div>
+    <div class="wizard-step active">
+        <div class="step-num">٢</div>
+        <div class="step-label">البيانات والروشتة</div>
+    </div>
+    <div class="wizard-step">
+        <div class="step-num">٣</div>
+        <div class="step-label">الدفع والتأكيد</div>
+    </div>
+</div>
+
+<div class="wizard-content">
+    <div class="flex gap-2 mb-3 flex-wrap items-center">
+        <span class="info-chip">📄 @order.InvoiceNumber</span>
+        @if (!string.IsNullOrWhiteSpace((string?)ViewBag.CustomerPhone))
+        {
+            <span class="info-chip">📱 @ViewBag.CustomerPhone</span>
+        }
+        @if (!string.IsNullOrWhiteSpace(order.CustomerName))
+        {
+            <span class="info-chip">👤 @order.CustomerName</span>
+        }
+    </div>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="validation-summary">
+            <ul>
+                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                {
+                    <li>@error.ErrorMessage</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (order.OrderItems.Any())
+    {
+        <div id="itemsListSection" style="margin-bottom:20px">
+            <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px">✅ البنود المضافة</div>
+            @foreach (var item in order.OrderItems)
+            {
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+                    <div>
+                        <span class="badge @TypeBadgeClass(item.ItemType)" style="margin-left:6px">@TypeLabel(item.ItemType)</span>
+                        <span style="font-size:13px;font-weight:600">@(item.ExternalFrameNotes ?? item.LensDescription ?? "—")</span>
+                    </div>
+                    <span style="font-size:15px;font-weight:800;color:#1a56db">@Money(item.ItemTotal)</span>
+                </div>
+            }
+            <div style="background:#eff6ff;border-radius:8px;padding:10px 14px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;color:#1e40af">إجمالي البنود حتى الآن</span>
+                <span style="font-size:18px;font-weight:800;color:#1a56db">@Money(order.TotalAmount)</span>
+            </div>
+        </div>
+    }
+
+    <form asp-action="NewItem" method="post" id="itemForm">
+        <input type="hidden" asp-for="OrderId" />
+        <input type="hidden" asp-for="DoctorId" />
+
+        <div class="form-group">
+            <label>👤 اسم الزبون على الفاتورة </label>
+            <input asp-for="CustomerNameOnInvoice" placeholder="الاسم اللي هيتطبع على الفاتورة" />
+            @* <div class="form-hint">ممكن يختلف عن اسم السجل — مثال: أحمد ماهر (ابن الزبون المسجّل)</div> *@
+        </div>
+
+        <div class="section-divider"><span>📦 بيانات البند</span></div>
+
+        <div class="form-group">
+            <label>نوع البند</label>
+            <select asp-for="ItemType" id="itemType">
+                <option value="FrameLenses">🔷 إطار + عدسات (الأكثر شيوعاً)</option>
+                <option value="FrameOnly">🔶 إطار فقط</option>
+                <option value="LensesReplace">🔹 استبدال عدسات (إطار الزبون)</option>
+            </select>
+        </div>
+
+        <div id="frameSection">
+            <div class="section-divider"><span>🗃️ الإطار من المخزون</span></div>
+            <div class="form-group">
+                <label>باركود الإطار *</label>
+                <div class="input-group">
+                    <input type="text" asp-for="FrameBarcode" id="barcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                    <button type="button" class="btn btn-primary" id="searchFrameBtn">🔍 بحث</button>
+                </div>
+                <span asp-validation-for="FrameBarcode" class="field-error"></span>
+                <div class="frame-result" id="frameResult">
+                    <div class="frame-result-title">✅ إطار موجود ومتاح</div>
+                    <div class="frame-meta" id="frameMeta"></div>
+                </div>
+                <div class="frame-error" id="frameError"></div>
+            </div>
+            <div class="form-group">
+                <label>💰 السعر المتفق مع الزبون (ج) *</label>
+                <input type="number" asp-for="FrameAgreedPrice" id="framePriceInput" min="0" step="0.01" />
+                <span asp-validation-for="FrameAgreedPrice" class="field-error"></span>
+                @* <div class="form-hint">مسبق الملء من سعر البيع — يمكن التعديل</div> *@
+            </div>
+        </div>
+
+        <div id="extFrameSection" style="display:none">
+            <div class="section-divider"><span>📦 إطار الزبون</span></div>
+            <div class="form-group">
+                <label>وصف إطار الزبون *</label>
+                <input asp-for="ExternalFrameNotes" id="extFrameInput" placeholder="مثال: إطار Gucci أسود — جاب من عنده" />
+                <span asp-validation-for="ExternalFrameNotes" class="field-error"></span>
+            </div>
+        </div>
+
+        <div id="lensSection">
+            <div class="section-divider"><span>👁️ العدسات</span></div>
+            <div class="form-group">
+                <label>وصف العدسات *</label>
+                <input asp-for="LensDescription" id="lensDescInput" placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" />
+                <span asp-validation-for="LensDescription" class="field-error"></span>
+            </div>
+            <div class="form-group">
+                <label>💰 سعر البيع (ج) *</label>
+                <input type="number" asp-for="LensSellPrice" id="lensSellInput" min="0" step="0.01" />
+                <span asp-validation-for="LensSellPrice" class="field-error"></span>
+            </div>
+            @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+            {
+                <div class="form-group">
+                    <label>📦 تكلفة المورد (ج) <span style="font-size:10px;color:#9ca3af">— أدمن فقط</span></label>
+                    <input type="number" asp-for="LensCostPrice" min="0" step="0.01" />
+                </div>
+            }
+        </div>
+
+        <div id="doctorSection">
+            <div class="section-divider"><span>👁️ الروشتة الطبية</span></div>
+            <button type="button" class="collapsible-btn" id="rxToggleBtn">
+                <span>👁️ إدخال الروشتة (اختياري)</span><span id="rxArrow">▼</span>
+            </button>
+            <div class="collapsible-content" id="rxSection">
+                <div class="rx-grid">
+                    <table>
+                        <thead><tr><th></th><th>كروي (Sph)</th><th>أسطواني (Cyl)</th><th>محور (Axis)</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يمنى</td>
+                                <td><input type="text" asp-for="RightSphere" placeholder="-2.25" /></td>
+                                <td><input type="text" asp-for="RightCylinder" placeholder="-0.75" /></td>
+                                <td><input type="text" asp-for="RightAxis" placeholder="90" /></td>
+                            </tr>
+                            <tr>
+                                <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يسرى</td>
+                                <td><input type="text" asp-for="LeftSphere" placeholder="-1.75" /></td>
+                                <td><input type="text" asp-for="LeftCylinder" placeholder="-0.50" /></td>
+                                <td><input type="text" asp-for="LeftAxis" placeholder="85" /></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="form-row mt-2">
+                    <div class="form-group">
+                        <label>PD — البُعد البؤري (ملم)</label>
+                        <input type="number" asp-for="Pd" placeholder="64" min="50" max="80" />
+                    </div>
+                    <div class="form-group">
+                        <label>ADD — للعدسات التقدمية</label>
+                        <input type="number" asp-for="AddPower" placeholder="2.00" step="0.25" min="0.75" max="3.50" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group mt-3">
+            <label>ملاحظات (اختياري)</label>
+            <input asp-for="Notes" placeholder="أي تعليمات إضافية..." />
+        </div>
+
+        <div class="amount-box mt-3">
+            <div class="amount-row"><span class="a-label">سعر الإطار</span><span class="a-val" id="previewFrame">٠ ج</span></div>
+            <div class="amount-row"><span class="a-label">سعر العدسات</span><span class="a-val" id="previewLens">٠ ج</span></div>
+            <div class="amount-row total"><span class="a-label">إجمالي البند</span><span class="a-val" id="previewTotal">٠ ج</span></div>
+        </div>
+
+        <div class="wizard-footer">
+            <a class="btn btn-outline" asp-action="EditOrder" asp-route-orderId="@order.OrderId" asp-route-doctorId="@Model.DoctorId">→ رجوع</a>
+            <div class="flex gap-2">
+                <button type="submit" name="SubmitAction" value="add" class="btn btn-outline" title="أضف هذا البند وابدأ بند جديد">+ إضافة بند آخر</button>
+                <button type="submit" name="SubmitAction" value="next" class="btn btn-primary btn-lg">التالي — الدفع ←</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const itemType = document.getElementById('itemType');
+            const frameSection = document.getElementById('frameSection');
+            const extFrameSection = document.getElementById('extFrameSection');
+            const lensSection = document.getElementById('lensSection');
+            const doctorSection = document.getElementById('doctorSection');
+            const barcodeInput = document.getElementById('barcodeInput');
+            const framePriceInput = document.getElementById('framePriceInput');
+            const extFrameInput = document.getElementById('extFrameInput');
+            const lensDescInput = document.getElementById('lensDescInput');
+            const lensSellInput = document.getElementById('lensSellInput');
+            const previewFrame = document.getElementById('previewFrame');
+            const previewLens = document.getElementById('previewLens');
+            const previewTotal = document.getElementById('previewTotal');
+
+            function fmt(n) {
+                return Number(n || 0).toLocaleString('ar-EG') + ' ج';
+            }
+
+            function updateTotal() {
+                const f = itemType.value === 'LensesReplace' ? 0 : (+framePriceInput.value || 0);
+                const l = itemType.value === 'FrameOnly' ? 0 : (+lensSellInput.value || 0);
+                previewFrame.textContent = fmt(f);
+                previewLens.textContent = fmt(l);
+                previewTotal.textContent = fmt(f + l);
+            }
+
+            function onItemTypeChange() {
+                const t = itemType.value;
+                const showFrame = (t === 'FrameLenses' || t === 'FrameOnly');
+                const showExtFrame = (t === 'LensesReplace');
+                const showLens = (t !== 'FrameOnly');
+
+                frameSection.style.display = showFrame ? 'block' : 'none';
+                extFrameSection.style.display = showExtFrame ? 'block' : 'none';
+                lensSection.style.display = showLens ? 'block' : 'none';
+                doctorSection.style.display = showLens ? 'block' : 'none';
+
+                barcodeInput.required = showFrame;
+                framePriceInput.required = showFrame;
+                extFrameInput.required = showExtFrame;
+                lensDescInput.required = showLens;
+                lensSellInput.required = showLens;
+
+                updateTotal();
+            }
+
+            itemType.addEventListener('change', onItemTypeChange);
+            framePriceInput.addEventListener('input', updateTotal);
+            lensSellInput.addEventListener('input', updateTotal);
+            onItemTypeChange();
+
+            document.getElementById('rxToggleBtn').addEventListener('click', function () {
+                const section = document.getElementById('rxSection');
+                const arrow = document.getElementById('rxArrow');
+                const open = section.classList.toggle('open');
+                arrow.textContent = open ? '▲' : '▼';
+            });
+
+            document.getElementById('searchFrameBtn').addEventListener('click', function () {
+                const barcode = document.getElementById('barcodeInput').value.trim();
+                const resultBox = document.getElementById('frameResult');
+                const errorBox = document.getElementById('frameError');
+                resultBox.classList.remove('show');
+                errorBox.classList.remove('show');
+
+                if (!barcode) return;
+
+                fetch('@Url.Action("LookupFrame")?barcode=' + encodeURIComponent(barcode))
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.found) {
+                            document.getElementById('frameMeta').innerHTML =
+                                '<span><b>' + (data.brand || '') + ' ' + (data.modelName || '') + '</b></span>' +
+                                '<span>' + (data.color || '') + ' — ' + (data.size || '') + '</span>' +
+                                '<span>السعر: <b>' + fmt(data.sellPrice) + '</b></span>' +
+                                '<span>المتاح: <b>' + data.qtyAvailable + '</b></span>';
+                            resultBox.classList.add('show');
+                            framePriceInput.value = data.sellPrice;
+                            updateTotal();
+                        } else {
+                            errorBox.textContent = data.message || 'الإطار غير موجود';
+                            errorBox.classList.add('show');
+                        }
+                    });
+            });
+        })();
+    </script>
+}

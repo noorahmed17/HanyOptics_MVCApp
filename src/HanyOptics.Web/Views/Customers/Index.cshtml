@@ -1,0 +1,125 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model HanyOptics.Web.Controllers.CustomerDetailViewModel?
+@{
+    ViewData["Title"] = "العملاء";
+    var customers = (IReadOnlyList<HanyOptics.BusinessLogic.Models.CustomerListItem>)ViewBag.Customers;
+    int? selectedId = ViewBag.SelectedCustomerId;
+    var arEg = new CultureInfo("ar-EG");
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
+}
+
+<div class="page-header">
+    <h2>العملاء</h2>
+    <input type="text" id="customerSearch" placeholder="بحث..." style="width:220px" />
+</div>
+
+<div class="master-detail">
+    <div class="card" style="height:fit-content">
+        <div class="card-body" id="customerList" style="padding:8px">
+            @foreach (var c in customers)
+            {
+                <a class="customer-list-item @(selectedId == c.CustomerId ? "selected" : "")"
+                   href="@Url.Action("Index", new { customerId = c.CustomerId })"
+                   data-search="@($"{c.Name} {c.Phone}".ToLowerInvariant())">
+                    <div style="font-weight:600;font-size:14px">@(c.Name ?? "بدون اسم")</div>
+                    <div class="flex gap-2 mt-1">
+                        <span class="text-sm text-muted">@(c.Phone ?? "—")</span>
+                        <span class="info-chip">@c.OrderCount طلب</span>
+                    </div>
+                </a>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        @if (Model is null)
+        {
+            <div style="padding:50px;text-align:center;color:#9ca3af">
+                <div style="font-size:40px;margin-bottom:10px">👤</div>
+                <div>اختر عميلاً من القائمة</div>
+            </div>
+        }
+        else
+        {
+            <div class="card-header">
+                <span class="card-title">👤 @(Model.Customer.Name ?? "بدون اسم")</span>
+            </div>
+            <div style="padding:18px">
+                <div class="detail-grid mb-3">
+                    <div class="detail-row"><span class="detail-label">الهاتف</span><span class="detail-val">@(Model.Customer.Phone ?? "—")</span></div>
+                    <div class="detail-row"><span class="detail-label">ملاحظات</span><span class="detail-val">@(Model.Customer.Notes ?? "—")</span></div>
+                    <div class="detail-row"><span class="detail-label">عدد الطلبات</span><span class="detail-val fw-bold">@Model.Orders.Count</span></div>
+                    <div class="detail-row"><span class="detail-label">إجمالي المشتريات</span><span class="detail-val fw-bold c-blue">@Money(Model.Orders.Sum(o => o.TotalAmount))</span></div>
+                    <div class="detail-row"><span class="detail-label">إجمالي المدفوع</span><span class="detail-val fw-bold c-green">@Money(Model.Orders.Sum(o => o.PaidAmount))</span></div>
+                    @{
+                        var totalRemaining = Model.Orders.Sum(o => o.RemainingAmount);
+                    }
+                    @if (totalRemaining > 0)
+                    {
+                        <div class="detail-row"><span class="detail-label">إجمالي المتبقي</span><span class="detail-val fw-bold c-red">@Money(totalRemaining)</span></div>
+                    }
+                </div>
+
+                <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;border-bottom:1px solid #f1f5f9;padding-bottom:6px">سجل الطلبات</h4>
+
+                @if (!Model.Orders.Any())
+                {
+                    <div class="text-muted text-sm">لا توجد طلبات</div>
+                }
+                else
+                {
+                    @foreach (var o in Model.Orders)
+                    {
+                        <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:8px;border:1px solid #e2e8f0">
+                            <div class="flex justify-between items-center">
+                                <span class="fw-bold">@o.InvoiceNumber</span>
+                                <span class="badge @StatusBadgeClass(o.Status)">@StatusLabel(o.Status)</span>
+                            </div>
+                            <div class="flex justify-between mt-1">
+                                <span class="text-sm text-muted">@FormatDate(o.OrderDate)</span>
+                                <span class="fw-bold c-blue">@Money(o.TotalAmount)</span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const input = document.getElementById('customerSearch');
+            const items = document.querySelectorAll('#customerList .customer-list-item');
+
+            input.addEventListener('input', function () {
+                const term = input.value.trim().toLowerCase();
+                items.forEach(function (item) {
+                    item.style.display = item.dataset.search.includes(term) ? '' : 'none';
+                });
+            });
+        })();
+    </script>
+}
