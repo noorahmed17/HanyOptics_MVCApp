@@ -33,7 +33,7 @@
 
 <div class="wizard-content">
     <div class="flex gap-2 mb-3 flex-wrap items-center">
-        <span class="info-chip">📄 @order.InvoiceNumber</span>
+        <span class="info-chip">📄 <bdi>@order.InvoiceNumber</bdi></span>
         @if (!string.IsNullOrWhiteSpace((string?)ViewBag.CustomerPhone))
         {
             <span class="info-chip">📱 @ViewBag.CustomerPhone</span>
@@ -78,9 +78,9 @@
 
         <div class="form-group">
             <label>💰 المبلغ المدفوع (ج)</label>
-            <input type="number" asp-for="Amount" id="amountInput" min="0" />
+            <input type="number" asp-for="Amount" id="amountInput" min="0" step="0.01" required placeholder="اكتب ٠ لو لسه معندوش دفعة" />
             <span asp-validation-for="Amount" class="field-error"></span>
-            <div class="form-hint">نوع الدفعة (عربون / كامل / نهائي) بيتحدد تلقائياً حسب المبلغ المتبقي على الطلب</div>
+            <div class="form-hint">المتبقي حالياً: @Money(order.RemainingAmount) — نوع الدفعة (عربون / كامل / نهائي) بيتحدد تلقائياً حسب المبلغ المتبقي على الطلب</div>
         </div>
 
         <div class="remaining-box">

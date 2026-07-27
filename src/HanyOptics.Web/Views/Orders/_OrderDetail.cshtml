@@ -1,0 +1,296 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model HanyOptics.Web.Controllers.Orders.OrderDetailViewModel
+@{
+    var order = Model.Order;
+    var arEg = new CultureInfo("ar-EG");
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    static string TypeLabel(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "إطار+عدسات",
+        OrderItemType.FrameOnly => "إطار فقط",
+        OrderItemType.LensesReplace => "استبدال عدسات",
+        _ => t.ToString()
+    };
+
+    static string TypeBadgeClass(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "badge-fl",
+        OrderItemType.FrameOnly => "badge-fo",
+        OrderItemType.LensesReplace => "badge-lr",
+        _ => ""
+    };
+
+    static string PaymentTypeLabel(PaymentType t) => t switch
+    {
+        PaymentType.Deposit => "عربون",
+        PaymentType.Final => "دفعة نهائية",
+        PaymentType.Full => "دفع كامل",
+        PaymentType.Refund => "استرداد",
+        _ => t.ToString()
+    };
+
+    static (OrderStatus? Old, OrderStatus New, string Text, string DotClass) LogLine(HanyOptics.Domain.Entities.OrderStatusLog l) => (
+        l.OldStatus, l.NewStatus,
+        l.NewStatus switch
+        {
+            OrderStatus.Sold => "تم البيع",
+            OrderStatus.Ready => "جاهز للتسليم",
+            OrderStatus.Delivered => "تم التسليم",
+            OrderStatus.Cancelled => "ملغي",
+            _ => l.NewStatus.ToString()
+        },
+        l.NewStatus switch { OrderStatus.Delivered => "green", OrderStatus.Cancelled => "red", _ => "" }
+    );
+
+    // Valid next statuses per sp_update_order_status's own transition matrix - the SP is
+    // still the one enforcing this, this list only decides whether to offer the button.
+    static IReadOnlyList<OrderStatus> NextStatuses(OrderStatus current) => current switch
+    {
+        OrderStatus.Sold => new[] { OrderStatus.Ready, OrderStatus.Delivered, OrderStatus.Cancelled },
+        OrderStatus.Ready => new[] { OrderStatus.Delivered },
+        _ => Array.Empty<OrderStatus>()
+    };
+
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
+    string FormatDateTime(DateTime d) => d.ToString("d MMM, HH:mm", arEg);
+
+    var nextStatuses = NextStatuses(order.Status);
+
+    // sp_swap_frame itself blocks terminal orders and non-active items - this only
+    // decides whether to offer the "الإطار تالف" trigger.
+    var orderIsTerminal = order.Status is OrderStatus.Delivered or OrderStatus.Cancelled;
+    var hasSwappableItem = !orderIsTerminal && order.OrderItems.Any(i => i.FrameId.HasValue && i.Status == OrderItemStatus.Active);
+}
+
+<div class="modal-header">
+    <span class="modal-title">تفاصيل <bdi>@order.InvoiceNumber</bdi></span>
+    <button type="button" class="modal-close" onclick="closeOrderDetail()">✕</button>
+</div>
+
+<div class="modal-body">
+    <div class="detail-section">
+        <div class="detail-grid">
+            <div class="detail-row"><span class="detail-label">اسم السجل</span><span class="detail-val">@(Model.Customer?.Name ?? "بدون اسم")</span></div>
+            @if (!string.IsNullOrWhiteSpace(order.CustomerName) && order.CustomerName != Model.Customer?.Name)
+            {
+                <div class="detail-row"><span class="detail-label">اسم الفاتورة</span><span class="detail-val fw-bold">@order.CustomerName</span></div>
+            }
+            <div class="detail-row"><span class="detail-label">الهاتف</span><span class="detail-val">@(Model.Customer?.Phone ?? "—")</span></div>
+            <div class="detail-row"><span class="detail-label">الفاتورة</span><span class="detail-val"><bdi>@order.InvoiceNumber</bdi></span></div>
+            <div class="detail-row"><span class="detail-label">التاريخ</span><span class="detail-val">@FormatDateTime(order.OrderDate)</span></div>
+            <div class="detail-row"><span class="detail-label">نوع التسليم</span><span class="detail-val">@(order.DeliveryType == DeliveryType.Immediate ? "⚡ فوري" : "🕒 عادي")</span></div>
+            @if (Model.Doctor is not null)
+            {
+                <div class="detail-row"><span class="detail-label">🩺 الطبيب</span><span class="detail-val">@Model.Doctor.Name@(string.IsNullOrEmpty(Model.Doctor.Clinic) ? "" : $" — {Model.Doctor.Clinic}")</span></div>
+            }
+            <div class="detail-row"><span class="detail-label">الحالة</span><span class="detail-val"><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></span></div>
+            <div class="detail-row"><span class="detail-label">الإجمالي</span><span class="detail-val fw-bold c-blue">@Money(order.TotalAmount)</span></div>
+            <div class="detail-row"><span class="detail-label">المدفوع</span><span class="detail-val fw-bold c-green">@Money(order.PaidAmount)</span></div>
+            <div class="detail-row"><span class="detail-label">المتبقي</span><span class="detail-val fw-bold @(order.RemainingAmount > 0 ? "c-red" : "c-green")">@(order.RemainingAmount > 0 ? Money(order.RemainingAmount) : "✅ مكتمل")</span></div>
+            @if (order.DeliveredAt.HasValue)
+            {
+                <div class="detail-row"><span class="detail-label">تاريخ التسليم</span><span class="detail-val">@FormatDate(order.DeliveredAt.Value)</span></div>
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(order.Notes))
+        {
+            <div class="alert alert-info mt-2">📝 @order.Notes</div>
+        }
+    </div>
+
+    <div class="detail-section">
+        <h4>
+            <span>📦 البنود (@order.OrderItems.Count)</span>
+            @if (nextStatuses.Any())
+            {
+                <button type="button" class="btn btn-outline btn-sm" onclick="openStatusModal()">🔄 تحديث الحالة</button>
+            }
+        </h4>
+
+        @foreach (var it in order.OrderItems)
+        {
+            var frameInfo = !string.IsNullOrWhiteSpace(it.ExternalFrameNotes) ? $"📦 {it.ExternalFrameNotes}" : (it.FrameId.HasValue ? "🗃️ إطار من المخزون" : null);
+            <div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid #e2e8f0">
+                <div class="flex items-center gap-2 flex-wrap mb-2">
+                    <span class="badge @TypeBadgeClass(it.ItemType)">@TypeLabel(it.ItemType)</span>
+                    @if (frameInfo is not null)
+                    {
+                        <span class="info-chip">@frameInfo</span>
+                    }
+                    <span style="margin-right:auto;font-size:16px;font-weight:800;color:#1a56db">@Money(it.ItemTotal)</span>
+                </div>
+                @if (it.FrameId.HasValue || !string.IsNullOrWhiteSpace(it.ExternalFrameNotes))
+                {
+                    <div class="detail-row"><span class="detail-label">سعر الإطار</span><span class="detail-val">@Money(it.FrameAgreedPrice)</span></div>
+                }
+                @if (it.FrameId.HasValue && it.Status == OrderItemStatus.Active && !orderIsTerminal)
+                {
+                    <button type="button" class="btn btn-outline btn-sm mt-2" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture))">⚠️ الإطار تالف — استبدال</button>
+                }
+                @if (!string.IsNullOrWhiteSpace(it.LensDescription))
+                {
+                    <div class="detail-row"><span class="detail-label">العدسات</span><span class="detail-val">@it.LensDescription</span></div>
+                    <div class="detail-row"><span class="detail-label">سعر العدسات</span><span class="detail-val">@Money(it.LensSellPrice)</span></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(it.DiscountReason))
+                {
+                    <div class="detail-row"><span class="detail-label">ملاحظة</span><span class="detail-val text-sm" style="color:#b45309">⚠️ @it.DiscountReason</span></div>
+                }
+                @if (it.Prescription is not null)
+                {
+                    var rx = it.Prescription;
+                    <div style="margin-top:8px;background:#fff;border-radius:6px;padding:8px 10px;font-size:12px;color:#374151">
+                        👁️ <b>الروشتة:</b>
+                        يمين: @(rx.RightSphere?.ToString() ?? "—") / @(rx.RightCylinder?.ToString() ?? "—") × @(rx.RightAxis?.ToString() ?? "—")
+                        &nbsp;|&nbsp; يسار: @(rx.LeftSphere?.ToString() ?? "—") / @(rx.LeftCylinder?.ToString() ?? "—") × @(rx.LeftAxis?.ToString() ?? "—")
+                        @(rx.Pd.HasValue ? $" | PD: {rx.Pd}" : "") @(rx.AddPower.HasValue ? $" | ADD: {rx.AddPower}" : "")
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="detail-section">
+        <h4>💳 المدفوعات</h4>
+        @if (!order.Payments.Any())
+        {
+            <div class="text-muted text-sm">لا توجد مدفوعات</div>
+        }
+        else
+        {
+            @foreach (var p in order.Payments.OrderBy(p => p.PaidAt))
+            {
+                <div class="payment-row">
+                    <span class="payment-amount @(p.PaymentType == PaymentType.Refund ? "refund" : "")">@(p.PaymentType == PaymentType.Refund ? "-" : "+")@Money(p.Amount)</span>
+                    <span class="payment-info">
+                        @PaymentTypeLabel(p.PaymentType) — @FormatDateTime(p.PaidAt)
+                        <span class="badge @(p.PaymentMethod == PaymentMethod.Cash ? "badge-cash" : "badge-visa")">@(p.PaymentMethod == PaymentMethod.Cash ? "نقدي" : "فيزا")</span>
+                    </span>
+                </div>
+            }
+        }
+    </div>
+
+    <div class="detail-section">
+        <h4>📅 سجل الحالات</h4>
+        <div class="timeline">
+            @foreach (var l in order.StatusLogs.OrderBy(l => l.ChangedAt))
+            {
+                var (_, _, text, dotClass) = LogLine(l);
+                <div class="tl-item">
+                    <div class="tl-dot @dotClass"></div>
+                    <div class="tl-time">@FormatDateTime(l.ChangedAt)</div>
+                    <div class="tl-text">@text</div>
+                    @if (!string.IsNullOrWhiteSpace(l.Notes))
+                    {
+                        <div class="tl-note">@l.Notes</div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="modal-footer">
+    <button type="button" class="btn btn-outline" onclick="closeOrderDetail()">إغلاق</button>
+    @if (nextStatuses.Any())
+    {
+        <button type="submit" form="statusForm" class="btn btn-primary">تأكيد</button>
+    }
+</div>
+
+@if (nextStatuses.Any())
+{
+    <div class="overlay" id="statusModalOverlay" style="z-index:110" onclick="closeStatusModal()"></div>
+    <div class="modal modal-sm" id="statusModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">🔄 تغيير الحالة</span>
+            <button type="button" class="modal-close" onclick="closeStatusModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <form id="statusForm" asp-action="UpdateStatus" method="post">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <div class="form-group">
+                    <label>الحالة الجديدة</label>
+                    <select name="newStatus">
+                        @foreach (var s in nextStatuses)
+                        {
+                            <option value="@s">@StatusLabel(s)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" placeholder="مثال: العدسات وصلت من المورد" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeStatusModal()">إلغاء</button>
+            <button type="button" class="btn btn-primary" onclick="closeStatusModal()">تأكيد</button>
+        </div>
+    </div>
+}
+
+@if (hasSwappableItem)
+{
+    <div class="overlay" id="swapModalOverlay" style="z-index:110" onclick="closeSwapModal()"></div>
+    <div class="modal modal-sm" id="swapModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">⚠️ استبدال إطار تالف</span>
+            <button type="button" class="modal-close" onclick="closeSwapModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2" id="swapItemLabel"></div>
+            <form id="swapForm" asp-action="SwapDamagedFrame" method="post">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="itemId" id="swapItemId" />
+                <input type="hidden" name="newFrameId" id="swapNewFrameId" />
+                <div class="form-group">
+                    <label>باركود الإطار البديل *</label>
+                    <div class="input-group">
+                        <input type="text" id="swapBarcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                        <button type="button" class="btn btn-primary" onclick="searchSwapFrame()">🔍 بحث</button>
+                    </div>
+                    <div class="frame-result" id="swapFrameResult">
+                        <div class="frame-result-title">✅ إطار موجود ومتاح</div>
+                        <div class="frame-meta" id="swapFrameMeta"></div>
+                    </div>
+                    <div class="frame-error" id="swapFrameError"></div>
+                </div>
+                <div class="form-group">
+                    <label>💰 السعر المتفق مع الزبون (ج) *</label>
+                    <input type="number" name="newFrameAgreedPrice" id="swapPriceInput" min="0" step="0.01" required />
+                </div>
+                <div class="form-group">
+                    <label>سبب التلف / ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" placeholder="مثال: خدش عميق أثناء التجهيز" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeSwapModal()">إلغاء</button>
+            <button type="submit" form="swapForm" id="swapConfirmBtn" class="btn btn-primary" disabled>تأكيد الاستبدال</button>
+        </div>
+    </div>
+}

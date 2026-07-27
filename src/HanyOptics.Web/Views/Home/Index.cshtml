@@ -85,7 +85,7 @@
                     @foreach (var order in recent)
                     {
                         <tr>
-                            <td><b>@order.InvoiceNumber</b></td>
+                            <td><b><bdi>@order.InvoiceNumber</bdi></b></td>
                             <td>@order.CustomerName</td>
                             <td><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></td>
                             <td class="fw-bold @(order.RemainingAmount > 0 ? "c-red" : "c-green")">

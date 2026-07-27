@@ -86,17 +86,17 @@ public class NewOrderService : INewOrderService
     public async Task<IReadOnlyList<Doctor>> GetDoctorsAsync() =>
         await _dbContext.Doctors.AsNoTracking().OrderBy(d => d.Name).ToListAsync();
 
+    // A brand new customer typed in at this step shouldn't be left behind in the DB if
+    // sp_create_order then rejects the order (duplicate invoice, etc.) - it's deleted again
+    // on failure so the customer only stays saved once the order itself actually exists.
+    // (Not done via an ambient .NET transaction around the SP call: sp_create_order manages
+    // its own BEGIN/COMMIT/ROLLBACK, and when its CATCH block rolls back while nested inside
+    // our transaction, SQL Server appends a raw "transaction count mismatch" message to the
+    // error - exactly the kind of un-Arabic, un-friendly text this service exists to avoid
+    // surfacing. A compensating delete reaches the same end state without that problem.)
     public async Task<StartOrderOutcome> StartOrderAsync(NewOrderCustomerRequest request)
     {
-        Customer customer;
-        try
-        {
-            customer = await ResolveOrCreateCustomerAsync(request.Phone, request.CustomerName);
-        }
-        catch (Exception)
-        {
-            return StartOrderOutcome.Failure(GenericErrorMessage);
-        }
+        var (customer, isNewCustomer) = await ResolveOrCreateCustomerAsync(request.Phone, request.CustomerName);
 
         var orderIdParam = new SqlParameter("@p_order_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
 
@@ -125,11 +125,32 @@ public class NewOrderService : INewOrderService
         }
         catch (SqlException ex)
         {
+            if (isNewCustomer)
+                await TryDeleteOrphanCustomerAsync(customer.CustomerId);
             return StartOrderOutcome.Failure(FriendlySqlMessage(ex));
         }
         catch (Exception)
         {
+            if (isNewCustomer)
+                await TryDeleteOrphanCustomerAsync(customer.CustomerId);
             return StartOrderOutcome.Failure(GenericErrorMessage);
+        }
+    }
+
+    // Best-effort cleanup - the NOT EXISTS guard means a customer this attempt just created
+    // is only removed if it's still unused (nothing else could have started using it in the
+    // few milliseconds since); if the delete itself fails for any reason, the customer just
+    // sits there unused, same as it always could before this cleanup existed.
+    private async Task TryDeleteOrphanCustomerAsync(int customerId)
+    {
+        try
+        {
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "DELETE FROM customers WHERE customer_id = @p_customer_id AND NOT EXISTS (SELECT 1 FROM orders WHERE customer_id = @p_customer_id)",
+                new SqlParameter("@p_customer_id", customerId));
+        }
+        catch
+        {
         }
     }
 
@@ -148,7 +169,7 @@ public class NewOrderService : INewOrderService
             if (order.Status != OrderStatus.Sold)
                 return OperationResult.Failure("لا يمكن تعديل بيانات هذا الطلب بعد تغيير حالته");
 
-            var customer = await ResolveOrCreateCustomerAsync(request.Phone, request.CustomerName);
+            var (customer, _) = await ResolveOrCreateCustomerAsync(request.Phone, request.CustomerName);
 
             order.CustomerId = customer.CustomerId;
             order.CustomerName = customer.Name;
@@ -295,7 +316,11 @@ public class NewOrderService : INewOrderService
     // remaining balance exactly -> final, later partial payment -> deposit.
     public async Task<OperationResult> AddPaymentAsync(NewOrderPaymentRequest request)
     {
-        if (request.Amount <= 0)
+        // Amount is required (staff must explicitly type something, even "0") but "0" is a
+        // legitimate answer meaning "no payment yet" - the order still finishes, just with
+        // no payment row recorded.
+        var amount = request.Amount ?? 0;
+        if (amount <= 0)
             return OperationResult.Success();
 
         var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == request.OrderId);
@@ -303,12 +328,12 @@ public class NewOrderService : INewOrderService
             return OperationResult.Failure("الطلب غير موجود");
 
         var remaining = order.TotalAmount - order.PaidAmount;
-        if (request.Amount > remaining)
+        if (amount > remaining)
             return OperationResult.Failure("المبلغ المدخل أكبر من المتبقي على الطلب");
 
         var paymentType = order.PaidAmount > 0
-            ? (request.Amount == remaining ? PaymentType.Final : PaymentType.Deposit)
-            : (request.Amount == remaining ? PaymentType.Full : PaymentType.Deposit);
+            ? (amount == remaining ? PaymentType.Final : PaymentType.Deposit)
+            : (amount == remaining ? PaymentType.Full : PaymentType.Deposit);
 
         try
         {
@@ -322,7 +347,7 @@ public class NewOrderService : INewOrderService
                     @received_by    = @p_received_by
                 """,
                 new SqlParameter("@p_order_id", request.OrderId),
-                new SqlParameter("@p_amount", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = request.Amount },
+                new SqlParameter("@p_amount", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = amount },
                 new SqlParameter("@p_payment_type", PaymentTypeToDb(paymentType)),
                 new SqlParameter("@p_payment_method", PaymentMethodToDb(request.PaymentMethod)),
                 new SqlParameter("@p_received_by", DefaultStaffUserId));
@@ -371,7 +396,7 @@ public class NewOrderService : INewOrderService
         }
     }
 
-    private async Task<Customer> ResolveOrCreateCustomerAsync(string phone, string? name)
+    private async Task<(Customer Customer, bool IsNew)> ResolveOrCreateCustomerAsync(string phone, string? name)
     {
         var customer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.Phone == phone);
         if (customer is null)
@@ -384,14 +409,16 @@ public class NewOrderService : INewOrderService
             };
             _dbContext.Customers.Add(customer);
             await _dbContext.SaveChangesAsync();
+            return (customer, true);
         }
-        else if (!string.IsNullOrWhiteSpace(name) && name != customer.Name)
+
+        if (!string.IsNullOrWhiteSpace(name) && name != customer.Name)
         {
             customer.Name = name;
             await _dbContext.SaveChangesAsync();
         }
 
-        return customer;
+        return (customer, false);
     }
 
     // sp_* calls raise business-rule failures via RAISERROR (e.g. "رقم الفاتورة ده

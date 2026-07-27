@@ -6,6 +6,13 @@
       "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--project", "src/HanyOptics.Web", "--urls", "http://localhost:56543"],
       "port": 56543
+    },
+    {
+      "name": "englisphere-api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "D:\\ITI\\GD\\src\\Englisphere.Api\\Englisphere.Api.csproj", "--urls", "http://localhost:56544"],
+      "port": 56544,
+      "url": "http://localhost:56544/"
     }
   ]
 }

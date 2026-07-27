@@ -210,7 +210,7 @@ public class OrdersController : Controller
         ViewBag.Order = order;
         ViewBag.CustomerPhone = (await _newOrderService.GetCustomerAsync(order.CustomerId))?.Phone;
         ViewData["OrderInProgress"] = true;
-        return View(new NewOrderPaymentRequest { OrderId = orderId, Amount = order.RemainingAmount });
+        return View(new NewOrderPaymentRequest { OrderId = orderId });
     }
 
     [HttpPost]
@@ -267,6 +267,42 @@ public class OrdersController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    // ── Order detail popup (Orders/Index row click) ─────────────────────
+    [HttpGet]
+    public async Task<IActionResult> Detail(int id)
+    {
+        var order = await _orderService.GetByIdAsync(id);
+        if (order is null)
+            return NotFound();
+
+        var customer = await _newOrderService.GetCustomerAsync(order.CustomerId);
+        var doctor = order.DoctorId.HasValue ? await _orderService.GetDoctorByIdAsync(order.DoctorId.Value) : null;
+
+        return PartialView("_OrderDetail", new OrderDetailViewModel(order, customer, doctor));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateStatus(int orderId, OrderStatus newStatus, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.UpdateOrderStatusAsync(orderId, newStatus, notes), "تحديث حالة الطلب");
+        if (outcome is { Succeeded: true })
+        {
+            return RedirectToAction(nameof(Index));
+        }
+        TempData["StatusUpdateError"] = outcome?.ErrorMessage ?? "تعذر تحديث الحالة.";
+        return RedirectToAction(nameof(Index), new { openOrder = orderId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SwapDamagedFrame(int orderId, int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.SwapDamagedFrameAsync(itemId, newFrameId, newFrameAgreedPrice, notes), "استبدال إطار تالف");
+        TempData["StatusUpdateError"] = outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر استبدال الإطار.";
+        return RedirectToAction(nameof(Index), new { openOrder = orderId });
+    }
+
     private async Task PopulateDoctorsAsync(int? selectedDoctorId)
     {
         var doctors = await _newOrderService.GetDoctorsAsync();
@@ -294,3 +330,8 @@ public class OrdersController : Controller
 // Small helper so the view can render a <select> without pulling MVC's
 // SelectListItem machinery into the DTOs themselves.
 public record SelectListWithSelection(IReadOnlyList<HanyOptics.Domain.Entities.Doctor> Doctors, int? SelectedId);
+
+public record OrderDetailViewModel(
+    HanyOptics.Domain.Entities.Order Order,
+    HanyOptics.Domain.Entities.Customer? Customer,
+    HanyOptics.Domain.Entities.Doctor? Doctor);

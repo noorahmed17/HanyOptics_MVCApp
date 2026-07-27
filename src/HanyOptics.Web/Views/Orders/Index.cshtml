@@ -52,6 +52,11 @@
     <a class="btn btn-primary" asp-action="New">➕ طلب جديد</a>
 </div>
 
+@if (TempData["StatusUpdateError"] is string statusError)
+{
+    <div class="alert alert-danger">⚠️ @statusError</div>
+}
+
 <div style="margin-bottom:14px">
     <input type="text" id="orderSearch" placeholder="بحث بالفاتورة أو الاسم أو التليفون..." style="max-width:340px" />
 </div>
@@ -98,8 +103,8 @@
                 <tbody>
                     @foreach (var o in Model)
                     {
-                        <tr data-search="@($"{o.InvoiceNumber} {o.CustomerName} {o.CustomerPhone}".ToLowerInvariant())">
-                            <td><b>@o.InvoiceNumber</b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
+                        <tr class="clickable" onclick="openOrderDetail(@o.OrderId)" data-search="@($"{o.InvoiceNumber} {o.CustomerName} {o.CustomerPhone}".ToLowerInvariant())">
+                            <td><b><bdi>@o.InvoiceNumber</bdi></b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
                             <td>@o.CustomerName<br /><span class="text-sm text-muted">@(o.CustomerPhone ?? "—")</span></td>
                             <td>@foreach (var t in o.ItemTypes)
                                 {
@@ -119,6 +124,9 @@
     </div>
 </div>
 
+<div class="overlay" id="orderDetailOverlay" onclick="closeOrderDetail()"></div>
+<div class="modal" id="orderDetailModal" onclick="event.stopPropagation()"></div>
+
 @section Scripts {
     <script>
         (function () {
@@ -132,6 +140,87 @@
                     row.style.display = row.dataset.search.includes(term) ? '' : 'none';
                 });
             });
+        })();
+
+        function openOrderDetail(id) {
+            fetch('@Url.Action("Detail")?id=' + id)
+                .then(r => r.ok ? r.text() : Promise.reject())
+                .then(html => {
+                    document.getElementById('orderDetailModal').innerHTML = html;
+                    document.getElementById('orderDetailOverlay').classList.add('show');
+                    document.getElementById('orderDetailModal').classList.add('show');
+                })
+                .catch(() => alert('تعذر تحميل تفاصيل الطلب'));
+        }
+
+        function closeOrderDetail() {
+            document.getElementById('orderDetailOverlay').classList.remove('show');
+            document.getElementById('orderDetailModal').classList.remove('show');
+        }
+
+        function openStatusModal() {
+            document.getElementById('statusModalOverlay').classList.add('show');
+            document.getElementById('statusModal').classList.add('show');
+        }
+
+        function closeStatusModal() {
+            document.getElementById('statusModalOverlay').classList.remove('show');
+            document.getElementById('statusModal').classList.remove('show');
+        }
+
+        function openSwapModal(itemId, itemLabel, currentPrice) {
+            document.getElementById('swapItemLabel').textContent = 'استبدال إطار البند: ' + itemLabel + ' — السعر الحالي: ' + Number(currentPrice).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('swapItemId').value = itemId;
+            document.getElementById('swapNewFrameId').value = '';
+            document.getElementById('swapBarcodeInput').value = '';
+            document.getElementById('swapPriceInput').value = '';
+            document.getElementById('swapFrameResult').classList.remove('show');
+            document.getElementById('swapFrameError').classList.remove('show');
+            document.getElementById('swapConfirmBtn').disabled = true;
+            document.getElementById('swapModalOverlay').classList.add('show');
+            document.getElementById('swapModal').classList.add('show');
+        }
+
+        function closeSwapModal() {
+            document.getElementById('swapModalOverlay').classList.remove('show');
+            document.getElementById('swapModal').classList.remove('show');
+        }
+
+        function searchSwapFrame() {
+            const barcode = document.getElementById('swapBarcodeInput').value.trim();
+            const resultBox = document.getElementById('swapFrameResult');
+            const errorBox = document.getElementById('swapFrameError');
+            resultBox.classList.remove('show');
+            errorBox.classList.remove('show');
+            document.getElementById('swapConfirmBtn').disabled = true;
+            document.getElementById('swapNewFrameId').value = '';
+
+            if (!barcode) return;
+
+            fetch('@Url.Action("LookupFrame")?barcode=' + encodeURIComponent(barcode))
+                .then(r => r.json())
+                .then(data => {
+                    if (data.found) {
+                        document.getElementById('swapFrameMeta').innerHTML =
+                            '<span><b>' + (data.brand || '') + ' ' + (data.modelName || '') + '</b></span>' +
+                            '<span>' + (data.color || '') + ' — ' + (data.size || '') + '</span>' +
+                            '<span>السعر: <b>' + Number(data.sellPrice || 0).toLocaleString('ar-EG') + ' ج</b></span>' +
+                            '<span>المتاح: <b>' + data.qtyAvailable + '</b></span>';
+                        resultBox.classList.add('show');
+                        document.getElementById('swapNewFrameId').value = data.frameId;
+                        document.getElementById('swapPriceInput').value = data.sellPrice;
+                        document.getElementById('swapConfirmBtn').disabled = false;
+                    } else {
+                        errorBox.textContent = data.message || 'الإطار غير موجود';
+                        errorBox.classList.add('show');
+                    }
+                });
+        }
+
+        (function () {
+            const params = new URLSearchParams(location.search);
+            const openId = params.get('openOrder');
+            if (openId) openOrderDetail(openId);
         })();
     </script>
 }
