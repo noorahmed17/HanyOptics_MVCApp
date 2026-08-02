@@ -6,19 +6,24 @@ using HanyOptics.Domain.Entities;
 using HanyOptics.Domain.Enums;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HanyOptics.BusinessLogic.Services;
 public class OrderService : IOrderService
 {
-    private const string GenericErrorMessage = "حدث خطأ غير متوقع — حاول مرة أخرى";
+    // Shared with NewOrderService - see StoredProcedureErrors for why this isn't a
+    // per-service copy.
+    private const string DuplicateDataMessage = "بيانات مكررة";
 
     private readonly HanyOpticsDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<OrderService> _logger;
 
-    public OrderService(HanyOpticsDbContext dbContext, ICurrentUser currentUser)
+    public OrderService(HanyOpticsDbContext dbContext, ICurrentUser currentUser, ILogger<OrderService> logger)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     public Task<Order?> GetByIdAsync(int orderId) =>
@@ -116,7 +121,7 @@ public class OrderService : IOrderService
         // Every status is offered regardless of the order's current one -
         // sp_update_order_status is the sole authority on which transitions are actually
         // valid, and rejects anything else with a clear Arabic RAISERROR message at
-        // commit time (see CommitPendingEditsAsync / ExtractFriendlyMessage).
+        // commit time (see CommitPendingEditsAsync / StoredProcedureErrors.ToUserMessage).
         var summary = $"تحديث الحالة إلى: {StatusLabel(newStatus)}";
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" — {notes}";
@@ -238,7 +243,14 @@ public class OrderService : IOrderService
             }
             catch (SqlException ex)
             {
-                failures.Add(new BulkStatusUpdateFailure(orderId, invoiceNumbers.GetValueOrDefault(orderId, orderId.ToString()), ExtractFriendlyMessage(ex)));
+                _logger.LogError(ex,
+                    "SQL error in bulk status update. OrderId={OrderId} NewStatus={NewStatus} SqlErrors={SqlErrors}",
+                    orderId, newStatus, StoredProcedureErrors.Describe(ex));
+
+                failures.Add(new BulkStatusUpdateFailure(
+                    orderId,
+                    invoiceNumbers.GetValueOrDefault(orderId, orderId.ToString()),
+                    StoredProcedureErrors.ToUserMessage(ex, DuplicateDataMessage)));
             }
         }
 
@@ -283,13 +295,21 @@ public class OrderService : IOrderService
         }
         catch (SqlException ex)
         {
-            await SafeRollbackAsync(transaction);
-            return OperationResult.Failure(ExtractFriendlyMessage(ex));
+            _logger.LogError(ex,
+                "SQL error committing pending edits. OrderId={OrderId} Edits={Edits} SqlErrors={SqlErrors}",
+                orderId, DescribeEdits(edits), StoredProcedureErrors.Describe(ex));
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
+            return OperationResult.Failure(StoredProcedureErrors.ToUserMessage(ex, DuplicateDataMessage));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            await SafeRollbackAsync(transaction);
-            return OperationResult.Failure(GenericErrorMessage);
+            _logger.LogError(ex,
+                "Unexpected error committing pending edits. OrderId={OrderId} Edits={Edits}",
+                orderId, DescribeEdits(edits));
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
+            return OperationResult.Failure(StoredProcedureErrors.GenericMessage);
         }
     }
 
@@ -343,41 +363,8 @@ public class OrderService : IOrderService
             new SqlParameter("@p_changed_by", _currentUser.RequireUserId()),
             new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
 
-    // The stored procedures manage their own BEGIN/COMMIT/ROLLBACK. When one of them
-    // rolls back from inside our transaction the transaction is already doomed, so
-    // rolling it back again can itself throw - which must not mask the original error.
-    // A single SqlException can carry several SQL Server messages at once (SqlException.Errors),
-    // not just the one string SqlException.Message happens to surface. When a chained SP
-    // rejects a change from inside our ambient transaction, its own ROLLBACK TRANSACTION
-    // unwinds our outer transaction too, which makes SQL Server append its own "transaction
-    // count mismatch" diagnostic (error 266) alongside the SP's real RAISERROR message.
-    // Filtering out just error 266 and keeping whatever's left recovers the SP's actual,
-    // specific rejection reason instead of discarding it along with the noise.
-    private static string ExtractFriendlyMessage(SqlException ex)
-    {
-        if (ex.Number is 2627 or 2601)
-            return "بيانات مكررة";
-
-        const int TransactionCountMismatch = 266;
-        var realMessages = ex.Errors
-            .Cast<SqlError>()
-            .Where(e => e.Number != TransactionCountMismatch)
-            .Select(e => e.Message)
-            .ToList();
-
-        return realMessages.Count > 0 ? string.Join(" ", realMessages) : GenericErrorMessage;
-    }
-
-    private static async Task SafeRollbackAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction)
-    {
-        try
-        {
-            await transaction.RollbackAsync();
-        }
-        catch
-        {
-        }
-    }
+    private static string DescribeEdits(IReadOnlyList<PendingOrderEdit> edits) =>
+        string.Join(", ", edits.Select(e => $"{e.Kind}(item:{e.ItemId})"));
 
     private static string StatusLabel(OrderStatus s) => s switch
     {

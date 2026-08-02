@@ -6,6 +6,7 @@ using HanyOptics.Domain.Entities;
 using HanyOptics.Domain.Enums;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HanyOptics.BusinessLogic.Services;
 
@@ -21,15 +22,20 @@ namespace HanyOptics.BusinessLogic.Services;
 // CommitDraftAsync when the user finishes the last step.
 public class NewOrderService : INewOrderService
 {
-    private const string GenericErrorMessage = "حدث خطأ غير متوقع — حاول مرة أخرى";
+    // Shared with OrderService - see StoredProcedureErrors for why this isn't a
+    // per-service copy. The wizard can name the fields a collision is actually possible
+    // on, which the order-edit paths can't, so only this string is per-service.
+    private const string DuplicateDataMessage = "البيانات مكررة — تحقق من رقم الفاتورة أو الباركود";
 
     private readonly HanyOpticsDbContext _dbContext;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<NewOrderService> _logger;
 
-    public NewOrderService(HanyOpticsDbContext dbContext, ICurrentUser currentUser)
+    public NewOrderService(HanyOpticsDbContext dbContext, ICurrentUser currentUser, ILogger<NewOrderService> logger)
     {
         _dbContext = dbContext;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     public async Task<CustomerLookupResult> LookupCustomerByPhoneAsync(string phone)
@@ -193,9 +199,12 @@ public class NewOrderService : INewOrderService
         {
             (customer, isNewCustomer) = await ResolveOrCreateCustomerAsync(phone, name);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return CommitDraftOutcome.Failure(GenericErrorMessage);
+            _logger.LogError(ex,
+                "Failed to resolve/create customer while committing order draft. Invoice={Invoice} Phone={Phone} IsWalkIn={IsWalkIn}",
+                draft.InvoiceNumber, phone, draft.IsWalkIn);
+            return CommitDraftOutcome.Failure(StoredProcedureErrors.GenericMessage);
         }
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync();
@@ -215,17 +224,28 @@ public class NewOrderService : INewOrderService
         }
         catch (SqlException ex)
         {
-            await SafeRollbackAsync(transaction);
+            // Every SQL Server message in the exception is logged, not just the first -
+            // the SP's real RAISERROR reason is frequently not the one ex.Message shows.
+            _logger.LogError(ex,
+                "SQL error committing order draft. Invoice={Invoice} CustomerId={CustomerId} Items={ItemCount} Total={Total} Paid={Paid} SqlErrors={SqlErrors}",
+                draft.InvoiceNumber, customer.CustomerId, draft.Items.Count, draft.TotalAmount, amount,
+                StoredProcedureErrors.Describe(ex));
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
             if (isNewCustomer)
                 await TryDeleteOrphanCustomerAsync(customer.CustomerId);
-            return CommitDraftOutcome.Failure(FriendlySqlMessage(ex));
+            return CommitDraftOutcome.Failure(StoredProcedureErrors.ToUserMessage(ex, DuplicateDataMessage));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            await SafeRollbackAsync(transaction);
+            _logger.LogError(ex,
+                "Unexpected error committing order draft. Invoice={Invoice} CustomerId={CustomerId} Items={ItemCount} Total={Total} Paid={Paid}",
+                draft.InvoiceNumber, customer.CustomerId, draft.Items.Count, draft.TotalAmount, amount);
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
             if (isNewCustomer)
                 await TryDeleteOrphanCustomerAsync(customer.CustomerId);
-            return CommitDraftOutcome.Failure(GenericErrorMessage);
+            return CommitDraftOutcome.Failure(StoredProcedureErrors.GenericMessage);
         }
     }
 
@@ -324,20 +344,6 @@ public class NewOrderService : INewOrderService
             new SqlParameter("@p_received_by", _currentUser.RequireUserId()));
     }
 
-    // The stored procedures manage their own BEGIN/COMMIT/ROLLBACK. When one of them rolls
-    // back from inside our transaction the transaction is already doomed, so rolling it
-    // back again can itself throw - which must not mask the original error.
-    private static async Task SafeRollbackAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction)
-    {
-        try
-        {
-            await transaction.RollbackAsync();
-        }
-        catch
-        {
-        }
-    }
-
     // Best-effort cleanup - the NOT EXISTS guard means a customer this attempt just created
     // is only removed if it's still unused, so an existing customer (or the shared walk-in
     // row) can never be deleted by a failed order.
@@ -349,8 +355,11 @@ public class NewOrderService : INewOrderService
                 "DELETE FROM customers WHERE customer_id = @p_customer_id AND NOT EXISTS (SELECT 1 FROM orders WHERE customer_id = @p_customer_id)",
                 new SqlParameter("@p_customer_id", customerId));
         }
-        catch
+        catch (Exception ex)
         {
+            // Non-fatal: a customer row left behind is harmless, and the order failure is
+            // what the caller needs to hear about. Logged so the leftover is explainable.
+            _logger.LogWarning(ex, "Could not clean up orphan customer {CustomerId} after a failed order commit.", customerId);
         }
     }
 
@@ -397,25 +406,6 @@ public class NewOrderService : INewOrderService
         }
 
         return (customer, false);
-    }
-
-    // sp_* calls raise business-rule failures via RAISERROR (e.g. "رقم الفاتورة ده
-    // مستخدم بالفعل", "فيه إطار (individual) مش متاح") - that Arabic text is meant to be
-    // shown to staff as-is, so it's trusted here instead of being re-validated in C#.
-    // Two exceptions get a generic Arabic fallback: a raw unique-constraint violation from
-    // a check-then-insert race inside a SP, and SQL Server's "transaction count" complaint,
-    // which it appends when a SP rolls back from inside our transaction - technical noise
-    // about how the failure was handled rather than what actually went wrong.
-    private static string FriendlySqlMessage(SqlException ex)
-    {
-        if (ex.Number is 2627 or 2601)
-            return "البيانات مكررة — تحقق من رقم الفاتورة أو الباركود";
-
-        var message = ex.Message;
-        if (message.Contains("Transaction count", StringComparison.OrdinalIgnoreCase))
-            return GenericErrorMessage;
-
-        return message;
     }
 
     private static string DeliveryTypeToDb(DeliveryType type) => type == DeliveryType.Immediate ? "immediate" : "normal";
