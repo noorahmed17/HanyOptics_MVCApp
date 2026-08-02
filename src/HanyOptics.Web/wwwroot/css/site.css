@@ -1,7 +1,11 @@
 /* Ported from HanyOptics_Prototype.html / HanyOptics_Scenarios.html design system. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    /* Tahoma first, not Segoe UI: Segoe UI's Arabic coverage is partial and only some
+       weights fall back to a properly-shaped Arabic face, which is why bold labels looked
+       right while normal-weight input values came out disconnected ("زبون عابر"). Tahoma
+       has complete, correctly-joined Arabic at every weight. */
+    font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
     background: #f0f2f5;
     color: #1a202c;
     direction: rtl;
@@ -85,6 +89,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .alert-warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
 .alert-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
 .alert-danger { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #057a55; }
 
 /* ─── MISC ─── */
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -167,8 +172,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 
 .collapsible-btn { background: none; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #374151; width: 100%; text-align: right; display: flex; align-items: center; justify-content: space-between; }
 .collapsible-btn:hover { background: #f9fafb; }
-.collapsible-content { display: none; padding-top: 12px; }
-.collapsible-content.open { display: block; }
+/* Animated open/close - max-height rather than display:none so the reveal can slide. */
+.collapsible-content { max-height: 0; padding-top: 0; overflow: hidden; transition: max-height .28s ease, padding-top .28s ease; }
+.collapsible-content.open { max-height: 800px; padding-top: 12px; }
 
 .badge-fl { background: #ede9fe; color: #5b21b6; }
 .badge-fo { background: #fff7ed; color: #c2410c; }

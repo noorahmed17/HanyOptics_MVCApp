@@ -39,10 +39,12 @@
     }
 
     <form asp-action="New" method="post" id="step1Form">
+        <input type="hidden" asp-for="IsWalkIn" id="isWalkInInput" />
+
         <div class="form-row">
             <div class="form-group">
-                <label asp-for="Phone">📱 رقم الهاتف *</label>
-                <input type="tel" asp-for="Phone" id="phoneInput" placeholder="01XXXXXXXXX" maxlength="11" autocomplete="off" required />
+                <label asp-for="Phone">📱 رقم الهاتف</label>
+                <input type="tel" asp-for="Phone" id="phoneInput" placeholder="01XXXXXXXXX" maxlength="11" autocomplete="off" />
                 <span asp-validation-for="Phone" class="field-error"></span>
                 <div class="form-hint">يُملأ اسم الزبون تلقائياً إذا كان الرقم مسجلاً من قبل</div>
             </div>
@@ -51,6 +53,11 @@
                 <input asp-for="CustomerName" id="customerNameInput" placeholder="اسم الزبون (اختياري)" />
                 <div class="form-hint">اختياري — يمكن تركه فارغاً</div>
             </div>
+        </div>
+
+        <div class="form-group">
+            <button type="button" class="btn btn-outline" id="walkInBtn">🚶 زبون عابر</button>
+            <div class="form-hint">لو الزبون مش سايب رقم ولا اسم — هيتسجل باسم "زبون عابر"</div>
         </div>
 
         <div class="form-row">
@@ -93,11 +100,49 @@
         (function () {
             const phoneInput = document.getElementById('phoneInput');
             const nameInput = document.getElementById('customerNameInput');
+            const walkInInput = document.getElementById('isWalkInInput');
+            const walkInBtn = document.getElementById('walkInBtn');
+            // Json.Serialize rather than a quoted Razor expression: Razor HTML-encodes by
+            // default, which would put "&#x632;..." into the field instead of Arabic text.
+            const WALK_IN_PHONE = @Json.Serialize(HanyOptics.BusinessLogic.Models.WalkInCustomer.Phone);
+            const WALK_IN_NAME = @Json.Serialize(HanyOptics.BusinessLogic.Models.WalkInCustomer.Name);
             let debounceTimer;
             let lastLookedUp = '';
             // Tracks whatever we last set the name field to programmatically, so we
             // never clobber text the user typed themselves.
             let lastAutoFilled = nameInput.value;
+
+            function setWalkIn(on) {
+                walkInInput.value = on ? 'true' : 'false';
+                walkInBtn.classList.toggle('btn-primary', on);
+                walkInBtn.classList.toggle('btn-outline', !on);
+                walkInBtn.textContent = on ? '✅ زبون عابر' : '🚶 زبون عابر';
+
+                if (on) {
+                    // Cancel any in-flight lookup so it can't overwrite the placeholder.
+                    clearTimeout(debounceTimer);
+                    lastLookedUp = '';
+                    phoneInput.value = WALK_IN_PHONE;
+                    nameInput.value = WALK_IN_NAME;
+                    lastAutoFilled = WALK_IN_NAME;
+                } else {
+                    phoneInput.value = '';
+                    nameInput.value = '';
+                    lastAutoFilled = '';
+                }
+
+                // Readonly rather than disabled: disabled inputs aren't submitted, and the
+                // placeholder values should be visible in the POST like any other customer.
+                phoneInput.readOnly = on;
+                nameInput.readOnly = on;
+            }
+
+            walkInBtn.addEventListener('click', function () {
+                setWalkIn(walkInInput.value !== 'true');
+            });
+
+            // Restore the toggle's look after a validation round-trip re-renders the form.
+            if (walkInInput.value === 'true') setWalkIn(true);
 
             phoneInput.addEventListener('input', function () {
                 const phone = phoneInput.value.trim();

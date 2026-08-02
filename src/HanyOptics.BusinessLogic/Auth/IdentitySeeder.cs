@@ -7,14 +7,26 @@ namespace HanyOptics.BusinessLogic.Auth;
 
 public class IdentitySeeder : IIdentitySeeder
 {
+    // The schema script ships one staff row in the business `users` table (username
+    // "admin") that all pre-existing operational data is attributed to. The seeded login
+    // adopts that row instead of creating a second admin, so historical created_by values
+    // keep pointing at the same person. Override with SeedAdmin:BusinessUsername.
+    private const string DefaultAdminBusinessUsername = "admin";
+
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IBusinessUserDirectory _businessUsers;
     private readonly IConfiguration _configuration;
 
-    public IdentitySeeder(RoleManager<IdentityRole> roleManager, UserManager<ApplicationUser> userManager, IConfiguration configuration)
+    public IdentitySeeder(
+        RoleManager<IdentityRole> roleManager,
+        UserManager<ApplicationUser> userManager,
+        IBusinessUserDirectory businessUsers,
+        IConfiguration configuration)
     {
         _roleManager = roleManager;
         _userManager = userManager;
+        _businessUsers = businessUsers;
         _configuration = configuration;
     }
 
@@ -33,19 +45,28 @@ public class IdentitySeeder : IIdentitySeeder
         if (string.IsNullOrWhiteSpace(adminEmail) || string.IsNullOrWhiteSpace(adminPassword))
             return;
 
-        if (await _userManager.FindByEmailAsync(adminEmail) is null)
-        {
-            var admin = new ApplicationUser
-            {
-                UserName = adminEmail,
-                Email = adminEmail,
-                FullName = "Hany Optics Admin",
-                EmailConfirmed = true
-            };
+        if (await _userManager.FindByEmailAsync(adminEmail) is not null)
+            return;
 
-            var result = await _userManager.CreateAsync(admin, adminPassword);
-            if (result.Succeeded)
-                await _userManager.AddToRoleAsync(admin, Roles.Admin);
-        }
+        const string adminFullName = "Hany Optics Admin";
+
+        // Adopt the pre-seeded business staff row when it's there, otherwise create one -
+        // either way the Identity account ends up carrying that row's user_id as its key.
+        var businessUsername = _configuration["SeedAdmin:BusinessUsername"] ?? DefaultAdminBusinessUsername;
+        var businessUserId = await _businessUsers.FindIdByUsernameAsync(businessUsername)
+            ?? await _businessUsers.CreateAsync(adminFullName, businessUsername, isAdmin: true);
+
+        var admin = new ApplicationUser
+        {
+            Id = businessUserId.ToString(),
+            UserName = adminEmail,
+            Email = adminEmail,
+            FullName = adminFullName,
+            EmailConfirmed = true
+        };
+
+        var result = await _userManager.CreateAsync(admin, adminPassword);
+        if (result.Succeeded)
+            await _userManager.AddToRoleAsync(admin, Roles.Admin);
     }
 }

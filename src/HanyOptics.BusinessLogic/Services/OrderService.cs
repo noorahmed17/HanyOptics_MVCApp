@@ -10,16 +10,15 @@ using Microsoft.EntityFrameworkCore;
 namespace HanyOptics.BusinessLogic.Services;
 public class OrderService : IOrderService
 {
-    // Matches NewOrderService's DefaultStaffUserId - see the TODO there about the missing
-    // AspNetUsers -> business `users` mapping.
-    private const int DefaultStaffUserId = 1;
     private const string GenericErrorMessage = "حدث خطأ غير متوقع — حاول مرة أخرى";
 
     private readonly HanyOpticsDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
 
-    public OrderService(HanyOpticsDbContext dbContext)
+    public OrderService(HanyOpticsDbContext dbContext, ICurrentUser currentUser)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
     }
 
     public Task<Order?> GetByIdAsync(int orderId) =>
@@ -48,7 +47,7 @@ public class OrderService : IOrderService
         return order.OrderId;
     }
 
-    public async Task<IReadOnlyList<OrderListItem>> GetOrderListAsync(OrderStatus? status = null, DeliveryType? deliveryType = null, int? customerId = null)
+    public async Task<IReadOnlyList<OrderListItem>> GetOrderListAsync(OrderStatus? status = null, DeliveryType? deliveryType = null, int? customerId = null, DateTime? fromDate = null, string? searchTerm = null)
     {
         var query = _dbContext.Orders.Include(o => o.OrderItems).AsNoTracking().AsQueryable();
 
@@ -58,6 +57,26 @@ public class OrderService : IOrderService
             query = query.Where(o => o.DeliveryType == deliveryType.Value);
         if (customerId.HasValue)
             query = query.Where(o => o.CustomerId == customerId.Value);
+        if (fromDate.HasValue)
+            query = query.Where(o => o.OrderDate >= fromDate.Value);
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var pattern = $"%{searchTerm.Trim()}%";
+
+            // Phone lives on customers, not orders, so a phone search needs its own
+            // lookup rather than a LIKE directly on the orders query.
+            var matchingCustomerIds = await _dbContext.Customers
+                .AsNoTracking()
+                .Where(c => c.Phone != null && EF.Functions.Like(c.Phone, pattern))
+                .Select(c => c.CustomerId)
+                .ToListAsync();
+
+            query = query.Where(o =>
+                EF.Functions.Like(o.InvoiceNumber, pattern) ||
+                (o.CustomerName != null && EF.Functions.Like(o.CustomerName, pattern)) ||
+                matchingCustomerIds.Contains(o.CustomerId));
+        }
 
         var orders = await query.OrderByDescending(o => o.OrderDate).ToListAsync();
 
@@ -84,64 +103,300 @@ public class OrderService : IOrderService
         }).ToList();
     }
 
-    public async Task<OperationResult> UpdateOrderStatusAsync(int orderId, OrderStatus newStatus, string? notes = null)
+    // ── Staging: validate + describe an edit for the popup's pending list ─────────
+    // Nothing here writes to the database - see CommitPendingEditsAsync for the one
+    // place that actually does.
+
+    public async Task<StagedEditOutcome> BuildStatusChangeEditAsync(int orderId, OrderStatus newStatus, string? notes)
     {
+        var orderExists = await _dbContext.Orders.AsNoTracking().AnyAsync(o => o.OrderId == orderId);
+        if (!orderExists)
+            return StagedEditOutcome.Failure("الطلب غير موجود");
+
+        // Every status is offered regardless of the order's current one -
+        // sp_update_order_status is the sole authority on which transitions are actually
+        // valid, and rejects anything else with a clear Arabic RAISERROR message at
+        // commit time (see CommitPendingEditsAsync / ExtractFriendlyMessage).
+        var summary = $"تحديث الحالة إلى: {StatusLabel(newStatus)}";
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" — {notes}";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.StatusChange,
+            NewStatus = newStatus,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    public async Task<StagedEditOutcome> BuildFrameSwapEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes)
+    {
+        var itemExists = await _dbContext.OrderItems.AsNoTracking().AnyAsync(i => i.ItemId == itemId);
+        if (!itemExists)
+            return StagedEditOutcome.Failure("العنصر غير موجود");
+
+        var frame = await _dbContext.Frames.AsNoTracking().FirstOrDefaultAsync(f => f.FrameId == newFrameId);
+        if (frame is null)
+            return StagedEditOutcome.Failure("الإطار غير موجود");
+
+        var summary = $"استبدال الإطار التالف بـ {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج";
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" ({notes})";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.FrameSwap,
+            ItemId = itemId,
+            NewFrameId = newFrameId,
+            NewFrameAgreedPrice = newFrameAgreedPrice,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    public async Task<StagedEditOutcome> BuildFrameCompensationEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes)
+    {
+        var itemExists = await _dbContext.OrderItems.AsNoTracking().AnyAsync(i => i.ItemId == itemId);
+        if (!itemExists)
+            return StagedEditOutcome.Failure("العنصر غير موجود");
+
+        var frame = await _dbContext.Frames.AsNoTracking().FirstOrDefaultAsync(f => f.FrameId == newFrameId);
+        if (frame is null)
+            return StagedEditOutcome.Failure("الإطار غير موجود");
+
+        var summary = $"تعيين إطار تعويضي: {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج";
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" ({notes})";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.FrameCompensation,
+            ItemId = itemId,
+            NewFrameId = newFrameId,
+            NewFrameAgreedPrice = newFrameAgreedPrice,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    public async Task<StagedEditOutcome> BuildItemCancellationEditAsync(int itemId, CancelledFrameDisposition disposition, string? notes)
+    {
+        var item = await _dbContext.OrderItems.AsNoTracking().FirstOrDefaultAsync(i => i.ItemId == itemId);
+        if (item is null)
+            return StagedEditOutcome.Failure("العنصر غير موجود");
+
+        if (item.Status != OrderItemStatus.Active)
+            return StagedEditOutcome.Failure("هذا البند ملغي بالفعل");
+
+        // Worth saying up front rather than letting it come as a surprise after تأكيد:
+        // sp_cancel_order_item cancels the whole order once nothing active is left in it.
+        var otherActiveItems = await _dbContext.OrderItems
+            .AsNoTracking()
+            .CountAsync(i => i.OrderId == item.OrderId && i.ItemId != itemId && i.Status == OrderItemStatus.Active);
+
+        var summary = $"إلغاء البند: {ItemTypeLabel(item.ItemType)} — {item.ItemTotal:N0} ج"
+            + (disposition == CancelledFrameDisposition.Damage ? " (الإطار تالف)" : " (إرجاع الإطار للمخزون)");
+
+        if (otherActiveItems == 0)
+            summary += " ⚠️ آخر بند نشط — سيُلغى الطلب بالكامل";
+
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" ({notes})";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.ItemCancellation,
+            ItemId = itemId,
+            FrameDisposition = disposition,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    // Independent per-order attempts, not one shared transaction - a batch that mixes
+    // orders in different current statuses is expected to partially fail (e.g. a
+    // "cancelled" order can never move to "ready"), and failing the whole batch over
+    // one order that was never going to succeed would be worse than reporting exactly
+    // which ones didn't make it.
+    public async Task<BulkStatusUpdateResult> BulkUpdateStatusAsync(IReadOnlyList<int> orderIds, OrderStatus newStatus, string? notes)
+    {
+        var invoiceNumbers = await _dbContext.Orders
+            .AsNoTracking()
+            .Where(o => orderIds.Contains(o.OrderId))
+            .ToDictionaryAsync(o => o.OrderId, o => o.InvoiceNumber);
+
+        var failures = new List<BulkStatusUpdateFailure>();
+        var successCount = 0;
+
+        foreach (var orderId in orderIds)
+        {
+            try
+            {
+                await ExecUpdateStatusAsync(orderId, newStatus, notes);
+                successCount++;
+            }
+            catch (SqlException ex)
+            {
+                failures.Add(new BulkStatusUpdateFailure(orderId, invoiceNumbers.GetValueOrDefault(orderId, orderId.ToString()), ExtractFriendlyMessage(ex)));
+            }
+        }
+
+        return new BulkStatusUpdateResult { SuccessCount = successCount, Failures = failures };
+    }
+
+    // ── Commit: the only place any of this actually reaches the database ──────────
+    // Every staged edit is applied inside one transaction, so the popup's "several
+    // operations, one تأكيد" promise is a real all-or-nothing guarantee: if the third
+    // edit fails (a frame someone else took in the meantime, say), the first two are
+    // rolled back too rather than left half-applied.
+    public async Task<OperationResult> CommitPendingEditsAsync(int orderId, IReadOnlyList<PendingOrderEdit> edits)
+    {
+        if (edits.Count == 0)
+            return OperationResult.Success();
+
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
         try
         {
-            await _dbContext.Database.ExecuteSqlRawAsync(
-                "EXEC sp_update_order_status @order_id=@p_order_id, @new_status=@p_new_status, @changed_by=@p_changed_by, @notes=@p_notes",
-                new SqlParameter("@p_order_id", orderId),
-                new SqlParameter("@p_new_status", StatusToDb(newStatus)),
-                new SqlParameter("@p_changed_by", DefaultStaffUserId),
-                new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
+            foreach (var edit in edits)
+            {
+                switch (edit.Kind)
+                {
+                    case PendingEditKind.StatusChange:
+                        await ExecUpdateStatusAsync(orderId, edit.NewStatus!.Value, edit.Notes);
+                        break;
+                    case PendingEditKind.FrameSwap:
+                        await ExecSwapFrameAsync(edit.ItemId!.Value, edit.NewFrameId!.Value, edit.NewFrameAgreedPrice!.Value, edit.Notes);
+                        break;
+                    case PendingEditKind.FrameCompensation:
+                        await ExecAssignCompensationAsync(edit.ItemId!.Value, edit.NewFrameId!.Value, edit.NewFrameAgreedPrice!.Value, edit.Notes);
+                        break;
+                    case PendingEditKind.ItemCancellation:
+                        await ExecCancelItemAsync(edit.ItemId!.Value, edit.FrameDisposition!.Value, edit.Notes);
+                        break;
+                }
+            }
 
+            await transaction.CommitAsync();
             return OperationResult.Success();
         }
         catch (SqlException ex)
         {
-            // sp_update_order_status raises business-rule rejections (terminal state,
-            // ready->cancelled blocked, no active items, ...) via RAISERROR with a clear
-            // Arabic message - shown to staff as-is, same convention as NewOrderService.
-            return OperationResult.Failure(ex.Number is 2627 or 2601 ? "بيانات مكررة" : ex.Message);
+            await SafeRollbackAsync(transaction);
+            return OperationResult.Failure(ExtractFriendlyMessage(ex));
         }
         catch (Exception)
         {
+            await SafeRollbackAsync(transaction);
             return OperationResult.Failure(GenericErrorMessage);
         }
     }
 
-    public async Task<OperationResult> SwapDamagedFrameAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes = null)
+    private Task ExecUpdateStatusAsync(int orderId, OrderStatus newStatus, string? notes) =>
+        _dbContext.Database.ExecuteSqlRawAsync(
+            "EXEC sp_update_order_status @order_id=@p_order_id, @new_status=@p_new_status, @changed_by=@p_changed_by, @notes=@p_notes",
+            new SqlParameter("@p_order_id", orderId),
+            new SqlParameter("@p_new_status", StatusToDb(newStatus)),
+            new SqlParameter("@p_changed_by", _currentUser.RequireUserId()),
+            new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
+
+    private Task ExecSwapFrameAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes) =>
+        _dbContext.Database.ExecuteSqlRawAsync(
+            """
+            EXEC sp_swap_frame
+                @item_id = @p_item_id, @new_frame_agreed_price = @p_new_frame_agreed_price,
+                @new_frame_id = @p_new_frame_id, @old_frame_disposition = @p_old_frame_disposition,
+                @discount_reason = @p_discount_reason, @changed_by = @p_changed_by
+            """,
+            new SqlParameter("@p_item_id", itemId),
+            new SqlParameter("@p_new_frame_agreed_price", newFrameAgreedPrice),
+            new SqlParameter("@p_new_frame_id", newFrameId),
+            new SqlParameter("@p_old_frame_disposition", "damaged"),
+            new SqlParameter("@p_discount_reason", SqlDbType.NVarChar, 200) { Value = (object?)notes ?? DBNull.Value },
+            new SqlParameter("@p_changed_by", _currentUser.RequireUserId()));
+
+    private Task ExecAssignCompensationAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes) =>
+        _dbContext.Database.ExecuteSqlRawAsync(
+            """
+            EXEC sp_assign_compensation_frame
+                @item_id = @p_item_id, @frame_id = @p_frame_id,
+                @price_option = @p_price_option, @custom_price = @p_custom_price,
+                @notes = @p_notes, @changed_by = @p_changed_by
+            """,
+            new SqlParameter("@p_item_id", itemId),
+            new SqlParameter("@p_frame_id", newFrameId),
+            new SqlParameter("@p_price_option", "custom"),
+            new SqlParameter("@p_custom_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = newFrameAgreedPrice },
+            new SqlParameter("@p_notes", SqlDbType.NVarChar, 200) { Value = (object?)notes ?? DBNull.Value },
+            new SqlParameter("@p_changed_by", _currentUser.RequireUserId()));
+
+    // Cancelling the item flips order_items.status to 'cancelled', which the T2 trigger
+    // picks up: it re-sums item_total across the order's remaining active items into
+    // orders.total_amount, so the cancelled item's money drops out of the order total
+    // automatically. Nothing here needs to compute that.
+    private Task ExecCancelItemAsync(int itemId, CancelledFrameDisposition disposition, string? notes) =>
+        _dbContext.Database.ExecuteSqlRawAsync(
+            "EXEC sp_cancel_order_item @item_id=@p_item_id, @frame_disposition=@p_frame_disposition, @changed_by=@p_changed_by, @notes=@p_notes",
+            new SqlParameter("@p_item_id", itemId),
+            new SqlParameter("@p_frame_disposition", disposition == CancelledFrameDisposition.Damage ? "damage" : "return"),
+            new SqlParameter("@p_changed_by", _currentUser.RequireUserId()),
+            new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
+
+    // The stored procedures manage their own BEGIN/COMMIT/ROLLBACK. When one of them
+    // rolls back from inside our transaction the transaction is already doomed, so
+    // rolling it back again can itself throw - which must not mask the original error.
+    // A single SqlException can carry several SQL Server messages at once (SqlException.Errors),
+    // not just the one string SqlException.Message happens to surface. When a chained SP
+    // rejects a change from inside our ambient transaction, its own ROLLBACK TRANSACTION
+    // unwinds our outer transaction too, which makes SQL Server append its own "transaction
+    // count mismatch" diagnostic (error 266) alongside the SP's real RAISERROR message.
+    // Filtering out just error 266 and keeping whatever's left recovers the SP's actual,
+    // specific rejection reason instead of discarding it along with the noise.
+    private static string ExtractFriendlyMessage(SqlException ex)
+    {
+        if (ex.Number is 2627 or 2601)
+            return "بيانات مكررة";
+
+        const int TransactionCountMismatch = 266;
+        var realMessages = ex.Errors
+            .Cast<SqlError>()
+            .Where(e => e.Number != TransactionCountMismatch)
+            .Select(e => e.Message)
+            .ToList();
+
+        return realMessages.Count > 0 ? string.Join(" ", realMessages) : GenericErrorMessage;
+    }
+
+    private static async Task SafeRollbackAsync(Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction)
     {
         try
         {
-            await _dbContext.Database.ExecuteSqlRawAsync(
-                """
-                EXEC sp_swap_frame
-                    @item_id = @p_item_id, @new_frame_agreed_price = @p_new_frame_agreed_price,
-                    @new_frame_id = @p_new_frame_id, @old_frame_disposition = @p_old_frame_disposition,
-                    @discount_reason = @p_discount_reason, @changed_by = @p_changed_by
-                """,
-                new SqlParameter("@p_item_id", itemId),
-                new SqlParameter("@p_new_frame_agreed_price", newFrameAgreedPrice),
-                new SqlParameter("@p_new_frame_id", newFrameId),
-                new SqlParameter("@p_old_frame_disposition", "damaged"),
-                new SqlParameter("@p_discount_reason", SqlDbType.NVarChar, 200) { Value = (object?)notes ?? DBNull.Value },
-                new SqlParameter("@p_changed_by", DefaultStaffUserId));
-
-            return OperationResult.Success();
+            await transaction.RollbackAsync();
         }
-        catch (SqlException ex)
+        catch
         {
-            // sp_swap_frame raises business-rule rejections (terminal order, item not
-            // active, replacement frame unavailable, same-frame no-op, ...) via RAISERROR
-            // with a clear Arabic message - shown to staff as-is.
-            return OperationResult.Failure(ex.Number is 2627 or 2601 ? "بيانات مكررة" : ex.Message);
-        }
-        catch (Exception)
-        {
-            return OperationResult.Failure(GenericErrorMessage);
         }
     }
+
+    private static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    private static string ItemTypeLabel(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "إطار+عدسات",
+        OrderItemType.FrameOnly => "إطار فقط",
+        OrderItemType.LensesReplace => "استبدال عدسات",
+        _ => t.ToString()
+    };
+
+    private static string FrameLabel(Frame frame) => $"{frame.Brand} {frame.ModelName}".Trim();
 
     private static string StatusToDb(OrderStatus status) => status switch
     {

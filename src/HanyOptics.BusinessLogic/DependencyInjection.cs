@@ -14,6 +14,8 @@ public static class DependencyInjection
         services.AddScoped<INewOrderService, NewOrderService>();
         services.AddScoped<ICustomerService, CustomerService>();
 
+        services.AddScoped<IBusinessUserDirectory, BusinessUserDirectory>();
+
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();

@@ -1,10 +1,12 @@
 @model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
-@using HanyOptics.Domain.Entities
+@using HanyOptics.BusinessLogic.Models
 @using HanyOptics.Web.Controllers.Orders
 @{
     ViewData["Title"] = "طلب جديد";
     var doctors = (SelectListWithSelection)ViewBag.Doctors;
-    var order = (Order)ViewBag.Order;
+    // The order doesn't exist in the database yet - everything shown here comes from the
+    // draft held in the session until step 3 is submitted.
+    var draft = (OrderDraft)ViewBag.Draft;
 
     static string TypeLabel(HanyOptics.Domain.Enums.OrderItemType t) => t switch
     {
@@ -25,8 +27,7 @@
 
 <div class="page-header">
     <span class="page-header-title disabled" title="أكمل الطلب الحالي أو ألغه أولاً لبدء طلب جديد">➕ طلب جديد</span>
-    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب نهائياً. هل أنت متأكد؟');">
-        <input type="hidden" name="orderId" value="@order.OrderId" />
+    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب. هل أنت متأكد؟');">
         <button type="submit" class="btn btn-outline">إلغاء</button>
     </form>
 </div>
@@ -48,14 +49,14 @@
 
 <div class="wizard-content">
     <div class="flex gap-2 mb-3 flex-wrap items-center">
-        <span class="info-chip">📄 <bdi>@order.InvoiceNumber</bdi></span>
-        @if (!string.IsNullOrWhiteSpace((string?)ViewBag.CustomerPhone))
+        <span class="info-chip">📄 <bdi>@draft.InvoiceNumber</bdi></span>
+        @if (!string.IsNullOrWhiteSpace(draft.Phone))
         {
-            <span class="info-chip">📱 @ViewBag.CustomerPhone</span>
+            <span class="info-chip">📱 @draft.Phone</span>
         }
-        @if (!string.IsNullOrWhiteSpace(order.CustomerName))
+        @if (!string.IsNullOrWhiteSpace(draft.CustomerName))
         {
-            <span class="info-chip">👤 @order.CustomerName</span>
+            <span class="info-chip">👤 @draft.CustomerName</span>
         }
     </div>
 
@@ -71,29 +72,28 @@
         </div>
     }
 
-    @if (order.OrderItems.Any())
+    @if (draft.Items.Any())
     {
         <div id="itemsListSection" style="margin-bottom:20px">
             <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px">✅ البنود المضافة</div>
-            @foreach (var item in order.OrderItems)
+            @foreach (var item in draft.Items)
             {
                 <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
                     <div>
                         <span class="badge @TypeBadgeClass(item.ItemType)" style="margin-left:6px">@TypeLabel(item.ItemType)</span>
-                        <span style="font-size:13px;font-weight:600">@(item.ExternalFrameNotes ?? item.LensDescription ?? "—")</span>
+                        <span style="font-size:13px;font-weight:600">@(item.FrameLabel ?? item.ExternalFrameNotes ?? item.LensDescription ?? "—")</span>
                     </div>
                     <span style="font-size:15px;font-weight:800;color:#1a56db">@Money(item.ItemTotal)</span>
                 </div>
             }
             <div style="background:#eff6ff;border-radius:8px;padding:10px 14px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
                 <span style="font-size:13px;color:#1e40af">إجمالي البنود حتى الآن</span>
-                <span style="font-size:18px;font-weight:800;color:#1a56db">@Money(order.TotalAmount)</span>
+                <span style="font-size:18px;font-weight:800;color:#1a56db">@Money(draft.TotalAmount)</span>
             </div>
         </div>
     }
 
     <form asp-action="NewItem" method="post" id="itemForm">
-        <input type="hidden" asp-for="OrderId" />
         <input type="hidden" asp-for="DoctorId" />
 
         <div class="form-group">
@@ -138,10 +138,16 @@
 
         <div id="extFrameSection" style="display:none">
             <div class="section-divider"><span>📦 إطار الزبون</span></div>
-            <div class="form-group">
-                <label>وصف إطار الزبون *</label>
-                <input asp-for="ExternalFrameNotes" id="extFrameInput" placeholder="مثال: إطار Gucci أسود — جاب من عنده" />
-                <span asp-validation-for="ExternalFrameNotes" class="field-error"></span>
+            <button type="button" class="collapsible-btn" id="extFrameToggleBtn">
+                <span>📦 وصف إطار الزبون (اختياري)</span><span id="extFrameArrow">▼</span>
+            </button>
+            <div class="collapsible-content" id="extFrameContent">
+                <div class="form-group">
+                    <label>وصف إطار الزبون</label>
+                    <input asp-for="ExternalFrameNotes" id="extFrameInput" placeholder="مثال: إطار Gucci أسود — جاب من عنده" />
+                    <span asp-validation-for="ExternalFrameNotes" class="field-error"></span>
+                    <div class="form-hint">اختياري — المهم هنا هو بيانات العدسات</div>
+                </div>
             </div>
         </div>
 
@@ -216,7 +222,7 @@
         </div>
 
         <div class="wizard-footer">
-            <a class="btn btn-outline" asp-action="EditOrder" asp-route-orderId="@order.OrderId" asp-route-doctorId="@Model.DoctorId">→ رجوع</a>
+            <a class="btn btn-outline" asp-action="New">→ رجوع</a>
             <div class="flex gap-2">
                 <button type="submit" name="SubmitAction" value="add" class="btn btn-outline" title="أضف هذا البند وابدأ بند جديد">+ إضافة بند آخر</button>
                 <button type="submit" name="SubmitAction" value="next" class="btn btn-primary btn-lg">التالي — الدفع ←</button>
@@ -267,7 +273,8 @@
 
                 barcodeInput.required = showFrame;
                 framePriceInput.required = showFrame;
-                extFrameInput.required = showExtFrame;
+                // The customer's own frame is only ever a free-text note - never required.
+                extFrameInput.required = false;
                 lensDescInput.required = showLens;
                 lensSellInput.required = showLens;
 
@@ -278,6 +285,21 @@
             framePriceInput.addEventListener('input', updateTotal);
             lensSellInput.addEventListener('input', updateTotal);
             onItemTypeChange();
+
+            const extFrameContent = document.getElementById('extFrameContent');
+            const extFrameArrow = document.getElementById('extFrameArrow');
+
+            document.getElementById('extFrameToggleBtn').addEventListener('click', function () {
+                const open = extFrameContent.classList.toggle('open');
+                extFrameArrow.textContent = open ? '▲' : '▼';
+            });
+
+            // Don't hide a note that's already been written (validation re-render, or the
+            // user coming back to this step) behind a collapsed toggle.
+            if (extFrameInput.value.trim()) {
+                extFrameContent.classList.add('open');
+                extFrameArrow.textContent = '▲';
+            }
 
             document.getElementById('rxToggleBtn').addEventListener('click', function () {
                 const section = document.getElementById('rxSection');

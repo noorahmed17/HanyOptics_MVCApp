@@ -5,44 +5,6 @@
     ViewData["Title"] = "الطلبات";
     var statusFilter = (OrderStatus?)ViewBag.StatusFilter;
     var deliveryFilter = (DeliveryType?)ViewBag.DeliveryFilter;
-    var arEg = new CultureInfo("ar-EG");
-
-    static string StatusBadgeClass(OrderStatus s) => s switch
-    {
-        OrderStatus.Sold => "badge-sold",
-        OrderStatus.Ready => "badge-ready",
-        OrderStatus.Delivered => "badge-delivered",
-        OrderStatus.Cancelled => "badge-cancelled",
-        _ => ""
-    };
-
-    static string StatusLabel(OrderStatus s) => s switch
-    {
-        OrderStatus.Sold => "بيع",
-        OrderStatus.Ready => "جاهز",
-        OrderStatus.Delivered => "تسليم",
-        OrderStatus.Cancelled => "ملغي",
-        _ => s.ToString()
-    };
-
-    static string TypeLabel(OrderItemType t) => t switch
-    {
-        OrderItemType.FrameLenses => "إطار+عدسات",
-        OrderItemType.FrameOnly => "إطار فقط",
-        OrderItemType.LensesReplace => "استبدال عدسات",
-        _ => t.ToString()
-    };
-
-    static string TypeBadgeClass(OrderItemType t) => t switch
-    {
-        OrderItemType.FrameLenses => "badge-fl",
-        OrderItemType.FrameOnly => "badge-fo",
-        OrderItemType.LensesReplace => "badge-lr",
-        _ => ""
-    };
-
-    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
-    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
 
     string TabUrl(OrderStatus? s) => Url.Action("Index", new { status = s?.ToString(), deliveryType = deliveryFilter?.ToString() })!;
 }
@@ -52,9 +14,16 @@
     <a class="btn btn-primary" asp-action="New">➕ طلب جديد</a>
 </div>
 
+<div class="text-sm text-muted" style="margin-bottom:10px">🕐 يعرض طلبات آخر 4 أيام فقط</div>
+
 @if (TempData["StatusUpdateError"] is string statusError)
 {
     <div class="alert alert-danger">⚠️ @statusError</div>
+}
+
+@if (TempData["BulkStatusMessage"] is string bulkMessage)
+{
+    <div class="alert alert-success">✅ @bulkMessage</div>
 }
 
 <div style="margin-bottom:14px">
@@ -80,47 +49,48 @@
     </form>
 </div>
 
+<div id="bulkToolbar" class="card" style="display:none; margin-bottom:14px">
+    <div class="card-body flex items-center gap-2" style="justify-content:space-between; padding:10px 16px">
+        <span><b id="bulkSelectedCount">0</b> طلب محدد</span>
+        <div class="flex items-center gap-2">
+            <select id="bulkStatusSelect" style="width:150px">
+                <option value="Sold">بيع</option>
+                <option value="Ready">جاهز</option>
+                <option value="Delivered">تسليم</option>
+                <option value="Cancelled">ملغي</option>
+            </select>
+            <button type="button" class="btn btn-primary btn-sm" onclick="submitBulkStatusUpdate()">تحديث الحالة</button>
+            <button type="button" class="btn btn-outline btn-sm" onclick="clearBulkSelection()">إلغاء التحديد</button>
+        </div>
+    </div>
+</div>
+
+<form asp-action="BulkUpdateStatus" method="post" id="bulkStatusForm" style="display:none">
+    @Html.AntiForgeryToken()
+    <input type="hidden" name="status" value="@statusFilter" />
+    <input type="hidden" name="deliveryType" value="@deliveryFilter" />
+    <input type="hidden" name="newStatus" id="bulkNewStatus" />
+</form>
+
 <div class="card">
     <div class="card-body">
-        @if (!Model.Any())
-        {
-            <div class="empty-state">لا توجد طلبات مطابقة</div>
-        }
-        else
-        {
-            <table id="ordersTable">
-                <thead>
-                    <tr>
-                        <th>الفاتورة</th>
-                        <th>العميل</th>
-                        <th>النوع</th>
-                        <th>الإجمالي</th>
-                        <th>المدفوع</th>
-                        <th>المتبقي</th>
-                        <th>الحالة</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var o in Model)
-                    {
-                        <tr class="clickable" onclick="openOrderDetail(@o.OrderId)" data-search="@($"{o.InvoiceNumber} {o.CustomerName} {o.CustomerPhone}".ToLowerInvariant())">
-                            <td><b><bdi>@o.InvoiceNumber</bdi></b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
-                            <td>@o.CustomerName<br /><span class="text-sm text-muted">@(o.CustomerPhone ?? "—")</span></td>
-                            <td>@foreach (var t in o.ItemTypes)
-                                {
-                                    <span class="badge @TypeBadgeClass(t)">@TypeLabel(t)</span>
-                                }</td>
-                            <td class="fw-bold c-blue">@Money(o.TotalAmount)</td>
-                            <td class="fw-bold c-green">@Money(o.PaidAmount)</td>
-                            <td class="fw-bold @(o.RemainingAmount > 0 ? "c-red" : "c-green")">
-                                @(o.RemainingAmount > 0 ? Money(o.RemainingAmount) : "✅ مكتمل")
-                            </td>
-                            <td><span class="badge @StatusBadgeClass(o.Status)">@StatusLabel(o.Status)</span></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        }
+        <table id="ordersTable">
+            <thead>
+                <tr>
+                    <th style="width:32px"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this)" /></th>
+                    <th>الفاتورة</th>
+                    <th>العميل</th>
+                    <th>النوع</th>
+                    <th>الإجمالي</th>
+                    <th>المدفوع</th>
+                    <th>المتبقي</th>
+                    <th>الحالة</th>
+                </tr>
+            </thead>
+            <tbody id="ordersTableBody">
+                <partial name="_OrdersTableRows" model="Model" />
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -129,18 +99,122 @@
 
 @section Scripts {
     <script>
+        // Selection lives here, independent of the checkbox DOM nodes - searching (or
+        // clearing search) replaces the whole tbody, which would otherwise wipe out
+        // whatever was already checked. The point of searching is to find one more order
+        // to add to a selection already in progress, not to start over, so a row checked
+        // before a search still counts (and still gets submitted) even while it's
+        // scrolled out of view behind the search results.
+        const selectedOrderIds = new Set();
+
+        function syncCheckboxesWithSelection() {
+            const checkboxes = document.querySelectorAll('.order-select-checkbox');
+            checkboxes.forEach(function (cb) { cb.checked = selectedOrderIds.has(cb.value); });
+
+            const selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll) selectAll.checked = checkboxes.length > 0 && Array.from(checkboxes).every(function (cb) { return cb.checked; });
+        }
+
+        // The table only ever loads the default last-4-days window (see Index), so
+        // filtering the rows already in the DOM can never find an older order. Typing
+        // instead asks the server (SearchOrders, no fromDate) so a match anywhere in
+        // time turns up and can be selected for bulk status updates like any other row.
+        // Clearing the box restores the original last-4-days rows from cache rather than
+        // re-fetching, since that's exactly what was there before searching started.
         (function () {
             const input = document.getElementById('orderSearch');
-            const rows = document.querySelectorAll('#ordersTable tbody tr');
-            if (!input) return;
+            const tbody = document.getElementById('ordersTableBody');
+            if (!input || !tbody) return;
+
+            const initialHtml = tbody.innerHTML;
+            let debounceTimer = null;
 
             input.addEventListener('input', function () {
-                const term = input.value.trim().toLowerCase();
-                rows.forEach(function (row) {
-                    row.style.display = row.dataset.search.includes(term) ? '' : 'none';
-                });
+                clearTimeout(debounceTimer);
+                const term = input.value.trim();
+
+                if (!term) {
+                    tbody.innerHTML = initialHtml;
+                    syncCheckboxesWithSelection();
+                    return;
+                }
+
+                debounceTimer = setTimeout(function () {
+                    const params = new URLSearchParams({ term: term, status: '@statusFilter', deliveryType: '@deliveryFilter' });
+                    fetch('@Url.Action("SearchOrders")?' + params.toString())
+                        .then(r => r.ok ? r.text() : Promise.reject())
+                        .then(function (html) {
+                            tbody.innerHTML = html;
+                            syncCheckboxesWithSelection();
+                        })
+                        .catch(function () {
+                            tbody.innerHTML = '<tr><td colspan="8" class="empty-state">تعذر البحث — حاول مرة أخرى</td></tr>';
+                        });
+                }, 300);
             });
         })();
+
+        // Row-selection toolbar - lets staff update several orders' status in one go
+        // instead of opening each order's popup individually. Selection is submitted as
+        // a plain POST (not AJAX like the popup's staged edits) because a full redirect
+        // back to Index is exactly what's wanted here: the table needs to re-render with
+        // the now-updated statuses.
+        function onOrderCheckboxChange(checkbox) {
+            if (checkbox.checked) selectedOrderIds.add(checkbox.value);
+            else selectedOrderIds.delete(checkbox.value);
+
+            const selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll && !checkbox.checked) selectAll.checked = false;
+
+            updateBulkToolbar();
+        }
+
+        function updateBulkToolbar() {
+            document.getElementById('bulkSelectedCount').textContent = selectedOrderIds.size;
+            document.getElementById('bulkToolbar').style.display = selectedOrderIds.size > 0 ? '' : 'none';
+        }
+
+        function toggleSelectAll(checkbox) {
+            document.querySelectorAll('.order-select-checkbox').forEach(function (cb) {
+                if (checkbox.checked) selectedOrderIds.add(cb.value);
+                else selectedOrderIds.delete(cb.value);
+                cb.checked = checkbox.checked;
+            });
+            updateBulkToolbar();
+        }
+
+        function clearBulkSelection() {
+            selectedOrderIds.clear();
+            document.querySelectorAll('.order-select-checkbox').forEach(function (cb) { cb.checked = false; });
+            const selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll) selectAll.checked = false;
+            updateBulkToolbar();
+        }
+
+        const BULK_STATUS_LABELS = { Sold: 'بيع', Ready: 'جاهز', Delivered: 'تسليم', Cancelled: 'ملغي' };
+
+        function submitBulkStatusUpdate() {
+            if (selectedOrderIds.size === 0) return;
+
+            const statusValue = document.getElementById('bulkStatusSelect').value;
+            const label = BULK_STATUS_LABELS[statusValue] || statusValue;
+            if (!confirm('هل أنت متأكد من تحديث حالة ' + selectedOrderIds.size + ' طلب إلى: ' + label + '؟')) return;
+
+            const form = document.getElementById('bulkStatusForm');
+            document.getElementById('bulkNewStatus').value = statusValue;
+
+            form.querySelectorAll('.bulk-order-id-input').forEach(function (el) { el.remove(); });
+            selectedOrderIds.forEach(function (id) {
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'orderIds';
+                hidden.className = 'bulk-order-id-input';
+                hidden.value = id;
+                form.appendChild(hidden);
+            });
+
+            form.submit();
+        }
 
         function openOrderDetail(id) {
             fetch('@Url.Action("Detail")?id=' + id)
@@ -158,6 +232,20 @@
             document.getElementById('orderDetailModal').classList.remove('show');
         }
 
+        // Staging a change (تحديث الحالة / الإطار تالف / removing a pending edit) posts in
+        // the background and swaps the response straight into the still-open popup -
+        // never a real page navigation, so the popup itself never closes and reopens.
+        // Only the outer تأكيد (a plain, un-intercepted submit) actually leaves the page,
+        // because closing on a successful commit is the one point that's meant to happen.
+        function stageEdit(event) {
+            event.preventDefault();
+            const form = event.target;
+            fetch(form.action, { method: 'POST', body: new FormData(form) })
+                .then(r => r.ok ? r.text() : Promise.reject())
+                .then(html => { document.getElementById('orderDetailModal').innerHTML = html; })
+                .catch(() => alert('حدث خطأ غير متوقع — حاول مرة أخرى'));
+        }
+
         function openStatusModal() {
             document.getElementById('statusModalOverlay').classList.add('show');
             document.getElementById('statusModal').classList.add('show');
@@ -168,8 +256,17 @@
             document.getElementById('statusModal').classList.remove('show');
         }
 
-        function openSwapModal(itemId, itemLabel, currentPrice) {
+        // 'swap' items already have an inventory frame (sp_swap_frame swaps it out).
+        // 'compensate' items never had one - استبدال عدسات with the customer's own
+        // external frame - so a replacement is assigned from stock via
+        // sp_assign_compensation_frame instead. Same modal either way; only the form's
+        // target action changes.
+        const SWAP_DAMAGED_FRAME_URL = '@Url.Action("StageFrameSwap")';
+        const ASSIGN_COMPENSATION_FRAME_URL = '@Url.Action("StageFrameCompensation")';
+
+        function openSwapModal(itemId, itemLabel, currentPrice, mode) {
             document.getElementById('swapItemLabel').textContent = 'استبدال إطار البند: ' + itemLabel + ' — السعر الحالي: ' + Number(currentPrice).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('swapForm').action = mode === 'compensate' ? ASSIGN_COMPENSATION_FRAME_URL : SWAP_DAMAGED_FRAME_URL;
             document.getElementById('swapItemId').value = itemId;
             document.getElementById('swapNewFrameId').value = '';
             document.getElementById('swapBarcodeInput').value = '';
@@ -184,6 +281,40 @@
         function closeSwapModal() {
             document.getElementById('swapModalOverlay').classList.remove('show');
             document.getElementById('swapModal').classList.remove('show');
+        }
+
+        // Cancelling one item out of an order. The frame-disposition picker only matters
+        // for items that actually have a frame; hiding it otherwise keeps the choice from
+        // looking consequential when it isn't (the SP's 'return' default is a no-op then).
+        function openCancelItemModal(itemId, itemLabel, itemTotal, isLastActiveItem, hasFrame) {
+            document.getElementById('cancelItemLabel').textContent =
+                'إلغاء البند: ' + itemLabel + ' — ' + Number(itemTotal).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('cancelItemId').value = itemId;
+            document.getElementById('cancelItemLastWarning').style.display = isLastActiveItem ? '' : 'none';
+
+            const dispositionGroup = document.getElementById('cancelDispositionGroup');
+            dispositionGroup.style.display = hasFrame ? '' : 'none';
+            document.getElementById('cancelDisposition').value = 'Return';
+            updateCancelDispositionHint();
+
+            document.getElementById('cancelItemForm').querySelector('input[name="notes"]').value = '';
+            document.getElementById('cancelItemModalOverlay').classList.add('show');
+            document.getElementById('cancelItemModal').classList.add('show');
+        }
+
+        // "damage" doesn't just write off the frame - sp_cancel_order_item treats the
+        // item's lenses as lost too rather than restocking them. Spelling that out here
+        // because it's not something the label itself implies.
+        function updateCancelDispositionHint() {
+            const value = document.getElementById('cancelDisposition').value;
+            document.getElementById('cancelDispositionHint').textContent = value === 'Damage'
+                ? 'سيتم شطب الإطار وتسجيله في سجل التوالف، ولن تُرجَع العدسات للمخزون.'
+                : 'سيعود الإطار والعدسات إلى المخزون كقطع سليمة.';
+        }
+
+        function closeCancelItemModal() {
+            document.getElementById('cancelItemModalOverlay').classList.remove('show');
+            document.getElementById('cancelItemModal').classList.remove('show');
         }
 
         function searchSwapFrame() {

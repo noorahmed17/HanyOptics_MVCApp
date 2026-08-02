@@ -1,0 +1,68 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.OrderListItem>
+@{
+    var arEg = new CultureInfo("ar-EG");
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    static string TypeLabel(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "إطار+عدسات",
+        OrderItemType.FrameOnly => "إطار فقط",
+        OrderItemType.LensesReplace => "استبدال عدسات",
+        _ => t.ToString()
+    };
+
+    static string TypeBadgeClass(OrderItemType t) => t switch
+    {
+        OrderItemType.FrameLenses => "badge-fl",
+        OrderItemType.FrameOnly => "badge-fo",
+        OrderItemType.LensesReplace => "badge-lr",
+        _ => ""
+    };
+
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
+}
+@if (!Model.Any())
+{
+    <tr><td colspan="8" class="empty-state">لا توجد طلبات مطابقة</td></tr>
+}
+else
+{
+    @foreach (var o in Model)
+    {
+        <tr class="clickable" onclick="openOrderDetail(@o.OrderId)">
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="order-select-checkbox" value="@o.OrderId" onchange="onOrderCheckboxChange(this)" /></td>
+            <td><b><bdi>@o.InvoiceNumber</bdi></b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
+            <td>@o.CustomerName<br /><span class="text-sm text-muted">@(o.CustomerPhone ?? "—")</span></td>
+            <td>@foreach (var t in o.ItemTypes)
+                {
+                    <span class="badge @TypeBadgeClass(t)">@TypeLabel(t)</span>
+                }</td>
+            <td class="fw-bold c-blue">@Money(o.TotalAmount)</td>
+            <td class="fw-bold c-green">@Money(o.PaidAmount)</td>
+            <td class="fw-bold @(o.RemainingAmount > 0 ? "c-red" : "c-green")">
+                @(o.RemainingAmount > 0 ? Money(o.RemainingAmount) : "✅ مكتمل")
+            </td>
+            <td><span class="badge @StatusBadgeClass(o.Status)">@StatusLabel(o.Status)</span></td>
+        </tr>
+    }
+}

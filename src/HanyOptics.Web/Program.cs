@@ -20,6 +20,26 @@ builder.Services.AddHanyOpticsIdentity(builder.Configuration);
 // Business rules: order/customer services, JWT issuance, auth orchestration, seeding.
 builder.Services.AddHanyOpticsBusinessLogic(builder.Configuration);
 
+// Supplies the acting user's business `users`.user_id to the services, so every stored
+// procedure stamps whoever actually performed the operation.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// The "new order" wizard builds the order in the session and only writes it to the
+// database on the final step, so an abandoned wizard leaves nothing behind.
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+builder.Services.AddScoped<IOrderDraftStore, SessionOrderDraftStore>();
+
+// The order-detail popup's "hold several changes, apply them all on the outer تأكيد"
+// staging area - same session mechanism as the new-order wizard's draft.
+builder.Services.AddScoped<IPendingOrderEditsStore, SessionPendingOrderEditsStore>();
+
 var jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Jwt configuration section is missing.");
 
@@ -88,6 +108,8 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+app.UseSession();
 
 app.UseAuthentication();
 app.UseAuthorization();

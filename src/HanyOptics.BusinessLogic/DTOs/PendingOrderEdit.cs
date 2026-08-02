@@ -1,0 +1,60 @@
+using HanyOptics.Domain.Enums;
+
+namespace HanyOptics.BusinessLogic.Models;
+
+public enum PendingEditKind
+{
+    StatusChange,
+    FrameSwap,
+    FrameCompensation,
+    ItemCancellation
+}
+
+// What happens to the item's frame when the item is cancelled. 'return' puts it back in
+// stock as sellable; 'damage' writes it off to frame_damage_log and - per
+// sp_cancel_order_item - treats the item's lenses as lost too rather than restocking them.
+public enum CancelledFrameDisposition
+{
+    Return,
+    Damage
+}
+
+// One operation staged from the order-detail popup but not yet applied to the database.
+// The popup can hold several of these at once (a status change plus a frame replacement,
+// say); nothing happens to any of them until the popup's outer "تأكيد" commits the whole
+// set as one unit - see IPendingOrderEditsStore and OrderService.CommitPendingEditsAsync.
+//
+// Held in the session as JSON, so - like OrderDraft - this stays a plain data object.
+public class PendingOrderEdit
+{
+    public Guid EditId { get; set; } = Guid.NewGuid();
+    public PendingEditKind Kind { get; set; }
+
+    // Arabic, ready to show as-is in the "التغييرات المعلقة" list - built once when the
+    // edit is staged (Order/frame lookups needed to phrase it are already available then;
+    // deferring that to render time would mean re-querying on every popup reopen).
+    public string Summary { get; set; } = string.Empty;
+
+    // StatusChange
+    public OrderStatus? NewStatus { get; set; }
+
+    // FrameSwap / FrameCompensation / ItemCancellation
+    public int? ItemId { get; set; }
+    public int? NewFrameId { get; set; }
+    public decimal? NewFrameAgreedPrice { get; set; }
+
+    // ItemCancellation
+    public CancelledFrameDisposition? FrameDisposition { get; set; }
+
+    public string? Notes { get; set; }
+}
+
+// The one order currently being edited in this session, and everything staged for it.
+// Single-slot like OrderDraft: opening a different order's popup and staging something
+// there simply replaces this - the previous order's stale, never-applied edits are
+// harmless and just get overwritten.
+public class PendingOrderEditSet
+{
+    public int OrderId { get; set; }
+    public List<PendingOrderEdit> Edits { get; set; } = new();
+}

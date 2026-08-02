@@ -61,14 +61,13 @@
         l.NewStatus switch { OrderStatus.Delivered => "green", OrderStatus.Cancelled => "red", _ => "" }
     );
 
-    // Valid next statuses per sp_update_order_status's own transition matrix - the SP is
-    // still the one enforcing this, this list only decides whether to offer the button.
-    static IReadOnlyList<OrderStatus> NextStatuses(OrderStatus current) => current switch
-    {
-        OrderStatus.Sold => new[] { OrderStatus.Ready, OrderStatus.Delivered, OrderStatus.Cancelled },
-        OrderStatus.Ready => new[] { OrderStatus.Delivered },
-        _ => Array.Empty<OrderStatus>()
-    };
+    // All three target statuses are always offered, regardless of the order's current
+    // status - sp_update_order_status is the sole authority on which transitions are
+    // actually valid, and rejects anything else with a clear Arabic RAISERROR message
+    // (surfaced as-is by CommitPendingEditsAsync). The UI doesn't try to replicate that
+    // matrix, so there's only one place the transition rules can ever drift out of date.
+    static IReadOnlyList<OrderStatus> NextStatuses(OrderStatus current) =>
+        new[] { OrderStatus.Ready, OrderStatus.Delivered, OrderStatus.Cancelled };
 
     string Money(decimal n) => n.ToString("N0", arEg) + " ج";
     string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
@@ -76,10 +75,23 @@
 
     var nextStatuses = NextStatuses(order.Status);
 
-    // sp_swap_frame itself blocks terminal orders and non-active items - this only
-    // decides whether to offer the "الإطار تالف" trigger.
+    // sp_swap_frame / sp_assign_compensation_frame themselves block terminal orders and
+    // non-active items - this only decides whether to offer the "الإطار تالف" trigger.
+    // An item with FrameId set (frame_lenses/frame_only from inventory) swaps via
+    // sp_swap_frame; one without (استبدال عدسات, customer's own external frame) gets a
+    // compensation frame via sp_assign_compensation_frame instead - same button, same
+    // modal, different endpoint underneath (see openSwapModal's mode argument).
+    static bool CanReplaceFrame(HanyOptics.Domain.Entities.OrderItem i) =>
+        i.Status == OrderItemStatus.Active && (i.FrameId.HasValue || i.ItemType == OrderItemType.LensesReplace);
+
     var orderIsTerminal = order.Status is OrderStatus.Delivered or OrderStatus.Cancelled;
-    var hasSwappableItem = !orderIsTerminal && order.OrderItems.Any(i => i.FrameId.HasValue && i.Status == OrderItemStatus.Active);
+    var hasSwappableItem = !orderIsTerminal && order.OrderItems.Any(CanReplaceFrame);
+
+    // Same philosophy as CanReplaceFrame: this only decides whether to offer the button.
+    // sp_cancel_order_item stays the authority on whether the cancellation is allowed
+    // (it also refuses items on a 'ready' order) and rejects with its own Arabic message.
+    var activeItemCount = order.OrderItems.Count(i => i.Status == OrderItemStatus.Active);
+    var hasCancellableItem = !orderIsTerminal && activeItemCount > 0;
 }
 
 <div class="modal-header">
@@ -88,6 +100,11 @@
 </div>
 
 <div class="modal-body">
+    @if (ViewBag.PendingEditError is string pendingEditError)
+    {
+        <div class="alert alert-danger mb-2">⚠️ @pendingEditError</div>
+    }
+
     <div class="detail-section">
         <div class="detail-grid">
             <div class="detail-row"><span class="detail-label">اسم السجل</span><span class="detail-val">@(Model.Customer?.Name ?? "بدون اسم")</span></div>
@@ -118,6 +135,24 @@
         }
     </div>
 
+    @if (Model.PendingEdits.Any())
+    {
+        <div class="detail-section" style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px">
+            <h4>⏳ التغييرات المعلقة (@Model.PendingEdits.Count) — لن تُحفظ إلا بعد الضغط على تأكيد</h4>
+            @foreach (var edit in Model.PendingEdits)
+            {
+                <div class="flex items-center gap-2" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid #fef3c7">
+                    <span style="font-size:13px">@edit.Summary</span>
+                    <form asp-action="RemovePendingEdit" method="post" onsubmit="stageEdit(event)">
+                        <input type="hidden" name="orderId" value="@order.OrderId" />
+                        <input type="hidden" name="editId" value="@edit.EditId" />
+                        <button type="submit" class="btn btn-outline btn-sm" title="إلغاء هذا التغيير">✕</button>
+                    </form>
+                </div>
+            }
+        </div>
+    }
+
     <div class="detail-section">
         <h4>
             <span>📦 البنود (@order.OrderItems.Count)</span>
@@ -129,23 +164,37 @@
 
         @foreach (var it in order.OrderItems)
         {
-            var frameInfo = !string.IsNullOrWhiteSpace(it.ExternalFrameNotes) ? $"📦 {it.ExternalFrameNotes}" : (it.FrameId.HasValue ? "🗃️ إطار من المخزون" : null);
-            <div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid #e2e8f0">
+            var frameInfo = it.CompensationFrameId.HasValue
+                ? "🔁 إطار تعويضي من المخزون"
+                : (!string.IsNullOrWhiteSpace(it.ExternalFrameNotes) ? $"📦 {it.ExternalFrameNotes}" : (it.FrameId.HasValue ? "🗃️ إطار من المخزون" : null));
+            var itemCancelled = it.Status != OrderItemStatus.Active;
+            <div style="background:@(itemCancelled ? "#f9fafb" : "#f8fafc");border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid #e2e8f0;@(itemCancelled ? "opacity:.65" : "")">
                 <div class="flex items-center gap-2 flex-wrap mb-2">
                     <span class="badge @TypeBadgeClass(it.ItemType)">@TypeLabel(it.ItemType)</span>
+                    @if (itemCancelled)
+                    {
+                        <span class="badge badge-cancelled">ملغي</span>
+                    }
                     @if (frameInfo is not null)
                     {
                         <span class="info-chip">@frameInfo</span>
                     }
-                    <span style="margin-right:auto;font-size:16px;font-weight:800;color:#1a56db">@Money(it.ItemTotal)</span>
+                    <span style="margin-right:auto;font-size:16px;font-weight:800;color:@(itemCancelled ? "#9ca3af" : "#1a56db");@(itemCancelled ? "text-decoration:line-through" : "")">@Money(it.ItemTotal)</span>
                 </div>
-                @if (it.FrameId.HasValue || !string.IsNullOrWhiteSpace(it.ExternalFrameNotes))
+                @if (it.FrameId.HasValue || it.CompensationFrameId.HasValue || !string.IsNullOrWhiteSpace(it.ExternalFrameNotes))
                 {
                     <div class="detail-row"><span class="detail-label">سعر الإطار</span><span class="detail-val">@Money(it.FrameAgreedPrice)</span></div>
                 }
-                @if (it.FrameId.HasValue && it.Status == OrderItemStatus.Active && !orderIsTerminal)
+                @if (!itemCancelled && !orderIsTerminal)
                 {
-                    <button type="button" class="btn btn-outline btn-sm mt-2" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture))">⚠️ الإطار تالف — استبدال</button>
+                    <div class="flex items-center gap-2 flex-wrap mt-2">
+                        @if (CanReplaceFrame(it))
+                        {
+                            var replaceMode = it.FrameId.HasValue ? "swap" : "compensate";
+                            <button type="button" class="btn btn-outline btn-sm" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), '@replaceMode')">⚠️ الإطار تالف — استبدال</button>
+                        }
+                        <button type="button" class="btn btn-outline btn-sm" onclick="openCancelItemModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.ItemTotal.ToString(System.Globalization.CultureInfo.InvariantCulture), @(activeItemCount == 1 ? "true" : "false"), @(it.FrameId.HasValue || it.CompensationFrameId.HasValue ? "true" : "false"))" style="color:#dc2626">🗑️ إلغاء البند</button>
+                    </div>
                 }
                 @if (!string.IsNullOrWhiteSpace(it.LensDescription))
                 {
@@ -213,9 +262,12 @@
 
 <div class="modal-footer">
     <button type="button" class="btn btn-outline" onclick="closeOrderDetail()">إغلاق</button>
-    @if (nextStatuses.Any())
+    @if (Model.PendingEdits.Any())
     {
-        <button type="submit" form="statusForm" class="btn btn-primary">تأكيد</button>
+        <form id="confirmEditsForm" asp-action="ConfirmPendingEdits" method="post" style="display:contents">
+            <input type="hidden" name="orderId" value="@order.OrderId" />
+            <button type="submit" class="btn btn-primary">تأكيد (@Model.PendingEdits.Count)</button>
+        </form>
     }
 </div>
 
@@ -228,11 +280,12 @@
             <button type="button" class="modal-close" onclick="closeStatusModal()">✕</button>
         </div>
         <div class="modal-body">
-            <form id="statusForm" asp-action="UpdateStatus" method="post">
+            <form id="statusForm" asp-action="StageStatusChange" method="post" onsubmit="stageEdit(event)">
                 <input type="hidden" name="orderId" value="@order.OrderId" />
                 <div class="form-group">
                     <label>الحالة الجديدة</label>
-                    <select name="newStatus">
+                    <select name="newStatus" required>
+                        <option value="" selected disabled>-- اختر الحالة --</option>
                         @foreach (var s in nextStatuses)
                         {
                             <option value="@s">@StatusLabel(s)</option>
@@ -247,7 +300,7 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closeStatusModal()">إلغاء</button>
-            <button type="button" class="btn btn-primary" onclick="closeStatusModal()">تأكيد</button>
+            <button type="submit" form="statusForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }
@@ -262,7 +315,7 @@
         </div>
         <div class="modal-body">
             <div class="alert alert-info mb-2" id="swapItemLabel"></div>
-            <form id="swapForm" asp-action="SwapDamagedFrame" method="post">
+            <form id="swapForm" asp-action="StageFrameSwap" method="post" onsubmit="stageEdit(event)">
                 <input type="hidden" name="orderId" value="@order.OrderId" />
                 <input type="hidden" name="itemId" id="swapItemId" />
                 <input type="hidden" name="newFrameId" id="swapNewFrameId" />
@@ -290,7 +343,53 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closeSwapModal()">إلغاء</button>
-            <button type="submit" form="swapForm" id="swapConfirmBtn" class="btn btn-primary" disabled>تأكيد الاستبدال</button>
+            <button type="submit" form="swapForm" id="swapConfirmBtn" class="btn btn-primary" disabled>إضافة للتغييرات المعلقة</button>
+        </div>
+    </div>
+}
+
+@if (hasCancellableItem)
+{
+    <div class="overlay" id="cancelItemModalOverlay" style="z-index:110" onclick="closeCancelItemModal()"></div>
+    <div class="modal modal-sm" id="cancelItemModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">🗑️ إلغاء بند</span>
+            <button type="button" class="modal-close" onclick="closeCancelItemModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2" id="cancelItemLabel"></div>
+
+            @* Shown only when this is the order's last active item - sp_cancel_order_item
+               cancels the whole order at that point, which is worth saying before staging. *@
+            <div class="alert alert-warning mb-2" id="cancelItemLastWarning" style="display:none">
+                ⚠️ هذا آخر بند نشط في الطلب — إلغاؤه سيؤدي إلى إلغاء الطلب بالكامل.
+            </div>
+
+            <form id="cancelItemForm" asp-action="StageItemCancellation" method="post" onsubmit="stageEdit(event)">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="itemId" id="cancelItemId" />
+
+                @* Only meaningful when the item actually has a frame; for استبدال عدسات with
+                   no frame either choice is a no-op on stock, so the picker is hidden and
+                   the SP's default ('return') applies. *@
+                <div class="form-group" id="cancelDispositionGroup">
+                    <label>ماذا يحدث للإطار؟ *</label>
+                    <select name="disposition" id="cancelDisposition" onchange="updateCancelDispositionHint()" required>
+                        <option value="Return" selected>↩️ إرجاع الإطار للمخزون (سليم)</option>
+                        <option value="Damage">💥 الإطار تالف — شطب من المخزون</option>
+                    </select>
+                    <div class="text-sm text-muted mt-1" id="cancelDispositionHint"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>سبب الإلغاء / ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" placeholder="مثال: الزبون غيّر رأيه" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeCancelItemModal()">تراجع</button>
+            <button type="submit" form="cancelItemForm" class="btn btn-danger">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }

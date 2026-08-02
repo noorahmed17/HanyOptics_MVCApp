@@ -1,17 +1,17 @@
 @model HanyOptics.BusinessLogic.Models.NewOrderPaymentRequest
-@using HanyOptics.Domain.Entities
+@using HanyOptics.BusinessLogic.Models
 @{
     ViewData["Title"] = "طلب جديد";
-    var order = (Order)ViewBag.Order;
+    // Still nothing in the database - the order is written only when this step is submitted.
+    var draft = (OrderDraft)ViewBag.Draft;
     static string Money(decimal n) => n.ToString("N0") + " ج";
-    var frameTotal = order.OrderItems.Sum(i => i.FrameAgreedPrice);
-    var lensTotal = order.OrderItems.Sum(i => i.LensSellPrice);
+    var frameTotal = draft.FrameTotal;
+    var lensTotal = draft.LensTotal;
 }
 
 <div class="page-header">
     <span class="page-header-title disabled" title="أكمل الطلب الحالي أو ألغه أولاً لبدء طلب جديد">➕ طلب جديد</span>
-    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب نهائياً. هل أنت متأكد؟');">
-        <input type="hidden" name="orderId" value="@order.OrderId" />
+    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب. هل أنت متأكد؟');">
         <button type="submit" class="btn btn-outline">إلغاء</button>
     </form>
 </div>
@@ -33,16 +33,16 @@
 
 <div class="wizard-content">
     <div class="flex gap-2 mb-3 flex-wrap items-center">
-        <span class="info-chip">📄 <bdi>@order.InvoiceNumber</bdi></span>
-        @if (!string.IsNullOrWhiteSpace((string?)ViewBag.CustomerPhone))
+        <span class="info-chip">📄 <bdi>@draft.InvoiceNumber</bdi></span>
+        @if (!string.IsNullOrWhiteSpace(draft.Phone))
         {
-            <span class="info-chip">📱 @ViewBag.CustomerPhone</span>
+            <span class="info-chip">📱 @draft.Phone</span>
         }
-        @if (!string.IsNullOrWhiteSpace(order.CustomerName))
+        @if (!string.IsNullOrWhiteSpace(draft.CustomerName))
         {
-            <span class="info-chip">👤 @order.CustomerName</span>
+            <span class="info-chip">👤 @draft.CustomerName</span>
         }
-        <span class="info-chip">📦 @order.OrderItems.Count بند</span>
+        <span class="info-chip">📦 @draft.Items.Count بند</span>
     </div>
 
     @if (!ViewData.ModelState.IsValid)
@@ -60,13 +60,12 @@
     <div class="amount-box">
         <div class="amount-row"><span class="a-label">سعر الإطار</span><span class="a-val">@Money(frameTotal)</span></div>
         <div class="amount-row"><span class="a-label">سعر العدسات</span><span class="a-val">@Money(lensTotal)</span></div>
-        <div class="amount-row total"><span class="a-label">إجمالي الطلب</span><span class="a-val">@Money(order.TotalAmount)</span></div>
+        <div class="amount-row total"><span class="a-label">إجمالي الطلب</span><span class="a-val">@Money(draft.TotalAmount)</span></div>
     </div>
 
     <div class="section-divider"><span>💳 تسجيل الدفع</span></div>
 
     <form asp-action="NewPayment" method="post" id="paymentForm">
-        <input type="hidden" asp-for="OrderId" />
 
         <div class="form-group">
             <label>طريقة الدفع</label>
@@ -80,7 +79,7 @@
             <label>💰 المبلغ المدفوع (ج)</label>
             <input type="number" asp-for="Amount" id="amountInput" min="0" step="0.01" required placeholder="اكتب ٠ لو لسه معندوش دفعة" />
             <span asp-validation-for="Amount" class="field-error"></span>
-            <div class="form-hint">المتبقي حالياً: @Money(order.RemainingAmount) — نوع الدفعة (عربون / كامل / نهائي) بيتحدد تلقائياً حسب المبلغ المتبقي على الطلب</div>
+            <div class="form-hint">إجمالي الطلب: @Money(draft.TotalAmount) — نوع الدفعة (عربون / كامل) بيتحدد تلقائياً حسب المبلغ المدفوع</div>
         </div>
 
         <div class="remaining-box">
@@ -89,7 +88,7 @@
         </div>
 
         <div class="wizard-footer">
-            <a class="btn btn-outline" asp-action="NewItem" asp-route-orderId="@order.OrderId" asp-route-doctorId="@order.DoctorId">→ رجوع</a>
+            <a class="btn btn-outline" asp-action="NewItem">→ رجوع</a>
             <button type="submit" class="btn btn-success btn-lg">✅ تسجيل الطلب</button>
         </div>
     </form>
@@ -98,7 +97,7 @@
 @section Scripts {
     <script>
         (function () {
-            const remainingBefore = @order.RemainingAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            const remainingBefore = @draft.TotalAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
             const amountInput = document.getElementById('amountInput');
             const remainingVal = document.getElementById('remainingVal');
 

@@ -10,15 +10,18 @@ public class AuthService : IAuthService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IBusinessUserDirectory _businessUsers;
 
     public AuthService(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        IJwtTokenService jwtTokenService)
+        IJwtTokenService jwtTokenService,
+        IBusinessUserDirectory businessUsers)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _jwtTokenService = jwtTokenService;
+        _businessUsers = businessUsers;
     }
 
     public async Task<AuthResult> RegisterAsync(RegisterRequest request)
@@ -27,8 +30,15 @@ public class AuthService : IAuthService
         if (existing is not null)
             return AuthResult.Failure("An account with this email already exists.");
 
+        // Order matters: the business `users` row is created first so its
+        // IDENTITY-generated user_id can be reused verbatim as the Identity primary key.
+        // That single shared id is what lets every stored procedure stamp created_by /
+        // received_by / changed_by straight from the JWT's NameIdentifier claim.
+        var businessUserId = await _businessUsers.CreateAsync(request.FullName, request.Email, isAdmin: false);
+
         var user = new ApplicationUser
         {
+            Id = businessUserId.ToString(),
             UserName = request.Email,
             Email = request.Email,
             FullName = request.FullName
@@ -36,7 +46,11 @@ public class AuthService : IAuthService
 
         var result = await _userManager.CreateAsync(user, request.Password);
         if (!result.Succeeded)
+        {
+            // Don't leave a staff row behind that no one can ever log in as.
+            await _businessUsers.DeleteIfUnreferencedAsync(businessUserId);
             return AuthResult.Failure(result.Errors.Select(e => e.Description).ToArray());
+        }
 
         await _userManager.AddToRoleAsync(user, Roles.User);
 
