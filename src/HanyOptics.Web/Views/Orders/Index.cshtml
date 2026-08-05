@@ -246,6 +246,18 @@
                 .catch(() => alert('حدث خطأ غير متوقع — حاول مرة أخرى'));
         }
 
+        function openPaymentModal() {
+            document.getElementById('paymentForm').reset();
+            document.getElementById('paymentModalOverlay').classList.add('show');
+            document.getElementById('paymentModal').classList.add('show');
+            document.getElementById('paymentAmountInput').focus();
+        }
+
+        function closePaymentModal() {
+            document.getElementById('paymentModalOverlay').classList.remove('show');
+            document.getElementById('paymentModal').classList.remove('show');
+        }
+
         function openStatusModal() {
             document.getElementById('statusModalOverlay').classList.add('show');
             document.getElementById('statusModal').classList.add('show');
@@ -265,17 +277,41 @@
         const ASSIGN_COMPENSATION_FRAME_URL = '@Url.Action("StageFrameCompensation")';
 
         function openSwapModal(itemId, itemLabel, currentPrice, mode) {
-            document.getElementById('swapItemLabel').textContent = 'استبدال إطار البند: ' + itemLabel + ' — السعر الحالي: ' + Number(currentPrice).toLocaleString('ar-EG') + ' ج';
-            document.getElementById('swapForm').action = mode === 'compensate' ? ASSIGN_COMPENSATION_FRAME_URL : SWAP_DAMAGED_FRAME_URL;
+            const compensating = mode === 'compensate';
+
+            document.getElementById('swapItemLabel').textContent =
+                (compensating ? 'تعيين إطار للبند: ' : 'تغيير إطار البند: ')
+                + itemLabel + ' — السعر الحالي: ' + Number(currentPrice).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('swapForm').action = compensating ? ASSIGN_COMPENSATION_FRAME_URL : SWAP_DAMAGED_FRAME_URL;
             document.getElementById('swapItemId').value = itemId;
             document.getElementById('swapNewFrameId').value = '';
             document.getElementById('swapBarcodeInput').value = '';
             document.getElementById('swapPriceInput').value = '';
+
+            // A compensation item never had a frame, so there is no old one to send back to
+            // stock or write off - the reason picker would be meaningless there.
+            const reasonGroup = document.getElementById('swapReasonGroup');
+            const reason = document.getElementById('swapReason');
+            reasonGroup.style.display = compensating ? 'none' : '';
+            reason.disabled = compensating;
+            reason.value = 'true';
+            updateSwapReasonHint();
+
+            document.getElementById('swapNotesInput').value = '';
             document.getElementById('swapFrameResult').classList.remove('show');
             document.getElementById('swapFrameError').classList.remove('show');
             document.getElementById('swapConfirmBtn').disabled = true;
             document.getElementById('swapModalOverlay').classList.add('show');
             document.getElementById('swapModal').classList.add('show');
+        }
+
+        // Spelling out the stock consequence, because "الزبون غيّر رأيه" vs "الإطار تالف"
+        // reads like a bookkeeping note but actually decides whether a frame stays sellable.
+        function updateSwapReasonHint() {
+            const returnsToStock = document.getElementById('swapReason').value === 'true';
+            document.getElementById('swapReasonHint').textContent = returnsToStock
+                ? 'الإطار القديم يعود للمخزون كقطعة سليمة، والإطار الجديد يُحجز مكانه.'
+                : 'الإطار القديم يُشطب ويُسجَّل في سجل التوالف، ولن يعود للمخزون.';
         }
 
         function closeSwapModal() {

@@ -135,7 +135,7 @@ public class OrderService : IOrderService
         });
     }
 
-    public async Task<StagedEditOutcome> BuildFrameSwapEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes)
+    public async Task<StagedEditOutcome> BuildFrameSwapEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? notes)
     {
         var itemExists = await _dbContext.OrderItems.AsNoTracking().AnyAsync(i => i.ItemId == itemId);
         if (!itemExists)
@@ -145,7 +145,12 @@ public class OrderService : IOrderService
         if (frame is null)
             return StagedEditOutcome.Failure("الإطار غير موجود");
 
-        var summary = $"استبدال الإطار التالف بـ {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج";
+        // The two cases have very different consequences for stock, so the summary says
+        // which one is staged rather than leaving it to be discovered after تأكيد.
+        var summary = returnOldFrameToStock
+            ? $"تغيير الإطار إلى {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج (الإطار القديم يعود للمخزون)"
+            : $"استبدال الإطار التالف بـ {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج (الإطار القديم يُشطب)";
+
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
 
@@ -155,6 +160,7 @@ public class OrderService : IOrderService
             ItemId = itemId,
             NewFrameId = newFrameId,
             NewFrameAgreedPrice = newFrameAgreedPrice,
+            ReturnOldFrameToStock = returnOldFrameToStock,
             Notes = notes,
             Summary = summary
         });
@@ -180,6 +186,53 @@ public class OrderService : IOrderService
             ItemId = itemId,
             NewFrameId = newFrameId,
             NewFrameAgreedPrice = newFrameAgreedPrice,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    public async Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes)
+    {
+        var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);
+        if (order is null)
+            return StagedEditOutcome.Failure("الطلب غير موجود");
+
+        if (amount <= 0)
+            return StagedEditOutcome.Failure("المبلغ غير صحيح");
+
+        // sp_add_payment only allows refunds against a cancelled order, and this path never
+        // creates one - caught here so it's said plainly rather than at commit time.
+        if (order.Status == OrderStatus.Cancelled)
+            return StagedEditOutcome.Failure("الطلب ملغي — لا يمكن تسجيل دفعة عليه");
+
+        if (order.RemainingAmount <= 0)
+            return StagedEditOutcome.Failure("الطلب مدفوع بالكامل — لا يوجد مبلغ متبقٍ");
+
+        // sp_add_payment permits overpayment (it leaves correcting it to a refund), but at
+        // this screen a number bigger than what's owed is almost always a typo, and the
+        // app has no notion of customer credit to put the excess into.
+        if (amount > order.RemainingAmount)
+            return StagedEditOutcome.Failure($"المبلغ أكبر من المتبقي ({order.RemainingAmount:N0} ج)");
+
+        // Derived, not chosen - same rule as the wizard's opening payment. 'full' only fits
+        // a payment that covers the whole order on its own; anything settling the rest of a
+        // part-paid order is 'final', and anything short of that is another deposit.
+        var paymentType = amount == order.RemainingAmount
+            ? (order.PaidAmount == 0 ? PaymentType.Full : PaymentType.Final)
+            : PaymentType.Deposit;
+
+        var remainingAfter = order.RemainingAmount - amount;
+        var summary = $"تسجيل دفعة: {amount:N0} ج ({PaymentTypeLabel(paymentType)}، {(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
+            + (remainingAfter > 0 ? $" — المتبقي بعدها {remainingAfter:N0} ج" : " — يكتمل السداد");
+
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" ({notes})";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.Payment,
+            PaymentAmount = amount,
+            PaymentMethod = method,
             Notes = notes,
             Summary = summary
         });
@@ -279,13 +332,16 @@ public class OrderService : IOrderService
                         await ExecUpdateStatusAsync(orderId, edit.NewStatus!.Value, edit.Notes);
                         break;
                     case PendingEditKind.FrameSwap:
-                        await ExecSwapFrameAsync(edit.ItemId!.Value, edit.NewFrameId!.Value, edit.NewFrameAgreedPrice!.Value, edit.Notes);
+                        await ExecSwapFrameAsync(edit.ItemId!.Value, edit.NewFrameId!.Value, edit.NewFrameAgreedPrice!.Value, edit.ReturnOldFrameToStock ?? false, edit.Notes);
                         break;
                     case PendingEditKind.FrameCompensation:
                         await ExecAssignCompensationAsync(edit.ItemId!.Value, edit.NewFrameId!.Value, edit.NewFrameAgreedPrice!.Value, edit.Notes);
                         break;
                     case PendingEditKind.ItemCancellation:
                         await ExecCancelItemAsync(edit.ItemId!.Value, edit.FrameDisposition!.Value, edit.Notes);
+                        break;
+                    case PendingEditKind.Payment:
+                        await ExecAddPaymentAsync(orderId, edit.PaymentAmount!.Value, edit.PaymentMethod!.Value, edit.Notes);
                         break;
                 }
             }
@@ -321,7 +377,10 @@ public class OrderService : IOrderService
             new SqlParameter("@p_changed_by", _currentUser.RequireUserId()),
             new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
 
-    private Task ExecSwapFrameAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes) =>
+    // 'available' hands the old frame back to stock as sellable; 'damaged' writes it off
+    // to frame_damage_log. Either way sp_swap_frame points the item at the new frame and
+    // reserves it, and the T2 trigger re-sums the order total off the new agreed price.
+    private Task ExecSwapFrameAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? notes) =>
         _dbContext.Database.ExecuteSqlRawAsync(
             """
             EXEC sp_swap_frame
@@ -332,7 +391,7 @@ public class OrderService : IOrderService
             new SqlParameter("@p_item_id", itemId),
             new SqlParameter("@p_new_frame_agreed_price", newFrameAgreedPrice),
             new SqlParameter("@p_new_frame_id", newFrameId),
-            new SqlParameter("@p_old_frame_disposition", "damaged"),
+            new SqlParameter("@p_old_frame_disposition", returnOldFrameToStock ? "available" : "damaged"),
             new SqlParameter("@p_discount_reason", SqlDbType.NVarChar, 200) { Value = (object?)notes ?? DBNull.Value },
             new SqlParameter("@p_changed_by", _currentUser.RequireUserId()));
 
@@ -350,6 +409,34 @@ public class OrderService : IOrderService
             new SqlParameter("@p_custom_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = newFrameAgreedPrice },
             new SqlParameter("@p_notes", SqlDbType.NVarChar, 200) { Value = (object?)notes ?? DBNull.Value },
             new SqlParameter("@p_changed_by", _currentUser.RequireUserId()));
+
+    // payment_type is worked out here rather than carried on the staged edit: another edit
+    // in the same batch (a frame swap, a cancelled item) can move the order total before
+    // this runs, so the figure the popup showed when the payment was staged may no longer
+    // hold. Reading the order inside the transaction means the type always matches what is
+    // actually owed at the moment the payment lands.
+    private async Task ExecAddPaymentAsync(int orderId, decimal amount, PaymentMethod method, string? notes)
+    {
+        var order = await _dbContext.Orders.AsNoTracking().FirstAsync(o => o.OrderId == orderId);
+
+        var paymentType = amount >= order.RemainingAmount
+            ? (order.PaidAmount == 0 ? PaymentType.Full : PaymentType.Final)
+            : PaymentType.Deposit;
+
+        await _dbContext.Database.ExecuteSqlRawAsync(
+            """
+            EXEC sp_add_payment
+                @order_id = @p_order_id, @amount = @p_amount,
+                @payment_type = @p_payment_type, @payment_method = @p_payment_method,
+                @received_by = @p_received_by, @notes = @p_notes
+            """,
+            new SqlParameter("@p_order_id", orderId),
+            new SqlParameter("@p_amount", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = amount },
+            new SqlParameter("@p_payment_type", PaymentTypeToDb(paymentType)),
+            new SqlParameter("@p_payment_method", method == PaymentMethod.Visa ? "visa" : "cash"),
+            new SqlParameter("@p_received_by", _currentUser.RequireUserId()),
+            new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
+    }
 
     // Cancelling the item flips order_items.status to 'cancelled', which the T2 trigger
     // picks up: it re-sums item_total across the order's remaining active items into
@@ -373,6 +460,24 @@ public class OrderService : IOrderService
         OrderStatus.Delivered => "تسليم",
         OrderStatus.Cancelled => "ملغي",
         _ => s.ToString()
+    };
+
+    private static string PaymentTypeLabel(PaymentType t) => t switch
+    {
+        PaymentType.Deposit => "عربون",
+        PaymentType.Final => "دفعة نهائية",
+        PaymentType.Full => "دفع كامل",
+        PaymentType.Refund => "استرداد",
+        _ => t.ToString()
+    };
+
+    private static string PaymentTypeToDb(PaymentType t) => t switch
+    {
+        PaymentType.Deposit => "deposit",
+        PaymentType.Final => "final",
+        PaymentType.Full => "full",
+        PaymentType.Refund => "refund",
+        _ => throw new ArgumentOutOfRangeException(nameof(t))
     };
 
     private static string ItemTypeLabel(OrderItemType t) => t switch

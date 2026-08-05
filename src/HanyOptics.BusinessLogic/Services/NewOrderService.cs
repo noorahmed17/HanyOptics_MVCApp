@@ -249,6 +249,53 @@ public class NewOrderService : INewOrderService
         }
     }
 
+    public async Task<AddItemToOrderOutcome> AddItemToExistingOrderAsync(int orderId, NewOrderItemRequest request)
+    {
+        var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);
+        if (order is null)
+            return AddItemToOrderOutcome.Failure("الطلب غير موجود");
+
+        // sp_add_order_item refuses these too - checked here so the screen can say it
+        // before the user fills the whole form in.
+        if (order.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
+            return AddItemToOrderOutcome.Failure("لا يمكن إضافة بند إلى طلب تم تسليمه أو إلغاؤه");
+
+        var validation = await ValidateItemAsync(request);
+        if (validation.Blank)
+            return AddItemToOrderOutcome.Failure("أدخل بيانات البند أولاً");
+        if (!validation.Valid)
+            return AddItemToOrderOutcome.Invalid(validation.FieldErrors);
+
+        // One item, but still a transaction: sp_add_order_item inserts the item and its
+        // prescription, and trigger T3 can reject the whole thing if the frame was taken by
+        // someone else in the meantime.
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+
+        try
+        {
+            var itemId = await AddOrderItemAsync(orderId, validation.Item!);
+            await transaction.CommitAsync();
+            return AddItemToOrderOutcome.Success(itemId);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex,
+                "SQL error adding an item to order {OrderId}. ItemType={ItemType} Barcode={Barcode} SqlErrors={SqlErrors}",
+                orderId, request.ItemType, request.FrameBarcode, StoredProcedureErrors.Describe(ex));
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
+            return AddItemToOrderOutcome.Failure(StoredProcedureErrors.ToUserMessage(ex, DuplicateDataMessage));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error adding an item to order {OrderId}. ItemType={ItemType}", orderId, request.ItemType);
+
+            await StoredProcedureErrors.SafeRollbackAsync(transaction, _logger);
+            return AddItemToOrderOutcome.Failure(StoredProcedureErrors.GenericMessage);
+        }
+    }
+
     private async Task<int> CreateOrderAsync(OrderDraft draft, Customer customer)
     {
         var orderIdParam = new SqlParameter("@p_order_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
@@ -275,11 +322,11 @@ public class NewOrderService : INewOrderService
         return (int)orderIdParam.Value!;
     }
 
-    private Task AddOrderItemAsync(int orderId, OrderDraftItem item)
+    private async Task<int> AddOrderItemAsync(int orderId, OrderDraftItem item)
     {
         var itemIdParam = new SqlParameter("@p_item_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
 
-        return _dbContext.Database.ExecuteSqlRawAsync(
+        await _dbContext.Database.ExecuteSqlRawAsync(
             """
             EXEC sp_add_order_item
                 @order_id             = @p_order_id,
@@ -319,6 +366,8 @@ public class NewOrderService : INewOrderService
             new SqlParameter("@p_pd", SqlDbType.Decimal) { Precision = 5, Scale = 1, Value = (object?)item.Pd ?? DBNull.Value },
             new SqlParameter("@p_add_power", SqlDbType.Decimal) { Precision = 5, Scale = 2, Value = (object?)item.AddPower ?? DBNull.Value },
             itemIdParam);
+
+        return (int)itemIdParam.Value!;
     }
 
     // The only field the staff enters is the amount - payment_type is derived here, never

@@ -327,13 +327,17 @@ public class OrdersController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StageFrameSwap(int orderId, int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes)
+    // Covers both reasons a frame gets replaced: the customer changed their mind (the old
+    // frame is intact and goes back on the shelf) or it was damaged (written off).
+    public async Task<IActionResult> StageFrameSwap(int orderId, int itemId, int newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? notes)
     {
-        var outcome = await SafeAsync(() => _orderService.BuildFrameSwapEditAsync(itemId, newFrameId, newFrameAgreedPrice, notes), "استبدال إطار تالف");
+        var action = returnOldFrameToStock ? "تغيير الإطار" : "استبدال إطار تالف";
+
+        var outcome = await SafeAsync(() => _orderService.BuildFrameSwapEditAsync(itemId, newFrameId, newFrameAgreedPrice, returnOldFrameToStock, notes), action);
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 
-        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر استبدال الإطار.");
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تغيير الإطار.");
     }
 
     // For items with no inventory frame to begin with (استبدال عدسات, customer's own
@@ -348,6 +352,65 @@ public class OrdersController : Controller
             StageEdit(orderId, outcome.Edit!);
 
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تعيين الإطار.");
+    }
+
+    // ── Adding an item to an order that already exists ──────────────────
+    // Its own page rather than a popup modal: this is the full item form (frame lookup,
+    // lens details, prescription), the same one the wizard uses. It also writes straight
+    // away instead of joining the popup's staged edits - a whole item, with its
+    // prescription, doesn't fit the shape of a PendingOrderEdit.
+    [HttpGet]
+    public async Task<IActionResult> AddItem(int id)
+    {
+        var order = await _orderService.GetByIdAsync(id);
+        if (order is null)
+            return NotFound();
+
+        ViewBag.Order = order;
+        return View(new NewOrderItemRequest { DoctorId = order.DoctorId, CustomerNameOnInvoice = order.CustomerName });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AddItem(int id, NewOrderItemRequest model)
+    {
+        var outcome = await SafeAsync(() => _newOrderService.AddItemToExistingOrderAsync(id, model), "إضافة البند");
+
+        if (outcome is { Succeeded: true })
+        {
+            TempData["BulkStatusMessage"] = "تم إضافة البند للطلب بنجاح";
+            return RedirectToAction(nameof(Index), new { openOrder = id });
+        }
+
+        if (outcome is not null)
+        {
+            foreach (var (field, message) in outcome.FieldErrors)
+                ModelState.AddModelError(field, message);
+
+            if (!string.IsNullOrWhiteSpace(outcome.ErrorMessage))
+                ModelState.AddModelError(string.Empty, outcome.ErrorMessage);
+        }
+
+        var order = await _orderService.GetByIdAsync(id);
+        if (order is null)
+            return NotFound();
+
+        ViewBag.Order = order;
+        return View(model);
+    }
+
+    // Records a later instalment on an existing order - the customer coming back to settle
+    // the rest. Staged like every other edit, so "paid the remainder and collected the
+    // glasses" commits as one action alongside the status change.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StagePayment(int orderId, decimal amount, PaymentMethod paymentMethod, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.BuildPaymentEditAsync(orderId, amount, paymentMethod, notes), "تسجيل الدفعة");
+        if (outcome is { Succeeded: true })
+            StageEdit(orderId, outcome.Edit!);
+
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تسجيل الدفعة.");
     }
 
     // Cancels a single item without touching the order's other items. The disposition

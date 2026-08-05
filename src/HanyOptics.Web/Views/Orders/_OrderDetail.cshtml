@@ -92,6 +92,11 @@
     // (it also refuses items on a 'ready' order) and rejects with its own Arabic message.
     var activeItemCount = order.OrderItems.Count(i => i.Status == OrderItemStatus.Active);
     var hasCancellableItem = !orderIsTerminal && activeItemCount > 0;
+
+    // A delivered order can still be owed money (handed over on a promise to pay), so the
+    // payment button follows what's outstanding rather than the order's status. Cancelled
+    // is the one status sp_add_payment refuses anything but a refund on.
+    var canTakePayment = order.Status != OrderStatus.Cancelled && order.RemainingAmount > 0;
 }
 
 <div class="modal-header">
@@ -156,10 +161,19 @@
     <div class="detail-section">
         <h4>
             <span>📦 البنود (@order.OrderItems.Count)</span>
-            @if (nextStatuses.Any())
-            {
-                <button type="button" class="btn btn-outline btn-sm" onclick="openStatusModal()">🔄 تحديث الحالة</button>
-            }
+            <span class="flex items-center gap-2">
+                @* A full page rather than a modal - this is the same form as wizard step 2.
+                   Leaves the popup, so any staged-but-unconfirmed edits are left behind on
+                   purpose: they are still in the session when the order is reopened. *@
+                @if (!orderIsTerminal)
+                {
+                    <a class="btn btn-outline btn-sm" asp-action="AddItem" asp-route-id="@order.OrderId">➕ إضافة بند</a>
+                }
+                @if (nextStatuses.Any())
+                {
+                    <button type="button" class="btn btn-outline btn-sm" onclick="openStatusModal()">🔄 تحديث الحالة</button>
+                }
+            </span>
         </h4>
 
         @foreach (var it in order.OrderItems)
@@ -191,7 +205,7 @@
                         @if (CanReplaceFrame(it))
                         {
                             var replaceMode = it.FrameId.HasValue ? "swap" : "compensate";
-                            <button type="button" class="btn btn-outline btn-sm" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), '@replaceMode')">⚠️ الإطار تالف — استبدال</button>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), '@replaceMode')">🔄 تغيير الإطار</button>
                         }
                         <button type="button" class="btn btn-outline btn-sm" onclick="openCancelItemModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.ItemTotal.ToString(System.Globalization.CultureInfo.InvariantCulture), @(activeItemCount == 1 ? "true" : "false"), @(it.FrameId.HasValue || it.CompensationFrameId.HasValue ? "true" : "false"))" style="color:#dc2626">🗑️ إلغاء البند</button>
                     </div>
@@ -220,7 +234,20 @@
     </div>
 
     <div class="detail-section">
-        <h4>💳 المدفوعات</h4>
+        <h4>
+            <span>💳 المدفوعات</span>
+            @* The order-detail popup was read-only for money until now: the only payment
+               screen was step 3 of the new-order wizard, so a customer returning to settle
+               the rest had nowhere to be recorded. sp_add_payment always supported it. *@
+            @if (canTakePayment)
+            {
+                <button type="button" class="btn btn-outline btn-sm" onclick="openPaymentModal()">➕ تسجيل دفعة</button>
+            }
+        </h4>
+        @if (canTakePayment)
+        {
+            <div class="alert alert-warning mb-2">💰 المتبقي على الزبون: <b>@Money(order.RemainingAmount)</b></div>
+        }
         @if (!order.Payments.Any())
         {
             <div class="text-muted text-sm">لا توجد مدفوعات</div>
@@ -310,7 +337,7 @@
     <div class="overlay" id="swapModalOverlay" style="z-index:110" onclick="closeSwapModal()"></div>
     <div class="modal modal-sm" id="swapModal" style="z-index:111" onclick="event.stopPropagation()">
         <div class="modal-header">
-            <span class="modal-title">⚠️ استبدال إطار تالف</span>
+            <span class="modal-title">🔄 تغيير الإطار</span>
             <button type="button" class="modal-close" onclick="closeSwapModal()">✕</button>
         </div>
         <div class="modal-body">
@@ -319,6 +346,19 @@
                 <input type="hidden" name="orderId" value="@order.OrderId" />
                 <input type="hidden" name="itemId" id="swapItemId" />
                 <input type="hidden" name="newFrameId" id="swapNewFrameId" />
+
+                @* Decides sp_swap_frame's @old_frame_disposition. Defaults to returning the
+                   old frame to stock: writing a frame off is the destructive option and
+                   should be chosen deliberately, not fallen into. Hidden for compensation
+                   items, which have no old frame to dispose of. *@
+                <div class="form-group" id="swapReasonGroup">
+                    <label>سبب التغيير *</label>
+                    <select name="returnOldFrameToStock" id="swapReason" onchange="updateSwapReasonHint()" required>
+                        <option value="true" selected>🔄 الزبون غيّر رأيه — الإطار سليم</option>
+                        <option value="false">⚠️ الإطار تالف</option>
+                    </select>
+                    <div class="text-sm text-muted mt-1" id="swapReasonHint"></div>
+                </div>
                 <div class="form-group">
                     <label>باركود الإطار البديل *</label>
                     <div class="input-group">
@@ -336,14 +376,64 @@
                     <input type="number" name="newFrameAgreedPrice" id="swapPriceInput" min="0" step="0.01" required />
                 </div>
                 <div class="form-group">
-                    <label>سبب التلف / ملاحظة (اختياري)</label>
-                    <input type="text" name="notes" placeholder="مثال: خدش عميق أثناء التجهيز" />
+                    <label>ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" id="swapNotesInput" placeholder="مثال: الزبون فضّل موديل أخف" />
                 </div>
             </form>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closeSwapModal()">إلغاء</button>
             <button type="submit" form="swapForm" id="swapConfirmBtn" class="btn btn-primary" disabled>إضافة للتغييرات المعلقة</button>
+        </div>
+    </div>
+}
+
+@if (canTakePayment)
+{
+    <div class="overlay" id="paymentModalOverlay" style="z-index:110" onclick="closePaymentModal()"></div>
+    <div class="modal modal-sm" id="paymentModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">💳 تسجيل دفعة</span>
+            <button type="button" class="modal-close" onclick="closePaymentModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2">
+                الإجمالي: <b>@Money(order.TotalAmount)</b> — المدفوع: <b>@Money(order.PaidAmount)</b> — المتبقي: <b>@Money(order.RemainingAmount)</b>
+            </div>
+
+            <form id="paymentForm" asp-action="StagePayment" method="post" onsubmit="stageEdit(event)">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+
+                <div class="form-group">
+                    <label>💰 المبلغ (ج) *</label>
+                    <input type="number" name="amount" id="paymentAmountInput" min="0.01" step="0.01"
+                           max="@order.RemainingAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)" required />
+                    @* Saves retyping the common case - the customer settling up in full. *@
+                    <button type="button" class="btn btn-outline btn-sm mt-1"
+                            onclick="document.getElementById('paymentAmountInput').value = '@order.RemainingAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)'">
+                        سداد المتبقي بالكامل (@Money(order.RemainingAmount))
+                    </button>
+                </div>
+
+                <div class="form-group">
+                    <label>طريقة الدفع *</label>
+                    <select name="paymentMethod" required>
+                        <option value="Cash" selected>💵 نقدي</option>
+                        <option value="Visa">💳 فيزا</option>
+                    </select>
+                </div>
+
+                @* نوع الدفعة (عربون / دفعة نهائية / دفع كامل) is derived at commit time from
+                   what is actually owed then - staff never pick it, same as the wizard. *@
+                <div class="form-group">
+                    <label>ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" placeholder="مثال: استلم الأوردر ودفع الباقي" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closePaymentModal()">إلغاء</button>
+            <button type="submit" form="paymentForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }

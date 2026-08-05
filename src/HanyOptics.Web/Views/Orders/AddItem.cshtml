@@ -1,0 +1,49 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
+@{
+    ViewData["Title"] = "إضافة بند";
+    var order = (HanyOptics.Domain.Entities.Order)ViewBag.Order;
+    var arEg = new CultureInfo("ar-EG");
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+
+    // Unlike the wizard, the order is already real - so the item goes in the moment this
+    // form is submitted, and the totals shown here are the live ones from the database.
+    var activeItems = order.OrderItems.Count(i => i.Status == OrderItemStatus.Active);
+}
+
+<div class="page-header">
+    <h2>➕ إضافة بند للطلب <bdi>@order.InvoiceNumber</bdi></h2>
+</div>
+
+<div class="wizard-content">
+    <div class="flex items-center gap-2 flex-wrap mb-3">
+        <span class="info-chip">📋 <bdi>@order.InvoiceNumber</bdi></span>
+        <span class="info-chip">👤 @(order.CustomerName ?? "بدون اسم")</span>
+        <span class="info-chip">📦 @activeItems بند حالي</span>
+        <span class="info-chip">💰 الإجمالي @Money(order.TotalAmount)</span>
+    </div>
+
+    <div class="alert alert-info mb-3">
+        ℹ️ البند هيتضاف للطلب فورًا عند الحفظ، وإجمالي الطلب هيتحدث تلقائيًا.
+    </div>
+
+    <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+    <form asp-action="AddItem" asp-route-id="@order.OrderId" method="post" id="itemForm">
+        @Html.AntiForgeryToken()
+        <input type="hidden" asp-for="DoctorId" />
+        <input type="hidden" asp-for="CustomerNameOnInvoice" />
+
+        <partial name="_ItemFormFields" model="Model" />
+
+        <div class="wizard-footer">
+            <a class="btn btn-outline" asp-action="Index" asp-route-openOrder="@order.OrderId">→ رجوع للطلب</a>
+            <button type="submit" class="btn btn-primary btn-lg">حفظ البند</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script src="~/js/order-item-form.js" asp-append-version="true"></script>
+}

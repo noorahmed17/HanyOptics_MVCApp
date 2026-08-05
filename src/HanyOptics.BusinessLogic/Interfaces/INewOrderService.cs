@@ -33,4 +33,10 @@ public interface INewOrderService
     // The one and only write path: creates the order, its items and the opening payment
     // as a single all-or-nothing unit.
     Task<CommitDraftOutcome> CommitDraftAsync(OrderDraft draft, NewOrderPaymentRequest payment);
+
+    // Adds one item to an order that is already saved - the customer adding a second pair,
+    // or replacing an item that was cancelled. Lives here rather than on IOrderService
+    // because it reuses this service's item validation and its sp_add_order_item call, so
+    // an item added later is checked exactly like one entered in the wizard.
+    Task<AddItemToOrderOutcome> AddItemToExistingOrderAsync(int orderId, NewOrderItemRequest request);
 }

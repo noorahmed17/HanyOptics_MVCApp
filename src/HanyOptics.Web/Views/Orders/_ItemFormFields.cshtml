@@ -1,0 +1,133 @@
+@model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
+
+@*
+    The item fields shared by the two places an order item gets entered: step 2 of the
+    new-order wizard (NewItem) and adding an item to an order that already exists
+    (AddItem). Both bind the same NewOrderItemRequest and are validated by the same
+    INewOrderService.ValidateItemAsync, so keeping one copy of the markup is what stops
+    the two screens accepting different things.
+
+    The behaviour that goes with these fields - showing/hiding sections per item type,
+    the barcode lookup, the running total - lives in ~/js/order-item-form.js and finds
+    this wrapper by id. The lookup URL is passed as a data attribute so that file needs
+    no Razor.
+*@
+<div id="itemFormFields" data-lookup-frame-url="@Url.Action("LookupFrame")">
+    <div class="section-divider"><span>📦 بيانات البند</span></div>
+
+    <div class="form-group">
+        <label>نوع البند</label>
+        <select asp-for="ItemType" id="itemType">
+            <option value="FrameLenses">🔷 إطار + عدسات (الأكثر شيوعاً)</option>
+            <option value="FrameOnly">🔶 إطار فقط</option>
+            <option value="LensesReplace">🔹 استبدال عدسات (إطار الزبون)</option>
+        </select>
+    </div>
+
+    <div id="frameSection">
+        <div class="section-divider"><span>🗃️ الإطار من المخزون</span></div>
+        <div class="form-group">
+            <label>باركود الإطار *</label>
+            <div class="input-group">
+                <input type="text" asp-for="FrameBarcode" id="barcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                <button type="button" class="btn btn-primary" id="searchFrameBtn">🔍 بحث</button>
+            </div>
+            <span asp-validation-for="FrameBarcode" class="field-error"></span>
+            <div class="frame-result" id="frameResult">
+                <div class="frame-result-title">✅ إطار موجود ومتاح</div>
+                <div class="frame-meta" id="frameMeta"></div>
+            </div>
+            <div class="frame-error" id="frameError"></div>
+        </div>
+        <div class="form-group">
+            <label>💰 السعر المتفق مع الزبون (ج) *</label>
+            <input type="number" asp-for="FrameAgreedPrice" id="framePriceInput" min="0" step="0.01" />
+            <span asp-validation-for="FrameAgreedPrice" class="field-error"></span>
+        </div>
+    </div>
+
+    <div id="extFrameSection" style="display:none">
+        <div class="section-divider"><span>📦 إطار الزبون</span></div>
+        <button type="button" class="collapsible-btn" id="extFrameToggleBtn">
+            <span>📦 وصف إطار الزبون (اختياري)</span><span id="extFrameArrow">▼</span>
+        </button>
+        <div class="collapsible-content" id="extFrameContent">
+            <div class="form-group">
+                <label>وصف إطار الزبون</label>
+                <input asp-for="ExternalFrameNotes" id="extFrameInput" placeholder="مثال: إطار Gucci أسود — جاب من عنده" />
+                <span asp-validation-for="ExternalFrameNotes" class="field-error"></span>
+                <div class="form-hint">اختياري — المهم هنا هو بيانات العدسات</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="lensSection">
+        <div class="section-divider"><span>👁️ العدسات</span></div>
+        <div class="form-group">
+            <label>وصف العدسات *</label>
+            <input asp-for="LensDescription" id="lensDescInput" placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" />
+            <span asp-validation-for="LensDescription" class="field-error"></span>
+        </div>
+        <div class="form-group">
+            <label>💰 سعر البيع (ج) *</label>
+            <input type="number" asp-for="LensSellPrice" id="lensSellInput" min="0" step="0.01" />
+            <span asp-validation-for="LensSellPrice" class="field-error"></span>
+        </div>
+        @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+        {
+            <div class="form-group">
+                <label>📦 تكلفة المورد (ج) <span style="font-size:10px;color:#9ca3af">— أدمن فقط</span></label>
+                <input type="number" asp-for="LensCostPrice" min="0" step="0.01" />
+            </div>
+        }
+    </div>
+
+    <div id="doctorSection">
+        <div class="section-divider"><span>👁️ الروشتة الطبية</span></div>
+        <button type="button" class="collapsible-btn" id="rxToggleBtn">
+            <span>👁️ إدخال الروشتة (اختياري)</span><span id="rxArrow">▼</span>
+        </button>
+        <div class="collapsible-content" id="rxSection">
+            <div class="rx-grid">
+                <table>
+                    <thead><tr><th></th><th>كروي (Sph)</th><th>أسطواني (Cyl)</th><th>محور (Axis)</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يمنى</td>
+                            <td><input type="text" asp-for="RightSphere" placeholder="-2.25" /></td>
+                            <td><input type="text" asp-for="RightCylinder" placeholder="-0.75" /></td>
+                            <td><input type="text" asp-for="RightAxis" placeholder="90" /></td>
+                        </tr>
+                        <tr>
+                            <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يسرى</td>
+                            <td><input type="text" asp-for="LeftSphere" placeholder="-1.75" /></td>
+                            <td><input type="text" asp-for="LeftCylinder" placeholder="-0.50" /></td>
+                            <td><input type="text" asp-for="LeftAxis" placeholder="85" /></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-row mt-2">
+                <div class="form-group">
+                    <label>PD — البُعد البؤري (ملم)</label>
+                    <input type="number" asp-for="Pd" placeholder="64" min="50" max="80" />
+                </div>
+                <div class="form-group">
+                    <label>ADD — للعدسات التقدمية</label>
+                    <input type="number" asp-for="AddPower" placeholder="2.00" step="0.25" min="0.75" max="3.50" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group mt-3">
+        <label>ملاحظات (اختياري)</label>
+        <input asp-for="Notes" placeholder="أي تعليمات إضافية..." />
+    </div>
+
+    <div class="amount-box mt-3">
+        <div class="amount-row"><span class="a-label">سعر الإطار</span><span class="a-val" id="previewFrame">٠ ج</span></div>
+        <div class="amount-row"><span class="a-label">سعر العدسات</span><span class="a-val" id="previewLens">٠ ج</span></div>
+        <div class="amount-row total"><span class="a-label">إجمالي البند</span><span class="a-val" id="previewTotal">٠ ج</span></div>
+    </div>
+</div>

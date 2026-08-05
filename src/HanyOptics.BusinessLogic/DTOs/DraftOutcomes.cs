@@ -21,6 +21,22 @@ public class DraftItemOutcome
         new() { FieldErrors = new Dictionary<string, string> { [field] = message } };
 }
 
+// Result of adding one item to an order that already exists. Unlike the wizard - where an
+// item only joins a draft and nothing is written until the last step - this writes
+// immediately, so it can fail on the same rules sp_add_order_item enforces at commit time
+// (stock gone, order already delivered) as well as on the form's own field validation.
+public class AddItemToOrderOutcome
+{
+    public bool Succeeded { get; init; }
+    public int ItemId { get; init; }
+    public string? ErrorMessage { get; init; }
+    public IReadOnlyDictionary<string, string> FieldErrors { get; init; } = new Dictionary<string, string>();
+
+    public static AddItemToOrderOutcome Success(int itemId) => new() { Succeeded = true, ItemId = itemId };
+    public static AddItemToOrderOutcome Failure(string message) => new() { ErrorMessage = message };
+    public static AddItemToOrderOutcome Invalid(IReadOnlyDictionary<string, string> fieldErrors) => new() { FieldErrors = fieldErrors };
+}
+
 // Result of turning a finished draft into real rows.
 public class CommitDraftOutcome
 {
