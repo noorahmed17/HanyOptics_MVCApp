@@ -1,0 +1,157 @@
+@using System.Globalization
+@using HanyOptics.Domain.Enums
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.FrameListItem>
+@{
+    ViewData["Title"] = "المخزون";
+    var statusFilter = (FrameStatus?)ViewBag.StatusFilter;
+    var categoryFilter = (FrameCategory?)ViewBag.CategoryFilter;
+    var trackingFilter = (FrameTrackingType?)ViewBag.TrackingFilter;
+    var searchTerm = (string?)ViewBag.SearchTerm;
+    var summary = (HanyOptics.BusinessLogic.Models.FrameInventorySummary)ViewBag.Summary;
+    var arEg = new CultureInfo("ar-EG");
+
+    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+
+    static string StatusLabel(FrameStatus s) => s switch
+    {
+        FrameStatus.Available => "متاح",
+        FrameStatus.Reserved => "محجوز",
+        FrameStatus.Sold => "مباع",
+        FrameStatus.Damaged => "تالف",
+        _ => s.ToString()
+    };
+
+    // Reuses the order badges so a status means the same colour everywhere in the app:
+    // green for good, amber for in-flight, red for written off.
+    static string StatusBadgeClass(FrameStatus s) => s switch
+    {
+        FrameStatus.Available => "badge-ready",
+        FrameStatus.Reserved => "badge-sold",
+        FrameStatus.Sold => "badge-delivered",
+        FrameStatus.Damaged => "badge-cancelled",
+        _ => ""
+    };
+
+    static string CategoryLabel(FrameCategory c) => c == FrameCategory.Sun ? "☀️ شمس" : "👓 طبي";
+    static string TrackingLabel(FrameTrackingType t) => t == FrameTrackingType.Bulk ? "📦 بالكمية" : "🏷️ قطعة";
+
+    string TabUrl(FrameStatus? s) => Url.Action("Index", new
+    {
+        status = s?.ToString(),
+        category = categoryFilter?.ToString(),
+        tracking = trackingFilter?.ToString(),
+        q = searchTerm
+    })!;
+}
+
+<div class="page-header">
+    <h2>📦 المخزون — الإطارات</h2>
+</div>
+
+<div class="stats-grid mb-3">
+    <div class="stat-card">
+        <div class="stat-label">عدد الأصناف</div>
+        <div class="stat-value">@summary.LineCount.ToString("N0", arEg)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">القطع المتاحة</div>
+        <div class="stat-value c-green">@summary.TotalUnitsAvailable.ToString("N0", arEg)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">قيمة المخزون (تكلفة)</div>
+        <div class="stat-value c-blue">@Money(summary.StockValueAtCost)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">قيمة المخزون (بيع)</div>
+        <div class="stat-value c-blue">@Money(summary.StockValueAtSell)</div>
+    </div>
+</div>
+
+<form asp-action="Index" method="get" id="inventoryFilterForm">
+    <input type="hidden" name="status" value="@statusFilter" />
+
+    <div style="margin-bottom:14px">
+        <div class="input-group" style="max-width:420px">
+            <input type="text" name="q" value="@searchTerm" placeholder="بحث بالباركود أو الماركة أو الموديل أو اللون..." />
+            <button type="submit" class="btn btn-primary">🔍 بحث</button>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap" style="justify-content:space-between">
+        <div class="tabs">
+            <a class="tab @(statusFilter is null ? "active" : "")" href="@TabUrl(null)">الكل</a>
+            <a class="tab @(statusFilter == FrameStatus.Available ? "active" : "")" href="@TabUrl(FrameStatus.Available)">متاح</a>
+            <a class="tab @(statusFilter == FrameStatus.Reserved ? "active" : "")" href="@TabUrl(FrameStatus.Reserved)">محجوز</a>
+            <a class="tab @(statusFilter == FrameStatus.Sold ? "active" : "")" href="@TabUrl(FrameStatus.Sold)">مباع</a>
+            <a class="tab @(statusFilter == FrameStatus.Damaged ? "active" : "")" href="@TabUrl(FrameStatus.Damaged)">تالف</a>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <select name="category" onchange="document.getElementById('inventoryFilterForm').submit()" style="width:150px">
+                <option value="">كل الأنواع</option>
+                <option value="Optical" selected="@(categoryFilter == FrameCategory.Optical)">👓 طبي</option>
+                <option value="Sun" selected="@(categoryFilter == FrameCategory.Sun)">☀️ شمس</option>
+            </select>
+            <select name="tracking" onchange="document.getElementById('inventoryFilterForm').submit()" style="width:160px">
+                <option value="">كل طرق التتبع</option>
+                <option value="Individual" selected="@(trackingFilter == FrameTrackingType.Individual)">🏷️ قطعة</option>
+                <option value="Bulk" selected="@(trackingFilter == FrameTrackingType.Bulk)">📦 بالكمية</option>
+            </select>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-body">
+        @if (!Model.Any())
+        {
+            <div class="empty-state">لا توجد إطارات مطابقة</div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>الباركود</th>
+                        <th>الماركة / الموديل</th>
+                        <th>النوع</th>
+                        <th>التتبع</th>
+                        <th>التكلفة</th>
+                        <th>سعر البيع</th>
+                        <th>المتاح</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var f in Model)
+                    {
+                        <tr>
+                            <td><b><bdi>@f.Barcode</bdi></b></td>
+                            <td>
+                                @f.Brand @f.ModelName
+                                <br />
+                                <span class="text-sm text-muted">
+                                    @(string.IsNullOrWhiteSpace(f.Color) ? "—" : f.Color)@(string.IsNullOrWhiteSpace(f.Size) || f.Size == "-" ? "" : $" — {f.Size}")
+                                </span>
+                            </td>
+                            <td>@CategoryLabel(f.Category)</td>
+                            <td><span class="text-sm">@TrackingLabel(f.TrackingType)</span></td>
+                            <td>@Money(f.CostPrice)</td>
+                            <td class="fw-bold c-blue">@Money(f.SellPrice)</td>
+                            @* A bulk line that has run down to zero is easy to miss when the
+                               number is styled the same as a healthy one. *@
+                            <td class="fw-bold @(f.QtyAvailable > 0 ? "c-green" : "c-red")">
+                                @f.QtyAvailable.ToString("N0", arEg)
+                                @if (f.TrackingType == FrameTrackingType.Bulk)
+                                {
+                                    <span class="text-sm text-muted"> / @f.QtyInitial.ToString("N0", arEg)</span>
+                                }
+                            </td>
+                            <td><span class="badge @StatusBadgeClass(f.Status)">@StatusLabel(f.Status)</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

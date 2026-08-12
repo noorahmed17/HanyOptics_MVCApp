@@ -38,6 +38,7 @@
             <div class="sb-section">الإدارة</div>
             <a class="@NavClassFor("Orders", "Index")" asp-controller="Orders" asp-action="Index"><span class="nav-icon">📋</span> الطلبات</a>
             <a class="@NavClass("Customers")" asp-controller="Customers" asp-action="Index"><span class="nav-icon">👥</span> العملاء</a>
+            <a class="@NavClass("Inventory")" asp-controller="Inventory" asp-action="Index"><span class="nav-icon">📦</span> المخزون</a>
             @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
             {
                 <a class="nav-item" asp-controller="Home" asp-action="AdminOnly"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>

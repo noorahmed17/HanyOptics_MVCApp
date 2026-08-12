@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddScoped<IOrderService, OrderService>();
         services.AddScoped<INewOrderService, NewOrderService>();
         services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<IFrameInventoryService, FrameInventoryService>();
 
         services.AddScoped<IBusinessUserDirectory, BusinessUserDirectory>();
 
