@@ -258,6 +258,18 @@
             document.getElementById('paymentModal').classList.remove('show');
         }
 
+        function openRefundModal() {
+            document.getElementById('refundForm').reset();
+            document.getElementById('refundModalOverlay').classList.add('show');
+            document.getElementById('refundModal').classList.add('show');
+            document.getElementById('refundAmountInput').focus();
+        }
+
+        function closeRefundModal() {
+            document.getElementById('refundModalOverlay').classList.remove('show');
+            document.getElementById('refundModal').classList.remove('show');
+        }
+
         function openStatusModal() {
             document.getElementById('statusModalOverlay').classList.add('show');
             document.getElementById('statusModal').classList.add('show');
@@ -297,12 +309,48 @@
             reason.value = 'true';
             updateSwapReasonHint();
 
+            // Assigning a compensation frame always draws one from stock, so the
+            // stock/customer choice only applies to a normal frame change.
+            const sourceGroup = document.getElementById('swapSourceGroup');
+            const source = document.getElementById('swapSource');
+            sourceGroup.style.display = compensating ? 'none' : '';
+            source.disabled = compensating;
+            source.value = 'stock';
+
+            document.getElementById('swapExternalNotesInput').value = '';
             document.getElementById('swapNotesInput').value = '';
             document.getElementById('swapFrameResult').classList.remove('show');
             document.getElementById('swapFrameError').classList.remove('show');
-            document.getElementById('swapConfirmBtn').disabled = true;
+            updateSwapSource();
+
             document.getElementById('swapModalOverlay').classList.add('show');
             document.getElementById('swapModal').classList.add('show');
+        }
+
+        // With a frame from stock the confirm button stays locked until a barcode actually
+        // resolves, so a typo can't be staged. The customer's own frame has nothing to look
+        // up, so it unlocks immediately and the price defaults to 0 - we're not selling a
+        // frame in that case, though a fitting charge can still be typed in.
+        function updateSwapSource() {
+            const external = document.getElementById('swapSource').value === 'external';
+
+            document.getElementById('swapInventoryGroup').style.display = external ? 'none' : '';
+            document.getElementById('swapExternalGroup').style.display = external ? '' : 'none';
+            document.getElementById('swapPriceHint').textContent = external
+                ? 'إطار الزبون لا يُحتسب من المخزون — اتركه 0 إن لم يكن هناك مقابل.'
+                : '';
+
+            const priceInput = document.getElementById('swapPriceInput');
+            const confirmBtn = document.getElementById('swapConfirmBtn');
+
+            if (external) {
+                document.getElementById('swapNewFrameId').value = '';
+                priceInput.value = priceInput.value || '0';
+                confirmBtn.disabled = false;
+            } else {
+                priceInput.value = '';
+                confirmBtn.disabled = !document.getElementById('swapNewFrameId').value;
+            }
         }
 
         // Spelling out the stock consequence, because "الزبون غيّر رأيه" vs "الإطار تالف"

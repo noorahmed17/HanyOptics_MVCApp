@@ -34,13 +34,23 @@ public interface IOrderService
     // Replaces the frame on an item that already has one. returnOldFrameToStock covers the
     // "customer changed their mind" case - the old frame is intact, goes back on the shelf
     // and the new one is reserved in its place; false writes the old one off as damaged.
-    Task<StagedEditOutcome> BuildFrameSwapEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? notes);
+    //
+    // newFrameId is null when the customer supplies their own frame instead of taking one
+    // from stock: the item stops drawing on inventory and becomes استبدال عدسات, carrying
+    // externalFrameNotes as the description of what they brought.
+    Task<StagedEditOutcome> BuildFrameSwapEditAsync(int itemId, int? newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? externalFrameNotes, string? notes);
     Task<StagedEditOutcome> BuildFrameCompensationEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes);
 
     // Records a payment against an order that already exists - the customer coming back to
     // pay off the remainder. sp_add_payment writes the row and the T1 trigger re-sums
     // orders.paid_amount from it, which the computed remaining_amount follows.
     Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
+
+    // Money going back to the customer - a cancelled order, or items cancelled out of one
+    // that was already paid for. Recorded as a payment row with payment_type='refund',
+    // which the T1 trigger subtracts from orders.paid_amount. It is the only kind of
+    // payment sp_add_payment accepts against a cancelled order.
+    Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
 
     // Cancels one item out of an order, leaving the order's other items untouched.
     // sp_cancel_order_item handles the stock consequences (frame returned or written off,

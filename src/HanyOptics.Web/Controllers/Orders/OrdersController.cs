@@ -329,11 +329,13 @@ public class OrdersController : Controller
     [ValidateAntiForgeryToken]
     // Covers both reasons a frame gets replaced: the customer changed their mind (the old
     // frame is intact and goes back on the shelf) or it was damaged (written off).
-    public async Task<IActionResult> StageFrameSwap(int orderId, int itemId, int newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? notes)
+    // newFrameId is left unset when the replacement is the customer's own frame, which is
+    // how sp_swap_frame is told the item stops drawing on inventory.
+    public async Task<IActionResult> StageFrameSwap(int orderId, int itemId, int? newFrameId, decimal newFrameAgreedPrice, bool returnOldFrameToStock, string? externalFrameNotes, string? notes)
     {
         var action = returnOldFrameToStock ? "تغيير الإطار" : "استبدال إطار تالف";
 
-        var outcome = await SafeAsync(() => _orderService.BuildFrameSwapEditAsync(itemId, newFrameId, newFrameAgreedPrice, returnOldFrameToStock, notes), action);
+        var outcome = await SafeAsync(() => _orderService.BuildFrameSwapEditAsync(itemId, newFrameId, newFrameAgreedPrice, returnOldFrameToStock, externalFrameNotes, notes), action);
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 
@@ -411,6 +413,20 @@ public class OrdersController : Controller
             StageEdit(orderId, outcome.Edit!);
 
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تسجيل الدفعة.");
+    }
+
+    // Money back to the customer - a cancelled order, or items cancelled out of one that
+    // was already paid for. Staged like the rest, so cancelling the item and refunding what
+    // it cost commit together instead of leaving the books half-corrected.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StageRefund(int orderId, decimal amount, PaymentMethod paymentMethod, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.BuildRefundEditAsync(orderId, amount, paymentMethod, notes), "تسجيل الاسترداد");
+        if (outcome is { Succeeded: true })
+            StageEdit(orderId, outcome.Edit!);
+
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تسجيل الاسترداد.");
     }
 
     // Cancels a single item without touching the order's other items. The disposition

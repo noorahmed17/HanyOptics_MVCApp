@@ -8,7 +8,8 @@ public enum PendingEditKind
     FrameSwap,
     FrameCompensation,
     ItemCancellation,
-    Payment
+    Payment,
+    Refund
 }
 
 // What happens to the item's frame when the item is cancelled. 'return' puts it back in
@@ -44,11 +45,17 @@ public class PendingOrderEdit
     public int? NewFrameId { get; set; }
     public decimal? NewFrameAgreedPrice { get; set; }
 
-    // Payment - a later instalment on an order that already exists (the customer coming
-    // back to settle the rest). payment_type is derived, never picked by staff, exactly as
-    // it is for the wizard's opening payment.
+    // Payment / Refund - money moving after the order was created. payment_type is
+    // derived, never picked by staff, exactly as it is for the wizard's opening payment.
     public decimal? PaymentAmount { get; set; }
     public PaymentMethod? PaymentMethod { get; set; }
+
+    // FrameSwap: set when the replacement is the customer's own frame rather than one from
+    // stock. NewFrameId stays null in that case - sp_swap_frame takes @new_frame_id = NULL
+    // to mean "this item no longer draws a frame from inventory" and converts it to
+    // lenses_replace via @new_item_type.
+    public bool UsesExternalFrame { get; set; }
+    public string? ExternalFrameNotes { get; set; }
 
     // FrameSwap: what becomes of the frame being taken off the item. True when the
     // customer simply changed their mind and the old frame is still sellable, false when

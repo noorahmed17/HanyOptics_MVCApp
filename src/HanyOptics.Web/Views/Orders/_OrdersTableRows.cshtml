@@ -59,8 +59,21 @@ else
                 }</td>
             <td class="fw-bold c-blue">@Money(o.TotalAmount)</td>
             <td class="fw-bold c-green">@Money(o.PaidAmount)</td>
-            <td class="fw-bold @(o.RemainingAmount > 0 ? "c-red" : "c-green")">
-                @(o.RemainingAmount > 0 ? Money(o.RemainingAmount) : "✅ مكتمل")
+            @* Negative means the shop owes the customer (a paid order that was cancelled,
+               not yet refunded) - that is a debt, not a settled row. *@
+            <td class="fw-bold @(o.RemainingAmount == 0 ? "c-green" : "c-red")">
+                @if (o.RemainingAmount > 0)
+                {
+                    @Money(o.RemainingAmount)
+                }
+                else if (o.RemainingAmount < 0)
+                {
+                    <text>↩️ @Money(-o.RemainingAmount)</text>
+                }
+                else
+                {
+                    <text>✅ مكتمل</text>
+                }
             </td>
             <td><span class="badge @StatusBadgeClass(o.Status)">@StatusLabel(o.Status)</span></td>
         </tr>

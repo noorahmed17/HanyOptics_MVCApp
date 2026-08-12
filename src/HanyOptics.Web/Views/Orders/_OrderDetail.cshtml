@@ -97,6 +97,11 @@
     // payment button follows what's outstanding rather than the order's status. Cancelled
     // is the one status sp_add_payment refuses anything but a refund on.
     var canTakePayment = order.Status != OrderStatus.Cancelled && order.RemainingAmount > 0;
+
+    // Refunds follow the money, not the status: anything actually collected can be handed
+    // back, and a cancelled order is precisely the case that needs it - sp_add_payment
+    // accepts nothing but a refund once an order is cancelled.
+    var canRefund = order.PaidAmount > 0;
 }
 
 <div class="modal-header">
@@ -128,7 +133,26 @@
             <div class="detail-row"><span class="detail-label">الحالة</span><span class="detail-val"><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></span></div>
             <div class="detail-row"><span class="detail-label">الإجمالي</span><span class="detail-val fw-bold c-blue">@Money(order.TotalAmount)</span></div>
             <div class="detail-row"><span class="detail-label">المدفوع</span><span class="detail-val fw-bold c-green">@Money(order.PaidAmount)</span></div>
-            <div class="detail-row"><span class="detail-label">المتبقي</span><span class="detail-val fw-bold @(order.RemainingAmount > 0 ? "c-red" : "c-green")">@(order.RemainingAmount > 0 ? Money(order.RemainingAmount) : "✅ مكتمل")</span></div>
+            @* A negative remainder means the shop owes the customer - cancelling a paid
+               order does exactly that until the refund is recorded. Showing it as
+               "مكتمل" would hide a debt, so the three cases are spelled out. *@
+            <div class="detail-row">
+                <span class="detail-label">المتبقي</span>
+                <span class="detail-val fw-bold @(order.RemainingAmount > 0 ? "c-red" : (order.RemainingAmount < 0 ? "c-red" : "c-green"))">
+                    @if (order.RemainingAmount > 0)
+                    {
+                        @Money(order.RemainingAmount)
+                    }
+                    else if (order.RemainingAmount < 0)
+                    {
+                        <text>↩️ مستحق للزبون: @Money(-order.RemainingAmount)</text>
+                    }
+                    else
+                    {
+                        <text>✅ مكتمل</text>
+                    }
+                </span>
+            </div>
             @if (order.DeliveredAt.HasValue)
             {
                 <div class="detail-row"><span class="detail-label">تاريخ التسليم</span><span class="detail-val">@FormatDate(order.DeliveredAt.Value)</span></div>
@@ -239,10 +263,16 @@
             @* The order-detail popup was read-only for money until now: the only payment
                screen was step 3 of the new-order wizard, so a customer returning to settle
                the rest had nowhere to be recorded. sp_add_payment always supported it. *@
-            @if (canTakePayment)
-            {
-                <button type="button" class="btn btn-outline btn-sm" onclick="openPaymentModal()">➕ تسجيل دفعة</button>
-            }
+            <span class="flex items-center gap-2">
+                @if (canTakePayment)
+                {
+                    <button type="button" class="btn btn-outline btn-sm" onclick="openPaymentModal()">➕ تسجيل دفعة</button>
+                }
+                @if (canRefund)
+                {
+                    <button type="button" class="btn btn-outline btn-sm" onclick="openRefundModal()" style="color:#dc2626">↩️ استرداد</button>
+                }
+            </span>
         </h4>
         @if (canTakePayment)
         {
@@ -359,21 +389,45 @@
                     </select>
                     <div class="text-sm text-muted mt-1" id="swapReasonHint"></div>
                 </div>
-                <div class="form-group">
-                    <label>باركود الإطار البديل *</label>
-                    <div class="input-group">
-                        <input type="text" id="swapBarcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
-                        <button type="button" class="btn btn-primary" onclick="searchSwapFrame()">🔍 بحث</button>
-                    </div>
-                    <div class="frame-result" id="swapFrameResult">
-                        <div class="frame-result-title">✅ إطار موجود ومتاح</div>
-                        <div class="frame-meta" id="swapFrameMeta"></div>
-                    </div>
-                    <div class="frame-error" id="swapFrameError"></div>
+                @* Not every replacement comes off the shelf - the customer may bring their
+                   own frame. sp_swap_frame takes @new_frame_id = NULL for that, which drops
+                   the item off inventory and turns it into استبدال عدسات. Hidden in
+                   compensation mode, which is always a frame from stock. *@
+                <div class="form-group" id="swapSourceGroup">
+                    <label>مصدر الإطار الجديد *</label>
+                    <select id="swapSource" onchange="updateSwapSource()">
+                        <option value="stock" selected>🗃️ إطار من المخزون</option>
+                        <option value="external">📦 إطار الزبون (جابه معاه)</option>
+                    </select>
                 </div>
+
+                <div id="swapInventoryGroup">
+                    <div class="form-group">
+                        <label>باركود الإطار البديل *</label>
+                        <div class="input-group">
+                            <input type="text" id="swapBarcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                            <button type="button" class="btn btn-primary" onclick="searchSwapFrame()">🔍 بحث</button>
+                        </div>
+                        <div class="frame-result" id="swapFrameResult">
+                            <div class="frame-result-title">✅ إطار موجود ومتاح</div>
+                            <div class="frame-meta" id="swapFrameMeta"></div>
+                        </div>
+                        <div class="frame-error" id="swapFrameError"></div>
+                    </div>
+                </div>
+
+                <div id="swapExternalGroup" style="display:none">
+                    <div class="form-group">
+                        <label>وصف إطار الزبون (اختياري)</label>
+                        <input type="text" name="externalFrameNotes" id="swapExternalNotesInput" placeholder="مثال: إطار Gucci أسود — جابه من عنده" />
+                        <div class="form-hint">البند هيتحول إلى «استبدال عدسات» ومش هياخد إطار من المخزون.</div>
+                    </div>
+                </div>
+
                 <div class="form-group">
                     <label>💰 السعر المتفق مع الزبون (ج) *</label>
                     <input type="number" name="newFrameAgreedPrice" id="swapPriceInput" min="0" step="0.01" required />
+                    <div class="text-sm text-muted mt-1" id="swapPriceHint"></div>
                 </div>
                 <div class="form-group">
                     <label>ملاحظة (اختياري)</label>
@@ -434,6 +488,54 @@
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closePaymentModal()">إلغاء</button>
             <button type="submit" form="paymentForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
+        </div>
+    </div>
+}
+
+@if (canRefund)
+{
+    <div class="overlay" id="refundModalOverlay" style="z-index:110" onclick="closeRefundModal()"></div>
+    <div class="modal modal-sm" id="refundModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">↩️ استرداد مبلغ</span>
+            <button type="button" class="modal-close" onclick="closeRefundModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2">
+                المدفوع فعلاً: <b>@Money(order.PaidAmount)</b> — الإجمالي: <b>@Money(order.TotalAmount)</b>
+            </div>
+
+            <form id="refundForm" asp-action="StageRefund" method="post" onsubmit="stageEdit(event)">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+
+                <div class="form-group">
+                    <label>💰 مبلغ الاسترداد (ج) *</label>
+                    <input type="number" name="amount" id="refundAmountInput" min="0.01" step="0.01"
+                           max="@order.PaidAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)" required />
+                    <button type="button" class="btn btn-outline btn-sm mt-1"
+                            onclick="document.getElementById('refundAmountInput').value = '@order.PaidAmount.ToString(System.Globalization.CultureInfo.InvariantCulture)'">
+                        رد كامل المدفوع (@Money(order.PaidAmount))
+                    </button>
+                    <div class="form-hint">لا يمكن رد أكثر من المدفوع فعلاً.</div>
+                </div>
+
+                <div class="form-group">
+                    <label>طريقة الرد *</label>
+                    <select name="paymentMethod" required>
+                        <option value="Cash" selected>💵 نقدي</option>
+                        <option value="Visa">💳 فيزا</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>سبب الاسترداد (اختياري)</label>
+                    <input type="text" name="notes" placeholder="مثال: إلغاء الطلب بناءً على طلب الزبون" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeRefundModal()">إلغاء</button>
+            <button type="submit" form="refundForm" class="btn btn-danger">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }
