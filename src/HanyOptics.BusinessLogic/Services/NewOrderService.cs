@@ -249,6 +249,29 @@ public class NewOrderService : INewOrderService
         }
     }
 
+    // The reverse of what ValidateItemAsync produces. FrameBarcode is what the form works
+    // in - the id and label are re-resolved from it when the corrected item is validated
+    // again - so an item reopened for editing shows the barcode the user originally typed.
+    public NewOrderItemRequest ToRequest(OrderDraftItem item) => new()
+    {
+        ItemType = item.ItemType,
+        FrameBarcode = item.FrameBarcode,
+        FrameAgreedPrice = item.FrameAgreedPrice,
+        ExternalFrameNotes = item.ExternalFrameNotes,
+        LensDescription = item.LensDescription,
+        LensSellPrice = item.LensSellPrice,
+        LensCostPrice = item.LensCostPrice,
+        Notes = item.Notes,
+        RightSphere = item.RightSphere,
+        RightCylinder = item.RightCylinder,
+        RightAxis = item.RightAxis,
+        LeftSphere = item.LeftSphere,
+        LeftCylinder = item.LeftCylinder,
+        LeftAxis = item.LeftAxis,
+        Pd = item.Pd,
+        AddPower = item.AddPower
+    };
+
     public async Task<AddItemToOrderOutcome> AddItemToExistingOrderAsync(int orderId, NewOrderItemRequest request)
     {
         var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);

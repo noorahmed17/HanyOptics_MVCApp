@@ -50,18 +50,25 @@
 </div>
 
 <div id="bulkToolbar" class="card" style="display:none; margin-bottom:14px">
-    <div class="card-body flex items-center gap-2" style="justify-content:space-between; padding:10px 16px">
-        <span><b id="bulkSelectedCount">0</b> طلب محدد</span>
-        <div class="flex items-center gap-2">
+    <div class="card-body" style="padding:10px 16px">
+        <div class="flex items-center gap-2" style="justify-content:space-between">
+            <span><b id="bulkSelectedCount">0</b> طلب محدد</span>
+            <div class="flex items-center gap-2">
             <select id="bulkStatusSelect" style="width:150px">
                 <option value="Sold">بيع</option>
                 <option value="Ready">جاهز</option>
                 <option value="Delivered">تسليم</option>
                 <option value="Cancelled">ملغي</option>
             </select>
-            <button type="button" class="btn btn-primary btn-sm" onclick="submitBulkStatusUpdate()">تحديث الحالة</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="clearBulkSelection()">إلغاء التحديد</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="submitBulkStatusUpdate()">تحديث الحالة</button>
+                <button type="button" class="btn btn-outline btn-sm" onclick="clearBulkSelection()">إلغاء التحديد</button>
+            </div>
         </div>
+
+        @* The selection outlives both the search and the status tabs, so some of what is
+           selected is usually not on screen. Listing the invoices makes the batch about to
+           be updated visible in full, instead of a count for rows the user cannot see. *@
+        <div class="flex items-center gap-2 flex-wrap mt-2" id="bulkSelectedChips"></div>
     </div>
 </div>
 
@@ -99,20 +106,47 @@
 
 @section Scripts {
     <script>
-        // Selection lives here, independent of the checkbox DOM nodes - searching (or
-        // clearing search) replaces the whole tbody, which would otherwise wipe out
-        // whatever was already checked. The point of searching is to find one more order
-        // to add to a selection already in progress, not to start over, so a row checked
-        // before a search still counts (and still gets submitted) even while it's
-        // scrolled out of view behind the search results.
-        const selectedOrderIds = new Set();
+        // Selection is kept outside the DOM and outside this page load, as id -> invoice
+        // number. Two different things used to lose it:
+        //
+        //   - searching replaces the tbody, taking the checkboxes with it;
+        //   - the status tabs (بيع / جاهز / تسليم) are ordinary links, so clicking one is
+        //     a full page load and every bit of in-memory state went with it.
+        //
+        // Gathering a batch means moving between those views on purpose - find one order by
+        // invoice, another under جاهز, a third under بيع - so the selection has to survive
+        // both. sessionStorage is what makes it outlast the navigation; it is scoped to this
+        // browser tab and disappears when the tab closes, which is the right lifetime for a
+        // selection in progress.
+        const BULK_SELECTION_KEY = 'hanyoptics.bulkSelection';
+
+        function loadSelection() {
+            try {
+                return new Map(JSON.parse(sessionStorage.getItem(BULK_SELECTION_KEY) || '[]'));
+            } catch {
+                return new Map();
+            }
+        }
+
+        function saveSelection() {
+            try {
+                sessionStorage.setItem(BULK_SELECTION_KEY, JSON.stringify(Array.from(selectedOrders)));
+            } catch {
+                // Private-browsing quota errors must not break selecting; the selection just
+                // stops surviving navigation.
+            }
+        }
+
+        const selectedOrders = loadSelection();
 
         function syncCheckboxesWithSelection() {
             const checkboxes = document.querySelectorAll('.order-select-checkbox');
-            checkboxes.forEach(function (cb) { cb.checked = selectedOrderIds.has(cb.value); });
+            checkboxes.forEach(function (cb) { cb.checked = selectedOrders.has(cb.value); });
 
             const selectAll = document.getElementById('selectAllCheckbox');
             if (selectAll) selectAll.checked = checkboxes.length > 0 && Array.from(checkboxes).every(function (cb) { return cb.checked; });
+
+            updateBulkToolbar();
         }
 
         // The table only ever loads the default last-4-days window (see Index), so
@@ -160,51 +194,83 @@
         // back to Index is exactly what's wanted here: the table needs to re-render with
         // the now-updated statuses.
         function onOrderCheckboxChange(checkbox) {
-            if (checkbox.checked) selectedOrderIds.add(checkbox.value);
-            else selectedOrderIds.delete(checkbox.value);
+            if (checkbox.checked) selectedOrders.set(checkbox.value, checkbox.dataset.invoice || checkbox.value);
+            else selectedOrders.delete(checkbox.value);
 
             const selectAll = document.getElementById('selectAllCheckbox');
             if (selectAll && !checkbox.checked) selectAll.checked = false;
 
+            saveSelection();
             updateBulkToolbar();
         }
 
         function updateBulkToolbar() {
-            document.getElementById('bulkSelectedCount').textContent = selectedOrderIds.size;
-            document.getElementById('bulkToolbar').style.display = selectedOrderIds.size > 0 ? '' : 'none';
+            document.getElementById('bulkSelectedCount').textContent = selectedOrders.size;
+            document.getElementById('bulkToolbar').style.display = selectedOrders.size > 0 ? '' : 'none';
+
+            // Each selected order is named, and removable from here - the row it came from
+            // may well be behind a different tab or a cleared search by now.
+            const chips = document.getElementById('bulkSelectedChips');
+            chips.innerHTML = '';
+            selectedOrders.forEach(function (invoice, id) {
+                const chip = document.createElement('span');
+                chip.className = 'info-chip';
+                chip.innerHTML = '<bdi></bdi> <b style="cursor:pointer;color:#dc2626">✕</b>';
+                chip.querySelector('bdi').textContent = invoice;
+                chip.querySelector('b').onclick = function () { deselectOrder(id); };
+                chips.appendChild(chip);
+            });
+        }
+
+        function deselectOrder(id) {
+            selectedOrders.delete(id);
+            const cb = document.querySelector('.order-select-checkbox[value="' + id + '"]');
+            if (cb) cb.checked = false;
+            const selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll) selectAll.checked = false;
+            saveSelection();
+            updateBulkToolbar();
         }
 
         function toggleSelectAll(checkbox) {
             document.querySelectorAll('.order-select-checkbox').forEach(function (cb) {
-                if (checkbox.checked) selectedOrderIds.add(cb.value);
-                else selectedOrderIds.delete(cb.value);
+                if (checkbox.checked) selectedOrders.set(cb.value, cb.dataset.invoice || cb.value);
+                else selectedOrders.delete(cb.value);
                 cb.checked = checkbox.checked;
             });
+            saveSelection();
             updateBulkToolbar();
         }
 
         function clearBulkSelection() {
-            selectedOrderIds.clear();
+            selectedOrders.clear();
             document.querySelectorAll('.order-select-checkbox').forEach(function (cb) { cb.checked = false; });
             const selectAll = document.getElementById('selectAllCheckbox');
             if (selectAll) selectAll.checked = false;
+            saveSelection();
             updateBulkToolbar();
         }
 
         const BULK_STATUS_LABELS = { Sold: 'بيع', Ready: 'جاهز', Delivered: 'تسليم', Cancelled: 'ملغي' };
 
         function submitBulkStatusUpdate() {
-            if (selectedOrderIds.size === 0) return;
+            if (selectedOrders.size === 0) return;
 
             const statusValue = document.getElementById('bulkStatusSelect').value;
             const label = BULK_STATUS_LABELS[statusValue] || statusValue;
-            if (!confirm('هل أنت متأكد من تحديث حالة ' + selectedOrderIds.size + ' طلب إلى: ' + label + '؟')) return;
+            // Same reason the chips use <bdi>: an invoice number is digits and hyphens, so
+            // inside this Arabic confirm text the browser reorders its groups and
+            // 150-999-45 reads as 45-999-150. A native confirm() takes no markup, so the
+            // isolation has to be the characters <bdi> is shorthand for.
+            const LRI = '⁦', PDI = '⁩';
+            const invoices = Array.from(selectedOrders.values()).map(function (n) { return LRI + n + PDI; }).join('، ');
+            if (!confirm('تحديث حالة ' + selectedOrders.size + ' طلب إلى: ' + label + '؟\n\n' + invoices)) return;
 
             const form = document.getElementById('bulkStatusForm');
             document.getElementById('bulkNewStatus').value = statusValue;
 
             form.querySelectorAll('.bulk-order-id-input').forEach(function (el) { el.remove(); });
-            selectedOrderIds.forEach(function (id) {
+            selectedOrders.forEach(function (invoice, id) {
                 const hidden = document.createElement('input');
                 hidden.type = 'hidden';
                 hidden.name = 'orderIds';
@@ -213,6 +279,9 @@
                 form.appendChild(hidden);
             });
 
+            // Cleared before submitting rather than after the redirect: the batch has left
+            // the page, so keeping it selected would invite updating the same orders twice.
+            sessionStorage.removeItem(BULK_SELECTION_KEY);
             form.submit();
         }
 
@@ -307,21 +376,23 @@
             reasonGroup.style.display = compensating ? 'none' : '';
             reason.disabled = compensating;
             reason.value = 'true';
-            updateSwapReasonHint();
 
-            // Assigning a compensation frame always draws one from stock, so the
-            // stock/customer choice only applies to a normal frame change.
-            const sourceGroup = document.getElementById('swapSourceGroup');
+            // Assigning a compensation frame always draws one from stock. Recorded on the
+            // element so updateSwapReasonHint - which owns whether the source picker shows -
+            // can honour it without re-deriving the mode.
             const source = document.getElementById('swapSource');
-            sourceGroup.style.display = compensating ? 'none' : '';
             source.disabled = compensating;
-            source.value = 'stock';
+            if (compensating) source.dataset.compensating = '1';
+            else delete source.dataset.compensating;
 
             document.getElementById('swapExternalNotesInput').value = '';
             document.getElementById('swapNotesInput').value = '';
             document.getElementById('swapFrameResult').classList.remove('show');
             document.getElementById('swapFrameError').classList.remove('show');
-            updateSwapSource();
+
+            // Cascades: reason -> whether the source picker shows -> barcode vs description,
+            // and whether a price is asked for at all.
+            updateSwapReasonHint();
 
             document.getElementById('swapModalOverlay').classList.add('show');
             document.getElementById('swapModal').classList.add('show');
@@ -329,23 +400,26 @@
 
         // With a frame from stock the confirm button stays locked until a barcode actually
         // resolves, so a typo can't be staged. The customer's own frame has nothing to look
-        // up, so it unlocks immediately and the price defaults to 0 - we're not selling a
-        // frame in that case, though a fitting charge can still be typed in.
+        // up, so it unlocks immediately - and nothing is being sold, so the price field goes
+        // away entirely rather than sitting there asking for a number that has no meaning.
+        // sp_swap_frame still wants the parameter, so 0 is sent on its behalf.
         function updateSwapSource() {
             const external = document.getElementById('swapSource').value === 'external';
 
             document.getElementById('swapInventoryGroup').style.display = external ? 'none' : '';
             document.getElementById('swapExternalGroup').style.display = external ? '' : 'none';
-            document.getElementById('swapPriceHint').textContent = external
-                ? 'إطار الزبون لا يُحتسب من المخزون — اتركه 0 إن لم يكن هناك مقابل.'
-                : '';
+            document.getElementById('swapPriceGroup').style.display = external ? 'none' : '';
 
             const priceInput = document.getElementById('swapPriceInput');
             const confirmBtn = document.getElementById('swapConfirmBtn');
 
+            // required must come off with the field, or the browser blocks submitting a
+            // form on a validation error the user cannot even see.
+            priceInput.required = !external;
+
             if (external) {
                 document.getElementById('swapNewFrameId').value = '';
-                priceInput.value = priceInput.value || '0';
+                priceInput.value = '0';
                 confirmBtn.disabled = false;
             } else {
                 priceInput.value = '';
@@ -355,11 +429,27 @@
 
         // Spelling out the stock consequence, because "الزبون غيّر رأيه" vs "الإطار تالف"
         // reads like a bookkeeping note but actually decides whether a frame stays sellable.
+        //
+        // The reason also decides whether asking about the replacement's source makes any
+        // sense. A damaged frame is replaced out of stock by definition, so the picker is
+        // hidden and forced to stock; only when the old frame is coming back intact can the
+        // customer plausibly be supplying the new one themselves.
         function updateSwapReasonHint() {
-            const returnsToStock = document.getElementById('swapReason').value === 'true';
+            const reason = document.getElementById('swapReason');
+            const returnsToStock = reason.value === 'true';
+
             document.getElementById('swapReasonHint').textContent = returnsToStock
                 ? 'الإطار القديم يعود للمخزون كقطعة سليمة، والإطار الجديد يُحجز مكانه.'
                 : 'الإطار القديم يُشطب ويُسجَّل في سجل التوالف، ولن يعود للمخزون.';
+
+            const sourceGroup = document.getElementById('swapSourceGroup');
+            const source = document.getElementById('swapSource');
+            const offerSourceChoice = returnsToStock && !source.dataset.compensating;
+
+            sourceGroup.style.display = offerSourceChoice ? '' : 'none';
+            if (!offerSourceChoice) source.value = 'stock';
+
+            updateSwapSource();
         }
 
         function closeSwapModal() {
@@ -433,6 +523,11 @@
         }
 
         (function () {
+            // Runs on every load, including one arrived at by clicking a status tab: ticks
+            // the rows that are still selected from before and rebuilds the toolbar, which
+            // is what carries the selection across those navigations.
+            syncCheckboxesWithSelection();
+
             const params = new URLSearchParams(location.search);
             const openId = params.get('openOrder');
             if (openId) openOrderDetail(openId);

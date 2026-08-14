@@ -183,6 +183,70 @@ public class OrdersController : Controller
         return RedirectToAction(nameof(NewItem));
     }
 
+    // ── Correcting an item that is already in the draft ────────────────
+    // Same promise as the rest of the wizard: this edits the draft held in the session and
+    // touches nothing in the database. The order still comes into existence in one piece
+    // when step 3 is submitted, so a correction made here is indistinguishable from having
+    // typed the item correctly the first time.
+    [HttpGet]
+    public IActionResult EditDraftItem(int index)
+    {
+        var draft = _drafts.Get();
+        if (draft is null || index < 0 || index >= draft.Items.Count)
+            return NotFound();
+
+        ViewBag.ItemIndex = index;
+        return PartialView("_EditDraftItem", _newOrderService.ToRequest(draft.Items[index]));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> EditDraftItem(int index, NewOrderItemRequest model)
+    {
+        var draft = _drafts.Get();
+        if (draft is null || index < 0 || index >= draft.Items.Count)
+            return NotFound();
+
+        var outcome = await SafeAsync(() => _newOrderService.ValidateItemAsync(model), "تعديل البند");
+
+        if (outcome is null || outcome.Blank || !outcome.Valid)
+        {
+            if (outcome is not null && !outcome.Blank)
+            {
+                foreach (var (field, message) in outcome.FieldErrors)
+                    ModelState.AddModelError(field, message);
+            }
+            else if (outcome is { Blank: true })
+            {
+                ModelState.AddModelError(string.Empty, "بيانات البند ناقصة");
+            }
+
+            ViewBag.ItemIndex = index;
+            return PartialView("_EditDraftItem", model);
+        }
+
+        // Replaced in place so the item keeps its position in the list - staff read these
+        // in the order they entered them.
+        draft.Items[index] = outcome.Item!;
+        _drafts.Save(draft);
+
+        return RedirectToAction(nameof(NewItem));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult RemoveDraftItem(int index)
+    {
+        var draft = _drafts.Get();
+        if (draft is null || index < 0 || index >= draft.Items.Count)
+            return NotFound();
+
+        draft.Items.RemoveAt(index);
+        _drafts.Save(draft);
+
+        return RedirectToAction(nameof(NewItem));
+    }
+
     // ── Step 3: payment, and the only point where anything is saved ────
     [HttpGet]
     public IActionResult NewPayment()
@@ -229,7 +293,7 @@ public class OrdersController : Controller
         var invoiceNumber = draft.InvoiceNumber;
         _drafts.Clear();
 
-        TempData["OrderCreated"] = $"تم تسجيل الطلب {invoiceNumber} بنجاح";
+        TempData["OrderCreated"] = $"تم تسجيل الطلب {Isolate(invoiceNumber)} بنجاح";
         return RedirectToAction(nameof(Index));
     }
 
@@ -290,7 +354,7 @@ public class OrdersController : Controller
         }
         else
         {
-            var failureList = string.Join("، ", result.Failures.Select(f => $"{f.InvoiceNumber} ({f.ErrorMessage})"));
+            var failureList = string.Join("، ", result.Failures.Select(f => $"{Isolate(f.InvoiceNumber)} ({f.ErrorMessage})"));
             TempData["StatusUpdateError"] = result.SuccessCount == 0
                 ? $"تعذر تحديث أي طلب: {failureList}"
                 : $"تم تحديث {result.SuccessCount} طلب، وتعذر تحديث: {failureList}";
@@ -511,6 +575,25 @@ public class OrdersController : Controller
         var doctors = await _newOrderService.GetDoctorsAsync();
         ViewBag.Doctors = new SelectListWithSelection(doctors, selectedDoctorId);
     }
+
+    // An invoice number like "150-999-45" is digits and hyphens only - all weak or neutral
+    // under the Unicode bidi algorithm - so dropping one into an Arabic (right-to-left)
+    // sentence lets the surrounding direction reorder its groups, and it renders on screen
+    // as "45-999-150". Measured in the browser: without isolation the three groups land at
+    // x=1093/1061/1038 (backwards); with it, 1038/1070/1102 (correct).
+    //
+    // Views avoid this by wrapping the number in <bdi>. These messages cannot: they travel
+    // through TempData as plain text and are HTML-encoded when rendered, so a tag would
+    // show up literally. The isolation therefore has to be characters - which is what <bdi>
+    // amounts to anyway.
+    //
+    // Built from code points rather than written literally because both characters are
+    // invisible, and unseen bidi controls in a string literal make source read differently
+    // from how it runs.
+    private const char LeftToRightIsolate = (char)0x2066;
+    private const char PopDirectionalIsolate = (char)0x2069;
+
+    private static string Isolate(string text) => LeftToRightIsolate + text + PopDirectionalIsolate;
 
     // Last line of defense: nothing this controller does should ever let a raw
     // exception (SQL errors, timeouts, etc.) reach the user as the framework's

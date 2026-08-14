@@ -50,7 +50,9 @@ else
     @foreach (var o in Model)
     {
         <tr class="clickable" onclick="openOrderDetail(@o.OrderId)">
-            <td onclick="event.stopPropagation()"><input type="checkbox" class="order-select-checkbox" value="@o.OrderId" onchange="onOrderCheckboxChange(this)" /></td>
+            @* data-invoice lets the toolbar name an order that is selected but filtered out
+               of the current view - the id alone would be meaningless on screen. *@
+            <td onclick="event.stopPropagation()"><input type="checkbox" class="order-select-checkbox" value="@o.OrderId" data-invoice="@o.InvoiceNumber" onchange="onOrderCheckboxChange(this)" /></td>
             <td><b><bdi>@o.InvoiceNumber</bdi></b><br /><span class="text-sm text-muted">@FormatDate(o.OrderDate)</span></td>
             <td>@o.CustomerName<br /><span class="text-sm text-muted">@(o.CustomerPhone ?? "—")</span></td>
             <td>@foreach (var t in o.ItemTypes)

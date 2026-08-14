@@ -1,0 +1,44 @@
+@model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
+@{
+    var index = (int)ViewBag.ItemIndex;
+}
+
+@*
+    The contents of the edit-item popup on wizard step 2. Loaded into the modal by fetch
+    (see openEditItemModal), so it is only ever the inner markup - no layout.
+
+    The fields are the same partial the page below is already showing, which is why nothing
+    in it uses element ids; see _ItemFormFields.
+*@
+<div class="modal-header">
+    <span class="modal-title">✏️ تعديل البند</span>
+    <button type="button" class="modal-close" onclick="closeEditItemModal()">✕</button>
+</div>
+
+<div class="modal-body">
+    <div class="alert alert-info mb-2">
+        ℹ️ التعديل هيتحفظ في الطلب الجاري بس — الطلب كله لسه ما اتسجلش في قاعدة البيانات.
+    </div>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="validation-summary">
+            <ul>
+                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                {
+                    <li>@error.ErrorMessage</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <form id="editDraftItemForm" asp-action="EditDraftItem" asp-route-index="@index" method="post" onsubmit="submitEditItem(event)">
+        @Html.AntiForgeryToken()
+        <partial name="_ItemFormFields" model="Model" />
+    </form>
+</div>
+
+<div class="modal-footer">
+    <button type="button" class="btn btn-outline" onclick="closeEditItemModal()">إلغاء</button>
+    <button type="submit" form="editDraftItemForm" class="btn btn-primary">✔️ تأكيد التعديل</button>
+</div>

@@ -70,7 +70,6 @@
         new[] { OrderStatus.Ready, OrderStatus.Delivered, OrderStatus.Cancelled };
 
     string Money(decimal n) => n.ToString("N0", arEg) + " ج";
-    string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
     string FormatDateTime(DateTime d) => d.ToString("d MMM, HH:mm", arEg);
 
     var nextStatuses = NextStatuses(order.Status);
@@ -115,54 +114,20 @@
         <div class="alert alert-danger mb-2">⚠️ @pendingEditError</div>
     }
 
+    @* Just the two figures worth seeing at a glance. The rest of the customer/order detail
+       that used to sit here was noise - the invoice is in the title, and the money detail
+       is in the payment and refund dialogs where it is actually being acted on. *@
     <div class="detail-section">
         <div class="detail-grid">
-            <div class="detail-row"><span class="detail-label">اسم السجل</span><span class="detail-val">@(Model.Customer?.Name ?? "بدون اسم")</span></div>
-            @if (!string.IsNullOrWhiteSpace(order.CustomerName) && order.CustomerName != Model.Customer?.Name)
-            {
-                <div class="detail-row"><span class="detail-label">اسم الفاتورة</span><span class="detail-val fw-bold">@order.CustomerName</span></div>
-            }
-            <div class="detail-row"><span class="detail-label">الهاتف</span><span class="detail-val">@(Model.Customer?.Phone ?? "—")</span></div>
-            <div class="detail-row"><span class="detail-label">الفاتورة</span><span class="detail-val"><bdi>@order.InvoiceNumber</bdi></span></div>
-            <div class="detail-row"><span class="detail-label">التاريخ</span><span class="detail-val">@FormatDateTime(order.OrderDate)</span></div>
-            <div class="detail-row"><span class="detail-label">نوع التسليم</span><span class="detail-val">@(order.DeliveryType == DeliveryType.Immediate ? "⚡ فوري" : "🕒 عادي")</span></div>
-            @if (Model.Doctor is not null)
-            {
-                <div class="detail-row"><span class="detail-label">🩺 الطبيب</span><span class="detail-val">@Model.Doctor.Name@(string.IsNullOrEmpty(Model.Doctor.Clinic) ? "" : $" — {Model.Doctor.Clinic}")</span></div>
-            }
-            <div class="detail-row"><span class="detail-label">الحالة</span><span class="detail-val"><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></span></div>
             <div class="detail-row"><span class="detail-label">الإجمالي</span><span class="detail-val fw-bold c-blue">@Money(order.TotalAmount)</span></div>
-            <div class="detail-row"><span class="detail-label">المدفوع</span><span class="detail-val fw-bold c-green">@Money(order.PaidAmount)</span></div>
-            @* A negative remainder means the shop owes the customer - cancelling a paid
-               order does exactly that until the refund is recorded. Showing it as
-               "مكتمل" would hide a debt, so the three cases are spelled out. *@
-            <div class="detail-row">
-                <span class="detail-label">المتبقي</span>
-                <span class="detail-val fw-bold @(order.RemainingAmount > 0 ? "c-red" : (order.RemainingAmount < 0 ? "c-red" : "c-green"))">
-                    @if (order.RemainingAmount > 0)
-                    {
-                        @Money(order.RemainingAmount)
-                    }
-                    else if (order.RemainingAmount < 0)
-                    {
-                        <text>↩️ مستحق للزبون: @Money(-order.RemainingAmount)</text>
-                    }
-                    else
-                    {
-                        <text>✅ مكتمل</text>
-                    }
-                </span>
-            </div>
-            @if (order.DeliveredAt.HasValue)
-            {
-                <div class="detail-row"><span class="detail-label">تاريخ التسليم</span><span class="detail-val">@FormatDate(order.DeliveredAt.Value)</span></div>
-            }
+            <div class="detail-row"><span class="detail-label">الحالة</span><span class="detail-val"><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></span></div>
         </div>
-        @if (!string.IsNullOrWhiteSpace(order.Notes))
-        {
-            <div class="alert alert-info mt-2">📝 @order.Notes</div>
-        }
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(order.Notes))
+    {
+        <div class="alert alert-info mb-2">📝 @order.Notes</div>
+    }
 
     @if (Model.PendingEdits.Any())
     {
@@ -389,10 +354,11 @@
                     </select>
                     <div class="text-sm text-muted mt-1" id="swapReasonHint"></div>
                 </div>
-                @* Not every replacement comes off the shelf - the customer may bring their
-                   own frame. sp_swap_frame takes @new_frame_id = NULL for that, which drops
-                   the item off inventory and turns it into استبدال عدسات. Hidden in
-                   compensation mode, which is always a frame from stock. *@
+                @* Only asked when the old frame is coming back intact. A damaged frame is
+                   replaced from stock by definition - there is nothing to choose - so this
+                   stays hidden for تالف, and for compensation items too. When the customer
+                   supplies the frame, sp_swap_frame takes @new_frame_id = NULL, dropping the
+                   item off inventory and turning it into استبدال عدسات. *@
                 <div class="form-group" id="swapSourceGroup">
                     <label>مصدر الإطار الجديد *</label>
                     <select id="swapSource" onchange="updateSwapSource()">
@@ -424,10 +390,12 @@
                     </div>
                 </div>
 
-                <div class="form-group">
+                @* Hidden when the customer brings their own frame: we are not selling one,
+                   so there is no price to agree. sp_swap_frame still needs the parameter,
+                   and 0 is what it is sent. *@
+                <div class="form-group" id="swapPriceGroup">
                     <label>💰 السعر المتفق مع الزبون (ج) *</label>
                     <input type="number" name="newFrameAgreedPrice" id="swapPriceInput" min="0" step="0.01" required />
-                    <div class="text-sm text-muted mt-1" id="swapPriceHint"></div>
                 </div>
                 <div class="form-group">
                     <label>ملاحظة (اختياري)</label>

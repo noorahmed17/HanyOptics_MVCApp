@@ -30,6 +30,10 @@ public interface INewOrderService
     // Validates one item and resolves its barcode to a frame, without reserving anything.
     Task<DraftItemOutcome> ValidateItemAsync(NewOrderItemRequest request);
 
+    // Turns an item already in the draft back into a form model, so it can be reopened and
+    // corrected. Pure translation - nothing is read from or written to the database.
+    NewOrderItemRequest ToRequest(OrderDraftItem item);
+
     // The one and only write path: creates the order, its items and the opening payment
     // as a single all-or-nothing unit.
     Task<CommitDraftOutcome> CommitDraftAsync(OrderDraft draft, NewOrderPaymentRequest payment);

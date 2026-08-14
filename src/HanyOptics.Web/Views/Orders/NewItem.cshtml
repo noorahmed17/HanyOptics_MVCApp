@@ -76,14 +76,26 @@
     {
         <div id="itemsListSection" style="margin-bottom:20px">
             <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px">✅ البنود المضافة</div>
-            @foreach (var item in draft.Items)
+            @* Each row opens for correction. Editing and removing both act on the draft in
+               the session only - the order is still written in one piece at step 3. *@
+            @for (var i = 0; i < draft.Items.Count; i++)
             {
-                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-                    <div>
+                var item = draft.Items[i];
+                var index = i;
+                <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+                    <div class="clickable" style="flex:1" onclick="openEditItemModal(@index)" title="اضغط للتعديل">
                         <span class="badge @TypeBadgeClass(item.ItemType)" style="margin-left:6px">@TypeLabel(item.ItemType)</span>
                         <span style="font-size:13px;font-weight:600">@(item.FrameLabel ?? item.ExternalFrameNotes ?? item.LensDescription ?? "—")</span>
                     </div>
                     <span style="font-size:15px;font-weight:800;color:#1a56db">@Money(item.ItemTotal)</span>
+                    <div class="flex items-center gap-2">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="openEditItemModal(@index)">✏️ تعديل</button>
+                        <form asp-action="RemoveDraftItem" asp-route-index="@index" method="post"
+                              onsubmit="return confirm('حذف هذا البند من الطلب؟');" style="display:inline">
+                            @Html.AntiForgeryToken()
+                            <button type="submit" class="btn btn-outline btn-sm" style="color:#dc2626" title="حذف البند">🗑️</button>
+                        </form>
+                    </div>
                 </div>
             }
             <div style="background:#eff6ff;border-radius:8px;padding:10px 14px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
@@ -114,6 +126,50 @@
     </form>
 </div>
 
+<div class="overlay" id="editItemOverlay" onclick="closeEditItemModal()"></div>
+<div class="modal" id="editItemModal" onclick="event.stopPropagation()"></div>
+
 @section Scripts {
     <script src="~/js/order-item-form.js" asp-append-version="true"></script>
+    <script>
+        // Correcting an item already in the draft. The popup's markup is fetched rather
+        // than rendered up front, so the page carries one copy of the item fields until an
+        // item is actually opened - and initItemForm is called on the copy that arrives,
+        // since the shared script only auto-wires what was in the document at load.
+        function openEditItemModal(index) {
+            fetch('@Url.Action("EditDraftItem")?index=' + index)
+                .then(r => r.ok ? r.text() : Promise.reject())
+                .then(html => {
+                    const modal = document.getElementById('editItemModal');
+                    modal.innerHTML = html;
+                    modal.querySelectorAll('[data-item-form]').forEach(window.initItemForm);
+                    document.getElementById('editItemOverlay').classList.add('show');
+                    modal.classList.add('show');
+                })
+                .catch(() => alert('تعذر فتح البند للتعديل'));
+        }
+
+        function closeEditItemModal() {
+            document.getElementById('editItemOverlay').classList.remove('show');
+            document.getElementById('editItemModal').classList.remove('show');
+        }
+
+        // Posts in the background so a validation failure can be shown inside the still-open
+        // popup. A success replies with a redirect, which fetch follows to the re-rendered
+        // step 2 - that is the signal to reload and show the corrected list.
+        function submitEditItem(event) {
+            event.preventDefault();
+            const form = event.target;
+
+            fetch(form.action, { method: 'POST', body: new FormData(form) })
+                .then(r => r.redirected ? (location.href = r.url, null) : r.text())
+                .then(html => {
+                    if (html === null) return;
+                    const modal = document.getElementById('editItemModal');
+                    modal.innerHTML = html;
+                    modal.querySelectorAll('[data-item-form]').forEach(window.initItemForm);
+                })
+                .catch(() => alert('حدث خطأ غير متوقع — حاول مرة أخرى'));
+        }
+    </script>
 }

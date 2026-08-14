@@ -52,20 +52,15 @@
         </div>
     </aside>
 
+    @* No topbar: it only repeated the page title, which every page already prints in its
+       own page-header, and the browser tab still carries it from ViewData["Title"]. *@
     <div id="content">
-        <div class="topbar">
-            <span class="topbar-title">@ViewData["Title"]</span>
-            <span class="topbar-date" id="topbar-date"></span>
-        </div>
         <div class="page">
             @RenderBody()
         </div>
     </div>
 
 </div>
-<script>
-    document.getElementById('topbar-date').textContent = new Date().toLocaleDateString('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-</script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
