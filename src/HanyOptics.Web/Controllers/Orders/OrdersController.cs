@@ -493,6 +493,19 @@ public class OrdersController : Controller
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تسجيل الاسترداد.");
     }
 
+    // New lenses on an item that already has some. No barcode and no stock check: lenses
+    // are not tracked as inventory, so the type and the price are the whole change.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StageLensChange(int orderId, int itemId, string? lensDescription, decimal lensSellPrice, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.BuildLensChangeEditAsync(itemId, lensDescription, lensSellPrice, notes), "تغيير العدسات");
+        if (outcome is { Succeeded: true })
+            StageEdit(orderId, outcome.Edit!);
+
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تغيير العدسات.");
+    }
+
     // Cancels a single item without touching the order's other items. The disposition
     // decides what happens to its frame - returned to stock, or written off as damaged.
     [HttpPost]

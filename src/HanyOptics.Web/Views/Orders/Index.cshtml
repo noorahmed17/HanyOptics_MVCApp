@@ -327,6 +327,33 @@
             document.getElementById('paymentModal').classList.remove('show');
         }
 
+        // Takes the button rather than the values: the lens description is free text, and
+        // passing it through an inline onclick argument breaks the attribute as soon as it
+        // contains a quote. Reading it off the element sidesteps the quoting entirely.
+        //
+        // Pre-filled with what the item currently has, so the common case - correcting a
+        // price, upgrading the coating - is an edit rather than retyping from blank.
+        function openLensModal(button) {
+            const d = button.dataset;
+
+            document.getElementById('lensItemLabel').textContent =
+                'تغيير عدسات البند: ' + d.lensItemLabel + ' — السعر الحالي: ' + Number(d.lensPrice).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('lensItemId').value = d.lensItemId;
+            document.getElementById('lensDescriptionInput').value = d.lensDescription || '';
+            document.getElementById('lensPriceInput').value = d.lensPrice;
+            document.getElementById('lensNotesInput').value = '';
+            document.getElementById('lensPriceHint').textContent =
+                'إجمالي البند بيتحدث تلقائيًا، وكذلك إجمالي الطلب.';
+            document.getElementById('lensModalOverlay').classList.add('show');
+            document.getElementById('lensModal').classList.add('show');
+            document.getElementById('lensDescriptionInput').focus();
+        }
+
+        function closeLensModal() {
+            document.getElementById('lensModalOverlay').classList.remove('show');
+            document.getElementById('lensModal').classList.remove('show');
+        }
+
         function openRefundModal() {
             document.getElementById('refundForm').reset();
             document.getElementById('refundModalOverlay').classList.add('show');

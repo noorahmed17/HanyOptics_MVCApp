@@ -120,7 +120,8 @@
             <a class="btn btn-outline" asp-action="New">→ رجوع</a>
             <div class="flex gap-2">
                 <button type="submit" name="SubmitAction" value="add" class="btn btn-outline" title="أضف هذا البند وابدأ بند جديد">+ إضافة بند آخر</button>
-                <button type="submit" name="SubmitAction" value="next" class="btn btn-primary btn-lg">التالي — الدفع ←</button>
+                <button type="submit" name="SubmitAction" value="next" class="btn btn-primary btn-lg"
+                        onclick="allowNextWithoutNewItem(this)">التالي — الدفع ←</button>
             </div>
         </div>
     </form>
@@ -132,6 +133,38 @@
 @section Scripts {
     <script src="~/js/order-item-form.js" asp-append-version="true"></script>
     <script>
+        // Coming back from the payment step lands here with items already added and the
+        // new-item form blank. The fields carry `required` for the item being typed, so the
+        // browser used to refuse to submit an empty form - which meant the only way forward
+        // was to invent another item.
+        //
+        // The server already handles this: a blank form is recognised as "nothing new to
+        // add" and the wizard moves on as long as the draft holds at least one item. So the
+        // only thing needed here is to stop the browser blocking that submit. Validation is
+        // left switched on for a partly-filled form, where the instant feedback is the
+        // point.
+        //
+        // This mirrors the server's blank test rather than replacing it: getting it wrong
+        // costs nothing, because ValidateItemAsync still decides whether an item was
+        // entered and reports the field errors if it was entered badly.
+        function allowNextWithoutNewItem(button) {
+            const root = document.querySelector('#itemForm [data-item-form]');
+            if (!root) return;
+
+            const value = role => {
+                const el = root.querySelector('[data-role="' + role + '"]');
+                return el ? el.value.trim() : '';
+            };
+
+            const nothingTyped = !value('barcodeInput')
+                && !value('extFrameInput')
+                && !value('lensDescInput')
+                && !value('framePriceInput')
+                && !value('lensSellInput');
+
+            button.formNoValidate = nothingTyped;
+        }
+
         // Correcting an item already in the draft. The popup's markup is fetched rather
         // than rendered up front, so the page carries one copy of the item fields until an
         // item is actually opened - and initItemForm is called on the copy that arrives,

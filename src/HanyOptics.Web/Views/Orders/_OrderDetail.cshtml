@@ -92,6 +92,11 @@
     var activeItemCount = order.OrderItems.Count(i => i.Status == OrderItemStatus.Active);
     var hasCancellableItem = !orderIsTerminal && activeItemCount > 0;
 
+    // إطار فقط has no lens line, so an order made up entirely of those never needs the
+    // lens dialog rendered at all.
+    var hasLensItem = !orderIsTerminal && order.OrderItems.Any(i =>
+        i.Status == OrderItemStatus.Active && i.ItemType != OrderItemType.FrameOnly);
+
     // A delivered order can still be owed money (handed over on a promise to pay), so the
     // payment button follows what's outstanding rather than the order's status. Cancelled
     // is the one status sp_add_payment refuses anything but a refund on.
@@ -195,6 +200,23 @@
                         {
                             var replaceMode = it.FrameId.HasValue ? "swap" : "compensate";
                             <button type="button" class="btn btn-outline btn-sm" onclick="openSwapModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture), '@replaceMode')">🔄 تغيير الإطار</button>
+                        }
+                        @* Offered wherever the item actually has a lens line. Nothing to look
+                           up - lenses hold no stock - so it asks only for type and price.
+
+                           The values ride on data-* attributes rather than being written into
+                           the onclick call: the lens description is free text a user typed,
+                           so it can contain quotes or apostrophes that would break out of the
+                           attribute. Razor encodes attribute values, so this holds whatever
+                           they wrote. *@
+                        @if (it.ItemType != OrderItemType.FrameOnly)
+                        {
+                            <button type="button" class="btn btn-outline btn-sm"
+                                    data-lens-item-id="@it.ItemId"
+                                    data-lens-item-label="@TypeLabel(it.ItemType)"
+                                    data-lens-description="@it.LensDescription"
+                                    data-lens-price="@it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                    onclick="openLensModal(this)">👁️ تغيير العدسات</button>
                         }
                         <button type="button" class="btn btn-outline btn-sm" onclick="openCancelItemModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.ItemTotal.ToString(System.Globalization.CultureInfo.InvariantCulture), @(activeItemCount == 1 ? "true" : "false"), @(it.FrameId.HasValue || it.CompensationFrameId.HasValue ? "true" : "false"))" style="color:#dc2626">🗑️ إلغاء البند</button>
                     </div>
@@ -456,6 +478,48 @@
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closePaymentModal()">إلغاء</button>
             <button type="submit" form="paymentForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
+        </div>
+    </div>
+}
+
+@if (hasLensItem)
+{
+    <div class="overlay" id="lensModalOverlay" style="z-index:110" onclick="closeLensModal()"></div>
+    <div class="modal modal-sm" id="lensModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">👁️ تغيير العدسات</span>
+            <button type="button" class="modal-close" onclick="closeLensModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2" id="lensItemLabel"></div>
+
+            <form id="lensForm" asp-action="StageLensChange" method="post" onsubmit="stageEdit(event)">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="itemId" id="lensItemId" />
+
+                @* No barcode and no availability check: lenses are not stocked, so the type
+                   is free text and the price is whatever was agreed. *@
+                <div class="form-group">
+                    <label>👁️ نوع العدسات *</label>
+                    <input type="text" name="lensDescription" id="lensDescriptionInput"
+                           placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" required />
+                </div>
+
+                <div class="form-group">
+                    <label>💰 سعر العدسات (ج) *</label>
+                    <input type="number" name="lensSellPrice" id="lensPriceInput" min="0" step="0.01" required />
+                    <div class="text-sm text-muted mt-1" id="lensPriceHint"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>ملاحظة (اختياري)</label>
+                    <input type="text" name="notes" id="lensNotesInput" placeholder="مثال: الزبون طلب خامة أعلى" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeLensModal()">إلغاء</button>
+            <button type="submit" form="lensForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }
