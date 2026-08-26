@@ -5,6 +5,7 @@ using HanyOptics.BusinessLogic.Interfaces;
 using HanyOptics.DataAccess;
 using HanyOptics.Web;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +25,18 @@ builder.Services.AddHanyOpticsBusinessLogic(builder.Configuration);
 // procedure stamps whoever actually performed the operation.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// The JWT lives in a cookie encrypted with the data-protection keys. Those keys are held
+// in memory by default, so every restart mints new ones, every existing cookie becomes
+// undecryptable, and every signed-in user is silently logged out. That is tolerable on a
+// dev machine and not tolerable on a host that recycles the process, so the keys are
+// written to disk and outlive the process.
+//
+// The path sits under the content root because that is the one directory a hosted site can
+// reliably write to; on Windows hosting it maps inside the site's own folder.
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "keys")))
+    .SetApplicationName("HanyOptics");
 
 // The "new order" wizard builds the order in the session and only writes it to the
 // database on the final step, so an abandoned wizard leaves nothing behind.

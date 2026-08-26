@@ -2,6 +2,7 @@ using HanyOptics.BusinessLogic.Interfaces;
 using HanyOptics.DataAccess.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace HanyOptics.BusinessLogic.Auth;
 
@@ -17,17 +18,20 @@ public class IdentitySeeder : IIdentitySeeder
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IBusinessUserDirectory _businessUsers;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<IdentitySeeder> _logger;
 
     public IdentitySeeder(
         RoleManager<IdentityRole> roleManager,
         UserManager<ApplicationUser> userManager,
         IBusinessUserDirectory businessUsers,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<IdentitySeeder> logger)
     {
         _roleManager = roleManager;
         _userManager = userManager;
         _businessUsers = businessUsers;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task SeedAsync()
@@ -66,7 +70,22 @@ public class IdentitySeeder : IIdentitySeeder
         };
 
         var result = await _userManager.CreateAsync(admin, adminPassword);
+
         if (result.Succeeded)
+        {
             await _userManager.AddToRoleAsync(admin, Roles.Admin);
+            _logger.LogInformation("Seeded the admin account {Email}.", adminEmail);
+            return;
+        }
+
+        // Silence here is worse than a crash. The app starts, serves the login page and
+        // looks healthy - but no admin exists, so nobody can get in and nothing says why.
+        // The usual cause is a configured password that fails the policy: RequiredLength
+        // is relaxed to 6 and uppercase/non-alphanumeric are not required, but a digit and
+        // a lowercase letter still are.
+        _logger.LogError(
+            "Could not seed the admin account {Email} - nobody will be able to sign in. Identity rejected it: {Errors}",
+            adminEmail,
+            string.Join(" | ", result.Errors.Select(e => $"{e.Code}: {e.Description}")));
     }
 }

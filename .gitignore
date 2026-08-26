@@ -14,3 +14,9 @@ appsettings.*.json
 # Local Claude Code permission allowlist - accumulates real hostnames/paths/session data
 # and isn't meant to be shared. .claude/launch.json (dev server config) stays tracked.
 .claude/settings.local.json
+
+# Data-protection keys. These encrypt the auth cookie, so they are secrets, and they are
+# per-environment: sharing one machine's keys with another is both a leak and a conflict.
+# The app creates them on first run (see AddDataProtection in Program.cs).
+**/App_Data/keys/
+**/App_Data/
