@@ -423,6 +423,13 @@
 
             document.getElementById('swapModalOverlay').classList.add('show');
             document.getElementById('swapModal').classList.add('show');
+
+            // Leave the cursor in the barcode box so the scanner can be used straight away -
+            // no click needed, which is the point of having one.
+            const barcodeBox = document.getElementById('swapBarcodeInput');
+            if (barcodeBox && document.getElementById('swapInventoryGroup').style.display !== 'none') {
+                barcodeBox.focus();
+            }
         }
 
         // With a frame from stock the confirm button stays locked until a barcode actually
@@ -548,6 +555,19 @@
                     }
                 });
         }
+
+        // Same reason as the wizard's barcode box: the scanner types the code then sends
+        // Enter, and Enter in a form means submit. Here that would stage the frame change
+        // before a frame had even been looked up.
+        (function () {
+            const input = document.getElementById('swapBarcodeInput');
+            if (!input) return;
+            input.addEventListener('keydown', function (e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                searchSwapFrame();
+            });
+        })();
 
         (function () {
             // Runs on every load, including one arrived at by clicking a status tab: ticks

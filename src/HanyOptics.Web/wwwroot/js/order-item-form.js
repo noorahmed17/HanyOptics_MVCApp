@@ -102,7 +102,7 @@
             rxArrow.textContent = '▲';
         }
 
-        pick('searchFrameBtn').addEventListener('click', function () {
+        function lookupFrame() {
             const barcode = barcodeInput.value.trim();
             const resultBox = pick('frameResult');
             const errorBox = pick('frameError');
@@ -128,6 +128,19 @@
                         errorBox.classList.add('show');
                     }
                 });
+        }
+
+        pick('searchFrameBtn').addEventListener('click', lookupFrame);
+
+        // A USB barcode scanner is just a keyboard: it types the code and then sends Enter.
+        // Inside a form that Enter submits the whole thing, so scanning a frame used to post
+        // the item half-filled instead of looking it up - the one thing the scanner is for.
+        // Swallowing Enter here turns the scan into a search, which is what the shop
+        // actually does: point, beep, frame details appear.
+        barcodeInput.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            lookupFrame();
         });
     }
 
