@@ -559,15 +559,18 @@
         // Same reason as the wizard's barcode box: the scanner types the code then sends
         // Enter, and Enter in a form means submit. Here that would stage the frame change
         // before a frame had even been looked up.
-        (function () {
-            const input = document.getElementById('swapBarcodeInput');
-            if (!input) return;
-            input.addEventListener('keydown', function (e) {
-                if (e.key !== 'Enter') return;
-                e.preventDefault();
-                searchSwapFrame();
-            });
-        })();
+        //
+        // Delegated from the document rather than bound to the input, because the input
+        // does not exist yet when this runs - the whole popup arrives later by fetch, and
+        // is replaced again every time an edit is staged. A direct binding would attach to
+        // nothing on load, and be thrown away on each re-render even if it had.
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            const el = e.target;
+            if (!el || el.id !== 'swapBarcodeInput') return;
+            e.preventDefault();
+            searchSwapFrame();
+        });
 
         (function () {
             // Runs on every load, including one arrived at by clicking a status tab: ticks
