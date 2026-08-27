@@ -97,6 +97,14 @@
     var hasLensItem = !orderIsTerminal && order.OrderItems.Any(i =>
         i.Status == OrderItemStatus.Active && i.ItemType != OrderItemType.FrameOnly);
 
+    // Repricing is for items that were sold something out of the shop. استبدال عدسات is
+    // the customer's own frame with lenses priced when they were chosen, so it is excluded.
+    static bool CanEditPrices(HanyOptics.Domain.Entities.OrderItem i) =>
+        i.Status == OrderItemStatus.Active && i.ItemType != OrderItemType.LensesReplace;
+
+    // No point rendering the dialog for an order whose items are all استبدال عدسات.
+    var hasPriceEditableItem = !orderIsTerminal && order.OrderItems.Any(CanEditPrices);
+
     // A delivered order can still be owed money (handed over on a promise to pay), so the
     // payment button follows what's outstanding rather than the order's status. Cancelled
     // is the one status sp_add_payment refuses anything but a refund on.
@@ -198,17 +206,22 @@
                     <div class="flex items-center gap-2 flex-wrap mt-2">
                         @* Correcting what was charged, without changing what was sold - a
                            mistyped price, or a discount agreed after the fact. The other
-                           buttons all replace something; this one only touches money. *@
-                        @{
+                           buttons all replace something; this one only touches money.
+
+                           Not offered on استبدال عدسات: the lens price there is set through
+                           تغيير العدسات when the lenses are chosen, and the item draws no
+                           frame from stock, so there is nothing else to reprice. *@
+                        @if (CanEditPrices(it))
+                        {
                             var hasFrameLine = it.FrameId.HasValue || it.CompensationFrameId.HasValue;
                             var hasLensLine = it.ItemType != OrderItemType.FrameOnly;
+                            <button type="button" class="btn btn-outline btn-sm"
+                                    data-price-item-id="@it.ItemId"
+                                    data-price-item-label="@TypeLabel(it.ItemType)"
+                                    data-price-frame="@(hasFrameLine ? it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                    data-price-lens="@(hasLensLine ? it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                    onclick="openPriceModal(this)">💰 تعديل الأسعار</button>
                         }
-                        <button type="button" class="btn btn-outline btn-sm"
-                                data-price-item-id="@it.ItemId"
-                                data-price-item-label="@TypeLabel(it.ItemType)"
-                                data-price-frame="@(hasFrameLine ? it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
-                                data-price-lens="@(hasLensLine ? it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
-                                onclick="openPriceModal(this)">💰 تعديل الأسعار</button>
                         @if (CanReplaceFrame(it))
                         {
                             var replaceMode = it.FrameId.HasValue ? "swap" : "compensate";
@@ -495,7 +508,7 @@
     </div>
 }
 
-@if (!orderIsTerminal && activeItemCount > 0)
+@if (hasPriceEditableItem)
 {
     <div class="overlay" id="priceModalOverlay" style="z-index:110" onclick="closePriceModal()"></div>
     <div class="modal modal-sm" id="priceModal" style="z-index:111" onclick="event.stopPropagation()">

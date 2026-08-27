@@ -346,6 +346,12 @@ public class OrderService : IOrderService
         if (item.Status != OrderItemStatus.Active)
             return StagedEditOutcome.Failure("هذا البند ملغي");
 
+        // Matches what the popup offers: استبدال عدسات is priced when the lenses are
+        // chosen and draws no frame from stock, so it is not repriced here. Enforced rather
+        // than left to the UI, so a request that skips the screen cannot do it either.
+        if (item.ItemType == OrderItemType.LensesReplace)
+            return StagedEditOutcome.Failure("بند «استبدال عدسات» لا يتم تعديل أسعاره من هنا");
+
         if (frameAgreedPrice is null && lensSellPrice is null)
             return StagedEditOutcome.Failure("أدخل سعراً واحداً على الأقل");
 
