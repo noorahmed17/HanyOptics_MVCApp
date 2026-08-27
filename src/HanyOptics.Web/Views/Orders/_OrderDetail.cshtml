@@ -196,6 +196,19 @@
                 @if (!itemCancelled && !orderIsTerminal)
                 {
                     <div class="flex items-center gap-2 flex-wrap mt-2">
+                        @* Correcting what was charged, without changing what was sold - a
+                           mistyped price, or a discount agreed after the fact. The other
+                           buttons all replace something; this one only touches money. *@
+                        @{
+                            var hasFrameLine = it.FrameId.HasValue || it.CompensationFrameId.HasValue;
+                            var hasLensLine = it.ItemType != OrderItemType.FrameOnly;
+                        }
+                        <button type="button" class="btn btn-outline btn-sm"
+                                data-price-item-id="@it.ItemId"
+                                data-price-item-label="@TypeLabel(it.ItemType)"
+                                data-price-frame="@(hasFrameLine ? it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                data-price-lens="@(hasLensLine ? it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                onclick="openPriceModal(this)">💰 تعديل الأسعار</button>
                         @if (CanReplaceFrame(it))
                         {
                             var replaceMode = it.FrameId.HasValue ? "swap" : "compensate";
@@ -478,6 +491,50 @@
         <div class="modal-footer">
             <button type="button" class="btn btn-outline" onclick="closePaymentModal()">إلغاء</button>
             <button type="submit" form="paymentForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
+        </div>
+    </div>
+}
+
+@if (!orderIsTerminal && activeItemCount > 0)
+{
+    <div class="overlay" id="priceModalOverlay" style="z-index:110" onclick="closePriceModal()"></div>
+    <div class="modal modal-sm" id="priceModal" style="z-index:111" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">💰 تعديل الأسعار</span>
+            <button type="button" class="modal-close" onclick="closePriceModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info mb-2" id="priceItemLabel"></div>
+
+            <form id="priceForm" asp-action="StagePriceChange" method="post" onsubmit="stageEdit(event)">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="itemId" id="priceItemId" />
+
+                @* Each row is hidden when the item has no such line - an إطار فقط item has
+                   no lens price, a استبدال عدسات item has no frame from stock. A hidden
+                   input is also disabled so it posts nothing and the server leaves that
+                   side untouched. *@
+                <div class="form-group" id="priceFrameGroup">
+                    <label>💰 سعر الإطار (ج)</label>
+                    <input type="number" name="frameAgreedPrice" id="priceFrameInput" min="0" step="0.01" />
+                </div>
+
+                <div class="form-group" id="priceLensGroup">
+                    <label>💰 سعر العدسات (ج)</label>
+                    <input type="number" name="lensSellPrice" id="priceLensInput" min="0" step="0.01" />
+                </div>
+
+                <div class="alert alert-info mb-2" id="priceNewTotal"></div>
+
+                <div class="form-group">
+                    <label>سبب التعديل (اختياري)</label>
+                    <input type="text" name="notes" id="priceNotesInput" placeholder="مثال: خصم متفق عليه مع الزبون" />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closePriceModal()">إلغاء</button>
+            <button type="submit" form="priceForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
 }

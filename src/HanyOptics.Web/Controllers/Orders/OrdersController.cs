@@ -506,6 +506,19 @@ public class OrdersController : Controller
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تغيير العدسات.");
     }
 
+    // Corrects what an item was charged without changing what was sold. Either price may
+    // be omitted, which leaves that side as it stands.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StagePriceChange(int orderId, int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.BuildPriceChangeEditAsync(itemId, frameAgreedPrice, lensSellPrice, notes), "تعديل الأسعار");
+        if (outcome is { Succeeded: true })
+            StageEdit(orderId, outcome.Edit!);
+
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تعديل الأسعار.");
+    }
+
     // Cancels a single item without touching the order's other items. The disposition
     // decides what happens to its frame - returned to stock, or written off as damaged.
     [HttpPost]

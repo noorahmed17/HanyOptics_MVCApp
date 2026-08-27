@@ -331,6 +331,60 @@
         // passing it through an inline onclick argument breaks the attribute as soon as it
         // contains a quote. Reading it off the element sidesteps the quoting entirely.
         //
+        // Only the prices that apply to this item are shown. A hidden input is disabled as
+        // well, so it posts nothing at all and the server leaves that side of the item
+        // alone - rather than receiving an empty value it might read as zero.
+        function openPriceModal(button) {
+            const d = button.dataset;
+            const hasFrame = d.priceFrame !== '';
+            const hasLens = d.priceLens !== '';
+
+            document.getElementById('priceItemLabel').textContent = 'تعديل أسعار البند: ' + d.priceItemLabel;
+            document.getElementById('priceItemId').value = d.priceItemId;
+
+            const frameGroup = document.getElementById('priceFrameGroup');
+            const lensGroup = document.getElementById('priceLensGroup');
+            const frameInput = document.getElementById('priceFrameInput');
+            const lensInput = document.getElementById('priceLensInput');
+
+            frameGroup.style.display = hasFrame ? '' : 'none';
+            lensGroup.style.display = hasLens ? '' : 'none';
+            frameInput.disabled = !hasFrame;
+            lensInput.disabled = !hasLens;
+            frameInput.value = hasFrame ? d.priceFrame : '';
+            lensInput.value = hasLens ? d.priceLens : '';
+
+            updatePriceTotal();
+            document.getElementById('priceNotesInput').value = '';
+            document.getElementById('priceModalOverlay').classList.add('show');
+            document.getElementById('priceModal').classList.add('show');
+            (hasFrame ? frameInput : lensInput).focus();
+        }
+
+        // The running total is the point of the dialog: the figures being edited are parts,
+        // and what the customer is charged is their sum.
+        function updatePriceTotal() {
+            const frameInput = document.getElementById('priceFrameInput');
+            const lensInput = document.getElementById('priceLensInput');
+            const f = frameInput.disabled ? 0 : (+frameInput.value || 0);
+            const l = lensInput.disabled ? 0 : (+lensInput.value || 0);
+            document.getElementById('priceNewTotal').textContent =
+                'إجمالي البند بعد التعديل: ' + (f + l).toLocaleString('ar-EG') + ' ج';
+        }
+
+        function closePriceModal() {
+            document.getElementById('priceModalOverlay').classList.remove('show');
+            document.getElementById('priceModal').classList.remove('show');
+        }
+
+        // Delegated: the popup arrives by fetch and is replaced on every staged edit, so a
+        // direct binding would attach to nothing and be discarded anyway.
+        document.addEventListener('input', function (e) {
+            if (e.target && (e.target.id === 'priceFrameInput' || e.target.id === 'priceLensInput')) {
+                updatePriceTotal();
+            }
+        });
+
         // Pre-filled with what the item currently has, so the common case - correcting a
         // price, upgrading the coating - is an edit rather than retyping from blank.
         function openLensModal(button) {

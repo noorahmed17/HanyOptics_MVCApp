@@ -10,7 +10,8 @@ public enum PendingEditKind
     ItemCancellation,
     Payment,
     Refund,
-    LensChange
+    LensChange,
+    PriceChange
 }
 
 // What happens to the item's frame when the item is cancelled. 'return' puts it back in
@@ -50,6 +51,12 @@ public class PendingOrderEdit
     // derived, never picked by staff, exactly as it is for the wizard's opening payment.
     public decimal? PaymentAmount { get; set; }
     public PaymentMethod? PaymentMethod { get; set; }
+
+    // PriceChange - correcting what was charged, without changing what was sold. Either
+    // figure may be left null, meaning "leave this one alone": an إطار فقط item has no lens
+    // price to set, and a استبدال عدسات item has no frame from stock.
+    public decimal? NewFrameAgreedPriceOnly { get; set; }
+    public decimal? NewLensSellPriceOnly { get; set; }
 
     // LensChange - new lenses on an item that already has some. Lenses carry no stock of
     // their own (lens_stock is empty and nothing references it), so unlike a frame there is

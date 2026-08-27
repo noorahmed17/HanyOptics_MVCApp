@@ -61,6 +61,11 @@ public interface IOrderService
     // ExecUpdateLensesAsync for what that costs and how the guards are kept in SQL anyway.
     Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, decimal lensSellPrice, string? notes);
 
+    // Corrects what an item was charged without changing what was sold - a mistyped frame
+    // price, an agreed discount applied after the fact. Either figure may be null to leave
+    // it as it stands. The T2 trigger carries the new totals up into the order.
+    Task<StagedEditOutcome> BuildPriceChangeEditAsync(int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice, string? notes);
+
     // Cancels one item out of an order, leaving the order's other items untouched.
     // sp_cancel_order_item handles the stock consequences (frame returned or written off,
     // lenses restocked or treated as lost) and cancels the whole order only if this was
