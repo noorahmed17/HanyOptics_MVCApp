@@ -16,14 +16,11 @@
     "use strict";
 
     var CFG = {
-        // القارئ بيبعت الحروف على بعد 5-15 مللي. الكتابة البشرية السريعة
-        // بتوصل 80-150 مللي. 40 بتفصل بينهم بأمان.
-        //
-        // القيمة دي كانت 120 في النسخة الأصلية، وده كان بيخلّي الكتابة
-        // السريعة تتحسب سكان فتتاكل حروف من خانات الأسماء العربية.
-        // لو فيه قارئ بطيء مش بيتقرا، ارفعها بالتدريج وجرّب:
-        //     HanyScanner.config.maxGapMs = 60
-        maxGapMs: 40,
+        // أقصى مسافة بين حرفين عشان السلسلة تتحسب "سكان".
+        // القارئ بيبعت الحروف على بعد 5-15 مللي، والكتابة البشرية السريعة
+        // 80-150 مللي. لو القارئ بطيء ومش بيتمسك:
+        //     HanyScanner.config.maxGapMs = 100
+        maxGapMs: 60,
         minLength: 4,
         beep: true,
         toast: true,
@@ -49,7 +46,11 @@
         "لآ": "B", "آ": "N", "’": "M"
     };
 
-    var buf = [], lastAt = 0, synthetic = false;
+    var buf = [];        // حروف السلسلة السريعة الحالية
+    var lastAt = 0;      // وقت آخر حرف
+    var snapEl = null;   // الخانة اللي كانت مفتوحة أول السلسلة
+    var snapVal = null;  // محتواها قبل السلسلة
+    var synthetic = false;
 
     function isVisible(el) {
         return !!(el && el.offsetParent !== null);
@@ -89,56 +90,77 @@
         return null;
     }
 
-    // ---------- الماسك الرئيسي ----------
+    function isField(el) {
+        if (!el) return false;
+        var t = (el.tagName || "").toLowerCase();
+        return t === "input" || t === "textarea";
+    }
+
+    function resetBurst() {
+        buf = [];
+        snapEl = null;
+        snapVal = null;
+    }
+
+    // ---------- المراقب — بيتفرّج بس، مش بيمنع ----------
+    //
+    // النسخة اللي فاتت كانت بتمنع كل حرف وتكتبه بنفسها من الذاكرة المؤقتة.
+    // المشكلة إن الذاكرة بتتفضّى لما المسافة بين حرفين تعدّي الحد، وده بيحصل
+    // مع كل حرف في الكتابة البشرية العادية — فالخانة كانت بتترسم من أول
+    // وجديد بحرف واحد بس. عشان كده الكتابة اليدوية كانت باظت.
+    //
+    // دلوقتي الملف بيسجّل في الخلفية ومابيمنعش أي حاجة. القرار كله بيتأجل
+    // لحد Enter: لو السلسلة طويلة كفاية وكل حروفها جت بسرعة القارئ، ساعتها
+    // بس بيتدخّل. الكتابة بإيدك مابيتلمسش فيها حاجة.
     document.addEventListener("keydown", function (e) {
         if (synthetic || e.ctrlKey || e.metaKey) return;
 
         var now = (window.performance && performance.now) ? performance.now() : Date.now();
         var gap = now - lastAt;
-        var target = currentTarget();
-        var inTarget = target && document.activeElement === target;
 
         if (CFG.debug) {
             console.log("[scan] key=%o code=%o shift=%o gap=%oms buf=%o",
                 e.key, e.code, e.shiftKey, Math.round(gap), buf.join(""));
         }
 
-        // Enter / Tab = نهاية السكان
+        // ---- Enter / Tab: هنا بس بنقرر ده سكان ولا لأ ----
         if (e.key === "Enter" || e.key === "Tab") {
             var code = buf.join("");
-            buf = [];
-            if (code.length >= CFG.minLength) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleScan(code);
-            } else if (CFG.debug) {
-                console.warn("[scan] الكود قصير أو ضاع:", JSON.stringify(code));
+            var el = snapEl, prev = snapVal;
+            resetBurst();
+
+            if (code.length < CFG.minLength) {
+                if (CFG.debug && code.length) console.warn("[scan] تجاهل — قصير:", code);
+                return;   // كتابة يدوية — سيبه يشتغل عادي
             }
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            // رجّع الخانة لحالتها قبل السكان — بيشيل الحروف العربية اللي
+            // الويندوز كتبها لما القارئ بعت الأزرار.
+            if (isField(el) && typeof prev === "string") el.value = prev;
+
+            handleScan(code);
             return;
         }
 
         var ch = charFrom(e);
         if (ch === null) {
-            if (e.key !== "Shift" && e.key !== "CapsLock" && e.key !== "Alt") buf = [];
+            if (e.key !== "Shift" && e.key !== "CapsLock" && e.key !== "Alt") resetBurst();
             return;
         }
 
-        if (gap > CFG.maxGapMs) buf = [];   // بداية سلسلة جديدة
+        // سلسلة جديدة؟ صوّر حالة الخانة قبل ما يتكتب فيها حاجة
+        if (gap > CFG.maxGapMs || buf.length === 0) {
+            buf = [];
+            snapEl = document.activeElement;
+            snapVal = isField(snapEl) ? snapEl.value : null;
+        }
+
         buf.push(ch);
         lastAt = now;
-
-        if (inTarget) {
-            // بنكتب الحرف بنفسنا — بيتخطى مشكلة الكيبورد العربي
-            e.preventDefault();
-            target.value = buf.join("");
-        } else if (buf.length >= 2 && gap <= CFG.maxGapMs) {
-            // سكان بره الخانة — نبلعه عشان ميتكتبش في مكان غلط
-            e.preventDefault();
-            var el = document.activeElement;
-            if (buf.length === 2 && el && typeof el.value === "string") {
-                el.value = el.value.slice(0, Math.max(0, el.value.length - 1)); // شيل أول حرف فلت
-            }
-        }
+        // مفيش preventDefault هنا — الكتابة اليدوية بتشتغل عادي
     }, true);
 
     // ---------- تنفيذ السكان ----------
@@ -206,7 +228,7 @@
     }
 
     window.HanyScanner = {
-        version: 3,
+        version: 4,
         config: CFG,
         test: handleScan,
         target: currentTarget,
@@ -216,5 +238,5 @@
         }
     };
 
-    console.log("[scan] HanyScanner v3 جاهز");
+    console.log("[scan] HanyScanner v4 جاهز");
 })();
