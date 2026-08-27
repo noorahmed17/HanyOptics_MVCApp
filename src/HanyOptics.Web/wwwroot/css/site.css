@@ -77,6 +77,13 @@ tr.clickable:hover td { background: #fafbfc; cursor: pointer; }
 .form-group { margin-bottom: 14px; }
 label { display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 5px; }
 input, select, textarea { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13.5px; font-family: inherit; background: #fff; color: #1a202c; transition: border .15s; direction: rtl; }
+
+/* Number fields look and behave like ordinary text boxes: no spinner arrows to nudge a
+   price by accident. The matching wheel guard is in site.js - together they stop a value
+   changing without anyone meaning to, which on a payment box means money moving unnoticed. */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .1); }
 .form-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 .field-error { font-size: 11.5px; color: #dc2626; margin-top: 4px; }

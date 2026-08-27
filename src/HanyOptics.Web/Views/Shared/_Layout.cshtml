@@ -64,6 +64,7 @@
 @* Loaded on every page rather than per-screen: the scanner is a keyboard, so its input
    can land wherever focus happens to be, and this is what routes it to the barcode box.
    Harmless where no barcode field exists - it simply finds no target. *@
+<script src="~/js/site.js" asp-append-version="true"></script>
 <script src="~/js/scanner.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
