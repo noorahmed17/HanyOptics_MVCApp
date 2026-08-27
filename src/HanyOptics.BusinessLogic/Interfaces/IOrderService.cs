@@ -52,14 +52,12 @@ public interface IOrderService
     // payment sp_add_payment accepts against a cancelled order.
     Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
 
-    // Replaces the lenses on an item that already has some - a different type, a corrected
-    // price. Lenses hold no stock, so there is nothing to reserve or return and the change
-    // is just the description and the price; the T2 trigger carries the new price up into
-    // the order total.
+    // Replaces the lenses on an item that already has some. Lenses hold no stock, so there
+    // is nothing to reserve or return - the change is only what was fitted.
     //
-    // This is the one write in the app with no stored procedure behind it - see
-    // ExecUpdateLensesAsync for what that costs and how the guards are kept in SQL anyway.
-    Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, decimal lensSellPrice, string? notes);
+    // Deliberately does not touch the price: BuildPriceChangeEditAsync owns that, and two
+    // routes to the same number is how they end up disagreeing.
+    Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, string? notes);
 
     // Corrects what an item was charged without changing what was sold - a mistyped frame
     // price, an agreed discount applied after the fact. Either figure may be null to leave

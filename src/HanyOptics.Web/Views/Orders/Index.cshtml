@@ -385,8 +385,9 @@
             }
         });
 
-        // Pre-filled with what the item currently has, so the common case - correcting a
-        // price, upgrading the coating - is an edit rather than retyping from blank.
+        // Only the lens type is edited here - the price belongs to تعديل الأسعار. The
+        // current price is still shown in the heading, because changing the lenses without
+        // seeing what they are being charged at would be working blind.
         function openLensModal(button) {
             const d = button.dataset;
 
@@ -394,10 +395,7 @@
                 'تغيير عدسات البند: ' + d.lensItemLabel + ' — السعر الحالي: ' + Number(d.lensPrice).toLocaleString('ar-EG') + ' ج';
             document.getElementById('lensItemId').value = d.lensItemId;
             document.getElementById('lensDescriptionInput').value = d.lensDescription || '';
-            document.getElementById('lensPriceInput').value = d.lensPrice;
             document.getElementById('lensNotesInput').value = '';
-            document.getElementById('lensPriceHint').textContent =
-                'إجمالي البند بيتحدث تلقائيًا، وكذلك إجمالي الطلب.';
             document.getElementById('lensModalOverlay').classList.add('show');
             document.getElementById('lensModal').classList.add('show');
             document.getElementById('lensDescriptionInput').focus();

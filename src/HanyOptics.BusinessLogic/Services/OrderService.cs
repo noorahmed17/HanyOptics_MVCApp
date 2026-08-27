@@ -299,7 +299,7 @@ public class OrderService : IOrderService
         });
     }
 
-    public async Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, decimal lensSellPrice, string? notes)
+    public async Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, string? notes)
     {
         var item = await _dbContext.OrderItems.AsNoTracking().FirstOrDefaultAsync(i => i.ItemId == itemId);
         if (item is null)
@@ -316,16 +316,13 @@ public class OrderService : IOrderService
         if (string.IsNullOrWhiteSpace(lensDescription))
             return StagedEditOutcome.Failure("أدخل نوع العدسات");
 
-        if (lensSellPrice < 0)
-            return StagedEditOutcome.Failure("سعر العدسات غير صحيح");
-
         var order = await _dbContext.Orders.AsNoTracking().FirstAsync(o => o.OrderId == item.OrderId);
         if (order.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
             return StagedEditOutcome.Failure("لا يمكن تعديل بند في طلب تم تسليمه أو إلغاؤه");
 
-        var summary = $"تغيير العدسات إلى: {lensDescription.Trim()} — {lensSellPrice:N0} ج";
-        if (lensSellPrice != item.LensSellPrice)
-            summary += $" (كان {item.LensSellPrice:N0} ج)";
+        // The price is left exactly as it was - if the new lenses cost something different,
+        // that is a separate, deliberate edit through تعديل الأسعار.
+        var summary = $"تغيير العدسات إلى: {lensDescription.Trim()} (كانت: {item.LensDescription})";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -335,7 +332,6 @@ public class OrderService : IOrderService
             Kind = PendingEditKind.LensChange,
             ItemId = itemId,
             LensDescription = lensDescription.Trim(),
-            LensSellPrice = lensSellPrice,
             Notes = notes,
             Summary = summary
         });
@@ -504,7 +500,7 @@ public class OrderService : IOrderService
                         await ExecAddRefundAsync(orderId, edit.PaymentAmount!.Value, edit.PaymentMethod!.Value, edit.Notes);
                         break;
                     case PendingEditKind.LensChange:
-                        await ExecUpdateLensesAsync(edit.ItemId!.Value, edit.LensDescription, edit.LensSellPrice!.Value);
+                        await ExecUpdateLensesAsync(edit.ItemId!.Value, edit.LensDescription);
                         break;
                     case PendingEditKind.PriceChange:
                         await ExecUpdateItemPricesAsync(edit.ItemId!.Value, edit.NewFrameAgreedPriceOnly, edit.NewLensSellPriceOnly);
@@ -612,26 +608,24 @@ public class OrderService : IOrderService
             new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
     }
 
-    // The only write in the app that is not a stored procedure call - lenses have no SP,
-    // and adding one was declined, so this statement carries the responsibility an SP
+    // One of two writes in the app with no stored procedure behind it (the other is
+    // ExecUpdateItemPricesAsync), so this statement carries the responsibility an SP
     // normally would.
     //
-    // Two things follow from that. The guards live in the WHERE clause rather than in C#
-    // alone: the checks in BuildLensChangeEditAsync happen when the edit is staged, which
-    // can be minutes before تأكيد commits it, and an order delivered by someone else in
-    // between must not be quietly edited. And when those guards match nothing, the
-    // statement raises rather than reporting success for a write that did not happen -
-    // which also routes the message through the same path as every SP rejection, so it
-    // reaches the user in Arabic like the rest.
+    // The guards live in the WHERE clause rather than in C# alone: the checks in
+    // BuildLensChangeEditAsync happen when the edit is staged, which can be minutes before
+    // تأكيد commits it, and an order delivered by someone else in between must not be
+    // quietly edited. When those guards match nothing, the statement raises rather than
+    // reporting success for a write that did not happen - which also routes the message
+    // through the same path as every SP rejection, so it reaches the user in Arabic.
     //
-    // What it does NOT have to do is recompute anything: item_total is a computed column
-    // and trigger T2 re-sums the order total, exactly as they do for the SPs.
-    private Task ExecUpdateLensesAsync(int itemId, string? lensDescription, decimal lensSellPrice) =>
+    // Only the description is written. The price is deliberately untouched here; changing
+    // it is a separate edit so there is one place, not two, where a price can move.
+    private Task ExecUpdateLensesAsync(int itemId, string? lensDescription) =>
         _dbContext.Database.ExecuteSqlRawAsync(
             """
             UPDATE oi
-            SET oi.lens_description = @p_lens_description,
-                oi.lens_sell_price  = @p_lens_sell_price
+            SET oi.lens_description = @p_lens_description
             FROM order_items oi
             INNER JOIN orders o ON o.order_id = oi.order_id
             WHERE oi.item_id = @p_item_id
@@ -642,8 +636,7 @@ public class OrderService : IOrderService
                 THROW 50000, N'تعذر تغيير العدسات — البند ملغي أو الطلب تم تسليمه أو إلغاؤه', 1;
             """,
             new SqlParameter("@p_item_id", itemId),
-            new SqlParameter("@p_lens_description", SqlDbType.NVarChar, 200) { Value = (object?)lensDescription ?? DBNull.Value },
-            new SqlParameter("@p_lens_sell_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = lensSellPrice });
+            new SqlParameter("@p_lens_description", SqlDbType.NVarChar, 200) { Value = (object?)lensDescription ?? DBNull.Value });
 
     // Like ExecUpdateLensesAsync, this has no stored procedure behind it, so the statement
     // carries the guards itself rather than trusting the checks made when the edit was
