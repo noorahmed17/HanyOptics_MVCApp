@@ -7,7 +7,13 @@
 
 <div class="page-header">
     <a class="page-header-title" asp-action="New">➕ طلب جديد</a>
-    <a class="btn btn-outline" asp-action="Index">إلغاء</a>
+    @* Has to POST to Cancel, not just link away. A link leaves the draft sitting in the
+       session, so the invoice number and customer details come straight back the next
+       time this page is opened - which reads as إلغاء having done nothing. Steps 2 and 3
+       always did this properly; step 1 was the odd one out. *@
+    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب. هل أنت متأكد؟');">
+        <button type="submit" class="btn btn-outline">إلغاء</button>
+    </form>
 </div>
 
 <div class="wizard-steps">
