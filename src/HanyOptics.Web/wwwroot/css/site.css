@@ -32,8 +32,12 @@ body {
 .sb-logout:hover { color: #e2e8f0; }
 
 /* ─── MAIN ─── */
-#content { margin-right: 230px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; }
-.page { padding: 22px 26px; }
+/* min-width:0 on both is what stops wide content breaking the layout. A flex item defaults
+   to min-width:auto, meaning it grows to fit its widest child rather than constraining it -
+   so a wide table pushed the whole page sideways instead of scrolling inside its own box,
+   and the sidebar scrolled away with it. */
+#content { margin-right: 230px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
+.page { padding: 22px 26px; min-width: 0; }
 
 /* ─── CARDS ─── */
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 22px; }
@@ -108,7 +112,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .page-header-title.disabled:hover { text-decoration: none; }
 .flex { display: flex; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; } .items-center { align-items: center; }
 .justify-between { justify-content: space-between; } .flex-wrap { flex-wrap: wrap; }
-.mt-1 { margin-top: 4px; } .mt-2 { margin-top: 8px; } .mt-3 { margin-top: 12px; } .mb-3 { margin-bottom: 12px; }
+.mt-1 { margin-top: 4px; } .mt-2 { margin-top: 8px; } .mt-3 { margin-top: 12px; }
+.mb-2 { margin-bottom: 8px; } .mb-3 { margin-bottom: 12px; }
 .fw-bold { font-weight: 700; } .text-sm { font-size: 12px; } .text-muted { color: #9ca3af; }
 .empty-state { text-align: center; padding: 40px 20px; color: #9ca3af; }
 
@@ -149,6 +154,31 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .scan-bar .input-group { max-width: 420px; }
 .scan-bar input { font-family: ui-monospace, "Consolas", monospace; font-size: 15px; letter-spacing: .5px; }
 .scan-hint { font-size: 12px; color: #6b7280; margin-top: 8px; }
+
+/* ─── REPORTS ─── */
+.report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.report-card { display: flex; gap: 12px; align-items: flex-start; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; text-decoration: none; color: inherit; transition: all .15s; }
+.report-card:hover { border-color: #1a56db; box-shadow: 0 4px 12px rgba(26, 86, 219, .1); }
+.report-card-icon { font-size: 22px; line-height: 1; }
+.report-card-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.report-card-desc { font-size: 12px; color: #6b7280; line-height: 1.6; }
+.report-card-tag { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600; color: #64748b; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+
+.filter-bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }
+.filter-field label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+.filter-field input { width: 180px; }
+
+/* A report can carry a dozen columns; it scrolls inside its own card rather than making
+   the whole page scroll sideways. */
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 100%; white-space: nowrap; }
+
+/* Figures line up on their digits, which is the only way a column of money is readable. */
+td.num, th.num { text-align: left; font-variant-numeric: tabular-nums; }
+
+/* Only for money that is genuinely allowed to go negative - a profit line, a net total.
+   A plain price never should, so a minus there stays black and reads as a data problem. */
+.money-negative { color: #dc2626; }
 
 .section-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; }
 .section-divider span { font-size: 12px; font-weight: 700; color: #374151; white-space: nowrap; padding: 3px 10px; background: #f1f5f9; border-radius: 6px; }

@@ -1,0 +1,142 @@
+@model HanyOptics.BusinessLogic.Models.ReportResult
+@using System.Globalization
+@using HanyOptics.BusinessLogic.Models
+@{
+    var report = Model.Definition;
+    ViewData["Title"] = report.Title;
+
+    // Arabic (Egypt) so thousands separators and digits match the rest of the app.
+    var arEg = CultureInfo.GetCultureInfo("ar-EG");
+
+    string Cell(object? value, ReportColumn column)
+    {
+        if (value is null) { return "—"; }
+
+        switch (column.Type)
+        {
+            case ReportColumnType.Money:
+                return Convert.ToDecimal(value).ToString("N2", arEg) + " ج";
+            case ReportColumnType.Number:
+                return Convert.ToDecimal(value).ToString("N0", arEg);
+            case ReportColumnType.Date:
+                return Convert.ToDateTime(value).ToString("yyyy-MM-dd");
+            case ReportColumnType.DateTime:
+                return Convert.ToDateTime(value).ToString("yyyy-MM-dd HH:mm");
+            default:
+                var text = value.ToString();
+                return string.IsNullOrWhiteSpace(text) ? "—" : text;
+        }
+    }
+
+    string KpiValue(ReportKpi kpi) => kpi.Format == ReportColumnType.Money
+        ? kpi.Value.ToString("N2", arEg) + " ج"
+        : kpi.Value.ToString("N0", arEg);
+}
+
+<div class="page-header">
+    <h2>@report.Icon @report.Title</h2>
+    <div style="display:flex;gap:8px">
+        @if (Model.Rows.Count > 0)
+        {
+            <a class="btn btn-outline"
+               asp-action="Export" asp-route-id="@report.Key"
+               asp-route-from="@Model.From?.ToString("yyyy-MM-dd")"
+               asp-route-to="@Model.To?.ToString("yyyy-MM-dd")">⬇️ تصدير Excel</a>
+        }
+        <a class="btn btn-outline" asp-action="Index">→ كل التقارير</a>
+    </div>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">@report.Description</p>
+
+@if (report.SupportsDateRange)
+{
+    <form method="get" class="filter-bar">
+        <input type="hidden" name="id" value="@report.Key" />
+        <div class="filter-field">
+            <label>من</label>
+            <input type="date" name="from" value="@Model.From?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div class="filter-field">
+            <label>إلى</label>
+            <input type="date" name="to" value="@Model.To?.ToString("yyyy-MM-dd")" />
+        </div>
+        <button type="submit" class="btn btn-primary">عرض</button>
+        @if (Model.From is not null || Model.To is not null)
+        {
+            <a class="btn btn-outline" asp-action="Show" asp-route-id="@report.Key">إلغاء الفلتر</a>
+        }
+    </form>
+}
+
+@if (Model.Kpis.Count > 0 && Model.Rows.Count > 0)
+{
+    <div class="stats-grid mb-3">
+        @foreach (var kpi in Model.Kpis)
+        {
+            <div class="stat-card">
+                <div class="stat-label">@kpi.Label</div>
+                <div class="stat-value @(kpi.Value < 0 ? "money-negative" : "")">@KpiValue(kpi)</div>
+            </div>
+        }
+    </div>
+}
+
+@if (Model.Truncated)
+{
+    <div class="alert alert-warning">
+        ⚠️ النتيجة أكبر من @Model.RowLimit.ToString("N0", arEg) صف، وبنعرض أول @Model.RowLimit.ToString("N0", arEg) بس.
+        الأرقام اللي فوق بتحسب الصفوف المعروضة دي لوحدها — ضيّق الفترة عشان تطلع أرقام كاملة.
+    </div>
+}
+
+<div class="card">
+    <div class="card-body">
+        @if (Model.Rows.Count == 0)
+        {
+            <div class="empty-state">مفيش بيانات في المدى ده.</div>
+        }
+        else
+        {
+            @* Reports are wide - some have a dozen columns - so the table scrolls inside
+               its own box instead of pushing the whole page sideways. *@
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                    <tr>
+                        @foreach (var column in report.Columns)
+                        {
+                            <th class="@(column.Type == ReportColumnType.Money || column.Type == ReportColumnType.Number ? "num" : "")">@column.Label</th>
+                        }
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var row in Model.Rows)
+                    {
+                        <tr>
+                            @for (var i = 0; i < report.Columns.Count; i++)
+                            {
+                                var column = report.Columns[i];
+                                var value = row[i];
+                                var negative = column.SignedMoney
+                                               && value is not null
+                                               && Convert.ToDecimal(value) < 0;
+                                <td class="@(column.Type == ReportColumnType.Money || column.Type == ReportColumnType.Number ? "num" : "") @(negative ? "money-negative" : "")">
+                                    @Cell(value, column)
+                                </td>
+                            }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (Model.Rows.Count > 0)
+{
+    <p class="text-muted" style="font-size:12px">
+        عدد الصفوف: @Model.Rows.Count.ToString("N0", arEg)
+    </p>
+}

@@ -1,0 +1,49 @@
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.ReportDefinition>
+@using HanyOptics.BusinessLogic.Models
+@{
+    ViewData["Title"] = "التقارير";
+
+    // Named here rather than on the enum so the grouping headings stay in the view's
+    // language alongside every other bit of Arabic on the page.
+    var groups = new (ReportGroup Group, string Title, string Hint)[]
+    {
+        (ReportGroup.Money,       "💰 فلوس ومبيعات",  "إيه اللي دخل، وإيه اللي كسبناه منه"),
+        (ReportGroup.Receivables, "⏳ مستحقات",       "الفلوس اللي لسه برّه المحل"),
+        (ReportGroup.Stock,       "📦 مخزون",         "الفلوس النايمة في البضاعة"),
+        (ReportGroup.Operations,  "📋 عمليات",        "الطلبات والعملاء والأطباء")
+    };
+}
+
+<div class="page-header">
+    <h2>📊 التقارير</h2>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">
+    كل التقارير بتتقرا من الداتا مباشرة — مفيش حاجة بتتكتب أو بتتعدّل من هنا.
+</p>
+
+@foreach (var (group, title, hint) in groups)
+{
+    var reports = Model.Where(r => r.Group == group).ToList();
+    if (reports.Count == 0) { continue; }
+
+    <div class="section-divider"><span>@title</span></div>
+    <p class="text-muted mb-2" style="font-size:12px">@hint</p>
+
+    <div class="report-grid">
+        @foreach (var report in reports)
+        {
+            <a class="report-card" asp-action="Show" asp-route-id="@report.Key">
+                <div class="report-card-icon">@report.Icon</div>
+                <div class="report-card-body">
+                    <div class="report-card-title">@report.Title</div>
+                    <div class="report-card-desc">@report.Description</div>
+                    @if (!report.SupportsDateRange)
+                    {
+                        <div class="report-card-tag">الوضع الحالي — مش بفترة</div>
+                    }
+                </div>
+            </a>
+        }
+    </div>
+}
