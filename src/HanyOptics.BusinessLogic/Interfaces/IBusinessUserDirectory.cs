@@ -18,8 +18,4 @@ public interface IBusinessUserDirectory
     // Used by the seeder to adopt a business row that already exists (the schema script's
     // original "admin" staff row) rather than creating a duplicate for the same person.
     Task<int?> FindIdByUsernameAsync(string username);
-
-    // Compensating delete for a failed account creation - only removes the row when
-    // nothing references it yet, so a staff member with history can never be erased.
-    Task DeleteIfUnreferencedAsync(int userId);
 }

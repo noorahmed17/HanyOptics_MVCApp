@@ -60,27 +60,4 @@ public class BusinessUserDirectory : IBusinessUserDirectory
         return ids.Count > 0 ? ids[0] : null;
     }
 
-    public async Task DeleteIfUnreferencedAsync(int userId)
-    {
-        try
-        {
-            await _dbContext.Database.ExecuteSqlRawAsync(
-                """
-                DELETE FROM users
-                WHERE user_id = @p_user_id
-                  AND NOT EXISTS (SELECT 1 FROM orders            WHERE created_by  = @p_user_id)
-                  AND NOT EXISTS (SELECT 1 FROM payments          WHERE received_by = @p_user_id)
-                  AND NOT EXISTS (SELECT 1 FROM order_status_log  WHERE changed_by  = @p_user_id)
-                  AND NOT EXISTS (SELECT 1 FROM frame_damage_log  WHERE recorded_by = @p_user_id)
-                  AND NOT EXISTS (SELECT 1 FROM restock_log       WHERE recorded_by = @p_user_id)
-                  AND NOT EXISTS (SELECT 1 FROM purchase_invoices WHERE created_by  = @p_user_id)
-                """,
-                new SqlParameter("@p_user_id", userId));
-        }
-        catch
-        {
-            // Best-effort cleanup of a half-created account; the caller is already
-            // returning a failure and must not be derailed by this.
-        }
-    }
 }

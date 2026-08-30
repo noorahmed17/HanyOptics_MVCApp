@@ -13,30 +13,9 @@ public class AccountController : Controller
         _authService = authService;
     }
 
-    [HttpGet]
-    [AllowAnonymous]
-    public IActionResult Register() => View(new RegisterRequest());
-
-    [HttpPost]
-    [AllowAnonymous]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Register(RegisterRequest model)
-    {
-        if (!ModelState.IsValid)
-            return View(model);
-
-        var result = await _authService.RegisterAsync(model);
-        if (!result.Succeeded)
-        {
-            foreach (var error in result.Errors)
-                ModelState.AddModelError(string.Empty, error);
-            return View(model);
-        }
-
-        SetAuthCookie(result);
-        return RedirectToAction("Index", "Home");
-    }
-
+    // No self-registration: this is a shop's back office, not a public site. Accounts are
+    // the owner's to hand out, so the only way in is a login against a user someone with
+    // access already created. The admin account is seeded on startup.
     [HttpGet]
     [AllowAnonymous]
     public IActionResult Login(string? returnUrl = null) => View(new LoginRequest { ReturnUrl = returnUrl });
