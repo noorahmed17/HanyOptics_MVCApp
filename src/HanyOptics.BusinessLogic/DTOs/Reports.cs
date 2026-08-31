@@ -57,16 +57,34 @@ public class ReportDefinition
     // not a period, so offering it a date range would only invite a meaningless answer.
     public bool SupportsDateRange { get; init; } = true;
 
-    // The query. It always declares @from and @to, even when the report ignores them, so
-    // execution can bind the same two parameters every time.
+    // The query, WITHOUT its ORDER BY. It always declares @from and @to, even when the
+    // report ignores them, so execution can bind the same two parameters every time.
+    //
+    // The ordering is kept separate because the body has to be usable two ways: wrapped as
+    // a subquery for the totals (where an ORDER BY is not even legal), and ordered with
+    // OFFSET/FETCH for one page of rows (where an ORDER BY is mandatory).
     //
     // Internal, so the query text stops at the business layer and the web project only ever
     // sees a report's shape and its results. That rules out `required` (a required member
     // cannot be less visible than its type), so ReportService checks it is set instead.
     internal string Sql { get; init; } = string.Empty;
 
+    // The ORDER BY clause, without the words "ORDER BY".
+    internal string OrderBy { get; init; } = string.Empty;
+
     public required IReadOnlyList<ReportColumn> Columns { get; init; }
     public IReadOnlyList<ReportKpiDefinition> Kpis { get; init; } = [];
+}
+
+public static class ReportPaging
+{
+    public const int DefaultPageSize = PageSizes.Reports;
+    public const int MaxPageSize = 500;
+
+    // The CSV is a deliberate download rather than something to read on screen, so it takes
+    // the whole range - but not without a ceiling, or one export of a busy year could try to
+    // build a string with every row the shop has ever produced.
+    public const int ExportRowLimit = 50_000;
 }
 
 public class ReportKpi
@@ -82,12 +100,19 @@ public class ReportResult
     public DateOnly? From { get; init; }
     public DateOnly? To { get; init; }
 
-    // One array per row, in the same order as Definition.Columns.
+    // One array per row, in the same order as Definition.Columns. This is one page.
     public required IReadOnlyList<object?[]> Rows { get; init; }
+
+    // Aggregated by the database over the entire filtered range, never over the page. A
+    // report that spans thousands of rows still has to show the true total at the top, or
+    // the headline figures would change every time you turned the page.
     public IReadOnlyList<ReportKpi> Kpis { get; init; } = [];
 
-    // True when the query had more rows than the cap. The KPIs then describe the rows shown,
-    // not the whole period, and the screen has to say so rather than quietly under-report.
-    public bool Truncated { get; init; }
-    public int RowLimit { get; init; }
+    public int TotalRows { get; init; }
+    public int Page { get; init; } = 1;
+    public int PageSize { get; init; } = ReportPaging.DefaultPageSize;
+
+    public int TotalPages => TotalRows == 0 ? 1 : (int)Math.Ceiling(TotalRows / (double)PageSize);
+    public int FirstRowNumber => TotalRows == 0 ? 0 : ((Page - 1) * PageSize) + 1;
+    public int LastRowNumber => Math.Min(Page * PageSize, TotalRows);
 }

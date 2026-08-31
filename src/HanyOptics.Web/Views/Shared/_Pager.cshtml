@@ -1,0 +1,58 @@
+@model HanyOptics.Web.Models.PagerInfo
+@using System.Globalization
+@{
+    var arEg = CultureInfo.GetCultureInfo("ar-EG");
+
+    // Every other filter on the screen has to survive a page change, so the links are built
+    // from the request's own query string with only `page` swapped. Hard-coding the
+    // parameters here would silently drop a search or a status filter on page 2.
+    string PageUrl(int page)
+    {
+        var values = Context.Request.Query
+            .Where(kv => !string.Equals(kv.Key, "page", StringComparison.OrdinalIgnoreCase))
+            .ToDictionary(kv => kv.Key, kv => (object?)kv.Value.ToString());
+        values["page"] = page;
+        return Url.Action(ViewContext.RouteData.Values["action"]?.ToString(), values) ?? "#";
+    }
+}
+
+@if (Model.TotalCount > 0)
+{
+    <div class="pager">
+        <div class="pager-info">
+            @Model.FirstRow.ToString("N0", arEg)–@Model.LastRow.ToString("N0", arEg)
+            من @Model.TotalCount.ToString("N0", arEg)
+        </div>
+
+        @if (Model.TotalPages > 1)
+        {
+            <div class="pager-controls">
+                @if (Model.HasPrevious)
+                {
+                    <a class="btn btn-outline btn-sm" href="@PageUrl(1)">الأول</a>
+                    <a class="btn btn-outline btn-sm" href="@PageUrl(Model.Page - 1)">‹ السابق</a>
+                }
+                else
+                {
+                    <span class="btn btn-outline btn-sm pager-disabled">الأول</span>
+                    <span class="btn btn-outline btn-sm pager-disabled">‹ السابق</span>
+                }
+
+                <span class="pager-current">
+                    صفحة @Model.Page.ToString("N0", arEg) من @Model.TotalPages.ToString("N0", arEg)
+                </span>
+
+                @if (Model.HasNext)
+                {
+                    <a class="btn btn-outline btn-sm" href="@PageUrl(Model.Page + 1)">التالي ›</a>
+                    <a class="btn btn-outline btn-sm" href="@PageUrl(Model.TotalPages)">الأخير</a>
+                }
+                else
+                {
+                    <span class="btn btn-outline btn-sm pager-disabled">التالي ›</span>
+                    <span class="btn btn-outline btn-sm pager-disabled">الأخير</span>
+                }
+            </div>
+        }
+    </div>
+}

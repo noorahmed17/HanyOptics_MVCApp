@@ -3,7 +3,8 @@
 @model HanyOptics.Web.Controllers.CustomerDetailViewModel?
 @{
     ViewData["Title"] = "العملاء";
-    var customers = (IReadOnlyList<HanyOptics.BusinessLogic.Models.CustomerListItem>)ViewBag.Customers;
+    var customers = (HanyOptics.BusinessLogic.Models.PagedResult<HanyOptics.BusinessLogic.Models.CustomerListItem>)ViewBag.Customers;
+    string? searchTerm = ViewBag.SearchTerm;
     int? selectedId = ViewBag.SelectedCustomerId;
     var arEg = new CultureInfo("ar-EG");
 
@@ -31,25 +32,44 @@
 
 <div class="page-header">
     <h2>العملاء</h2>
-    <input type="text" id="customerSearch" placeholder="بحث..." style="width:220px" />
+    @* Server-side search. The old box filtered rows the page had already rendered, which
+       meant every customer had to be sent to the browser and only the ones already there
+       could ever be found. *@
+    <form method="get" class="input-group" style="max-width:340px">
+        <input type="text" name="q" value="@searchTerm" placeholder="بحث بالاسم أو التليفون..." autocomplete="off" />
+        <button type="submit" class="btn btn-primary">🔍 بحث</button>
+        @if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            <a class="btn btn-outline" asp-action="Index">إلغاء</a>
+        }
+    </form>
 </div>
 
 <div class="master-detail">
     <div class="card" style="height:fit-content">
         <div class="card-body" id="customerList" style="padding:8px">
-            @foreach (var c in customers)
+            @if (customers.TotalCount == 0)
             {
-                <a class="customer-list-item @(selectedId == c.CustomerId ? "selected" : "")"
-                   href="@Url.Action("Index", new { customerId = c.CustomerId })"
-                   data-search="@($"{c.Name} {c.Phone}".ToLowerInvariant())">
-                    <div style="font-weight:600;font-size:14px">@(c.Name ?? "بدون اسم")</div>
-                    <div class="flex gap-2 mt-1">
-                        <span class="text-sm text-muted">@(c.Phone ?? "—")</span>
-                        <span class="info-chip">@c.OrderCount طلب</span>
-                    </div>
-                </a>
+                <div class="empty-state">
+                    @(string.IsNullOrWhiteSpace(searchTerm) ? "مفيش عملاء" : "مفيش عميل مطابق للبحث")
+                </div>
+            }
+            else
+            {
+                @foreach (var c in customers.Items)
+                {
+                    <a class="customer-list-item @(selectedId == c.CustomerId ? "selected" : "")"
+                       href="@Url.Action("Index", new { customerId = c.CustomerId, q = searchTerm, page = customers.Page })">
+                        <div style="font-weight:600;font-size:14px">@(c.Name ?? "بدون اسم")</div>
+                        <div class="flex gap-2 mt-1">
+                            <span class="text-sm text-muted">@(c.Phone ?? "—")</span>
+                            <span class="info-chip">@c.OrderCount طلب</span>
+                        </div>
+                    </a>
+                }
             }
         </div>
+        @await Html.PartialAsync("_Pager", HanyOptics.Web.Models.PagerInfo.From(customers))
     </div>
 
     <div class="card">
@@ -69,27 +89,35 @@
                 <div class="detail-grid mb-3">
                     <div class="detail-row"><span class="detail-label">الهاتف</span><span class="detail-val">@(Model.Customer.Phone ?? "—")</span></div>
                     <div class="detail-row"><span class="detail-label">ملاحظات</span><span class="detail-val">@(Model.Customer.Notes ?? "—")</span></div>
-                    <div class="detail-row"><span class="detail-label">عدد الطلبات</span><span class="detail-val fw-bold">@Model.Orders.Count</span></div>
-                    <div class="detail-row"><span class="detail-label">إجمالي المشتريات</span><span class="detail-val fw-bold c-blue">@Money(Model.Orders.Sum(o => o.TotalAmount))</span></div>
-                    <div class="detail-row"><span class="detail-label">إجمالي المدفوع</span><span class="detail-val fw-bold c-green">@Money(Model.Orders.Sum(o => o.PaidAmount))</span></div>
-                    @{
-                        var totalRemaining = Model.Orders.Sum(o => o.RemainingAmount);
-                    }
-                    @if (totalRemaining > 0)
+                    @* Aggregated over every order this customer has placed, not over the
+                       recent ones listed below - a long-standing customer's spend and the
+                       balance they still owe must not shrink just because the list is short. *@
+                    <div class="detail-row"><span class="detail-label">عدد الطلبات</span><span class="detail-val fw-bold">@Model.Totals.OrderCount.ToString("N0", arEg)</span></div>
+                    <div class="detail-row"><span class="detail-label">إجمالي المشتريات</span><span class="detail-val fw-bold c-blue">@Money(Model.Totals.TotalPurchased)</span></div>
+                    <div class="detail-row"><span class="detail-label">إجمالي المدفوع</span><span class="detail-val fw-bold c-green">@Money(Model.Totals.TotalPaid)</span></div>
+                    @if (Model.Totals.TotalRemaining > 0)
                     {
-                        <div class="detail-row"><span class="detail-label">إجمالي المتبقي</span><span class="detail-val fw-bold c-red">@Money(totalRemaining)</span></div>
+                        <div class="detail-row"><span class="detail-label">إجمالي المتبقي</span><span class="detail-val fw-bold c-red">@Money(Model.Totals.TotalRemaining)</span></div>
                     }
                 </div>
 
-                <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;border-bottom:1px solid #f1f5f9;padding-bottom:6px">سجل الطلبات</h4>
+                <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;border-bottom:1px solid #f1f5f9;padding-bottom:6px">
+                    سجل الطلبات
+                    @if (Model.Totals.OrderCount > Model.RecentOrders.Count)
+                    {
+                        <span class="text-sm text-muted" style="font-weight:400">
+                            — أحدث @Model.RecentOrders.Count.ToString("N0", arEg) من @Model.Totals.OrderCount.ToString("N0", arEg)
+                        </span>
+                    }
+                </h4>
 
-                @if (!Model.Orders.Any())
+                @if (!Model.RecentOrders.Any())
                 {
                     <div class="text-muted text-sm">لا توجد طلبات</div>
                 }
                 else
                 {
-                    @foreach (var o in Model.Orders)
+                    @foreach (var o in Model.RecentOrders)
                     {
                         <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:8px;border:1px solid #e2e8f0">
                             <div class="flex justify-between items-center">
@@ -108,18 +136,5 @@
     </div>
 </div>
 
-@section Scripts {
-    <script>
-        (function () {
-            const input = document.getElementById('customerSearch');
-            const items = document.querySelectorAll('#customerList .customer-list-item');
-
-            input.addEventListener('input', function () {
-                const term = input.value.trim().toLowerCase();
-                items.forEach(function (item) {
-                    item.style.display = item.dataset.search.includes(term) ? '' : 'none';
-                });
-            });
-        })();
-    </script>
-}
+@* The client-side filter that used to live here is gone: searching now happens in the
+   database, so there is nothing left for the browser to filter. *@

@@ -36,7 +36,7 @@
 <div class="page-header">
     <h2>@report.Icon @report.Title</h2>
     <div style="display:flex;gap:8px">
-        @if (Model.Rows.Count > 0)
+        @if (Model.TotalRows > 0)
         {
             <a class="btn btn-outline"
                asp-action="Export" asp-route-id="@report.Key"
@@ -69,7 +69,9 @@
     </form>
 }
 
-@if (Model.Kpis.Count > 0 && Model.Rows.Count > 0)
+@* The KPI cards are aggregated over the whole range by the database, so they stay true
+   whichever page is on screen. *@
+@if (Model.Kpis.Count > 0 && Model.TotalRows > 0)
 {
     <div class="stats-grid mb-3">
         @foreach (var kpi in Model.Kpis)
@@ -82,13 +84,6 @@
     </div>
 }
 
-@if (Model.Truncated)
-{
-    <div class="alert alert-warning">
-        ⚠️ النتيجة أكبر من @Model.RowLimit.ToString("N0", arEg) صف، وبنعرض أول @Model.RowLimit.ToString("N0", arEg) بس.
-        الأرقام اللي فوق بتحسب الصفوف المعروضة دي لوحدها — ضيّق الفترة عشان تطلع أرقام كاملة.
-    </div>
-}
 
 <div class="card">
     <div class="card-body">
@@ -132,11 +127,12 @@
             </div>
         }
     </div>
+    @await Html.PartialAsync("_Pager", new HanyOptics.Web.Models.PagerInfo
+    {
+        Page = Model.Page,
+        TotalPages = Model.TotalPages,
+        TotalCount = Model.TotalRows,
+        FirstRow = Model.FirstRowNumber,
+        LastRow = Model.LastRowNumber
+    })
 </div>
-
-@if (Model.Rows.Count > 0)
-{
-    <p class="text-muted" style="font-size:12px">
-        عدد الصفوف: @Model.Rows.Count.ToString("N0", arEg)
-    </p>
-}

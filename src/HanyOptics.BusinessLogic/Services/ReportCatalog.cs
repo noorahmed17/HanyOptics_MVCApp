@@ -34,8 +34,8 @@ internal static class ReportCatalog
                   FROM vw_daily_sales
                   WHERE (@from IS NULL OR sale_date >= @from)
                     AND (@to   IS NULL OR sale_date <= @to)
-                  ORDER BY sale_date DESC
                   """,
+            OrderBy = "sale_date DESC",
             Columns =
             [
                 new() { Key = "sale_date",        Label = "التاريخ",           Type = ReportColumnType.Date },
@@ -68,8 +68,8 @@ internal static class ReportCatalog
                   FROM vw_profit_monthly
                   WHERE (@from IS NULL OR @from IS NOT NULL)
                     AND (@to   IS NULL OR @to   IS NOT NULL)
-                  ORDER BY sale_year DESC, sale_month DESC
                   """,
+            OrderBy = "sale_year DESC, sale_month DESC",
             Columns =
             [
                 new() { Key = "sale_year",     Label = "السنة",        Type = ReportColumnType.Number },
@@ -102,8 +102,8 @@ internal static class ReportCatalog
                   FROM vw_profit_per_item
                   WHERE (@from IS NULL OR sale_date >= @from)
                     AND (@to   IS NULL OR sale_date <= @to)
-                  ORDER BY sale_date DESC, item_id DESC
                   """,
+            OrderBy = "sale_date DESC, item_id DESC",
             Columns =
             [
                 new() { Key = "sale_date",      Label = "التاريخ",       Type = ReportColumnType.Date },
@@ -163,8 +163,8 @@ internal static class ReportCatalog
                       GROUP BY received_by
                   ) p ON p.received_by = u.user_id
                   WHERE u.is_active = 1
-                  ORDER BY ISNULL(o.orders_total, 0) DESC
                   """,
+            OrderBy = "ISNULL(o.orders_total, 0) DESC, u.name",
             Columns =
             [
                 new() { Key = "staff_name",     Label = "الموظف" },
@@ -200,8 +200,8 @@ internal static class ReportCatalog
                   FROM vw_pending_payments
                   WHERE (@from IS NULL OR @from IS NOT NULL)
                     AND (@to   IS NULL OR @to   IS NOT NULL)
-                  ORDER BY remaining_amount DESC
                   """,
+            OrderBy = "remaining_amount DESC, order_id",
             Columns =
             [
                 new() { Key = "invoice_number",   Label = "رقم الفاتورة" },
@@ -238,8 +238,8 @@ internal static class ReportCatalog
                   LEFT JOIN users u ON u.user_id = p.received_by
                   WHERE (@from IS NULL OR p.paid_at >= @from)
                     AND (@to   IS NULL OR p.paid_at <  DATEADD(day, 1, @to))
-                  ORDER BY p.paid_at DESC
                   """,
+            OrderBy = "p.paid_at DESC, p.payment_id",
             Columns =
             [
                 new() { Key = "paid_at",        Label = "التاريخ",     Type = ReportColumnType.DateTime },
@@ -274,8 +274,8 @@ internal static class ReportCatalog
                   FROM vw_frame_inventory
                   WHERE (@from IS NULL OR @from IS NOT NULL)
                     AND (@to   IS NULL OR @to   IS NOT NULL)
-                  ORDER BY sell_price * qty_available DESC
                   """,
+            OrderBy = "sell_price * qty_available DESC, frame_id",
             Columns =
             [
                 new() { Key = "barcode",       Label = "الباركود" },
@@ -316,8 +316,8 @@ internal static class ReportCatalog
                   FROM lens_stock
                   WHERE (@from IS NULL OR @from IS NOT NULL)
                     AND (@to   IS NULL OR @to   IS NOT NULL)
-                  ORDER BY sell_price * qty_available DESC
                   """,
+            OrderBy = "sell_price * qty_available DESC, lens_stock_id",
             Columns =
             [
                 new() { Key = "lens_type",     Label = "نوع العدسة" },
@@ -352,8 +352,8 @@ internal static class ReportCatalog
                   FROM vw_frame_damage_losses
                   WHERE (@from IS NULL OR damage_date >= @from)
                     AND (@to   IS NULL OR damage_date <= @to)
-                  ORDER BY damage_date DESC
                   """,
+            OrderBy = "damage_date DESC, damage_id",
             Columns =
             [
                 new() { Key = "damage_date",   Label = "التاريخ",   Type = ReportColumnType.Date },
@@ -396,8 +396,8 @@ internal static class ReportCatalog
                     AND (@from IS NULL OR o.order_date >= @from)
                     AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
                   GROUP BY f.brand
-                  ORDER BY SUM(oi.frame_agreed_price) DESC
                   """,
+            OrderBy = "SUM(oi.frame_agreed_price) DESC, f.brand",
             Columns =
             [
                 new() { Key = "brand",      Label = "الماركة" },
@@ -429,8 +429,8 @@ internal static class ReportCatalog
                   FROM vw_order_summary
                   WHERE (@from IS NULL OR order_date >= @from)
                     AND (@to   IS NULL OR order_date <  DATEADD(day, 1, @to))
-                  ORDER BY order_date DESC
                   """,
+            OrderBy = "order_date DESC, order_id",
             Columns =
             [
                 new() { Key = "invoice_number",   Label = "رقم الفاتورة" },
@@ -468,8 +468,8 @@ internal static class ReportCatalog
                   FROM vw_frame_swaps
                   WHERE (@from IS NULL OR sale_date >= @from)
                     AND (@to   IS NULL OR sale_date <= @to)
-                  ORDER BY sale_date DESC
                   """,
+            OrderBy = "sale_date DESC, item_id",
             Columns =
             [
                 new() { Key = "sale_date",       Label = "التاريخ",     Type = ReportColumnType.Date },
@@ -512,8 +512,8 @@ internal static class ReportCatalog
                         AND (@from IS NULL OR o.order_date >= @from)
                         AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
                   GROUP BY d.name, d.clinic, d.phone
-                  ORDER BY COUNT(o.order_id) DESC, ISNULL(SUM(o.total_amount), 0) DESC
                   """,
+            OrderBy = "COUNT(o.order_id) DESC, ISNULL(SUM(o.total_amount), 0) DESC, d.name",
             Columns =
             [
                 new() { Key = "doctor_name",  Label = "الدكتور" },
@@ -551,8 +551,8 @@ internal static class ReportCatalog
                    AND (@from IS NULL OR o.order_date >= @from)
                    AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
                   GROUP BY c.name, c.phone
-                  ORDER BY SUM(o.total_amount) DESC
                   """,
+            OrderBy = "SUM(o.total_amount) DESC, c.name",
             Columns =
             [
                 new() { Key = "customer_name", Label = "العميل" },
@@ -584,8 +584,8 @@ internal static class ReportCatalog
                   FROM vw_customer_history
                   WHERE (@from IS NULL OR order_date >= @from)
                     AND (@to   IS NULL OR order_date <  DATEADD(day, 1, @to))
-                  ORDER BY order_date DESC
                   """,
+            OrderBy = "order_date DESC, order_id",
             Columns =
             [
                 new() { Key = "customer_name",    Label = "العميل" },

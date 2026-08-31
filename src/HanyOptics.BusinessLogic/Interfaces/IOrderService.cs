@@ -23,7 +23,17 @@ public interface IOrderService
     // searchTerm matches invoice number, customer name, or phone - used by the Orders/Index
     // search box to reach orders outside the default fromDate window (see SearchOrders
     // on OrdersController, which calls this without a fromDate on purpose).
-    Task<IReadOnlyList<OrderListItem>> GetOrderListAsync(OrderStatus? status = null, DeliveryType? deliveryType = null, int? customerId = null, DateTime? fromDate = null, string? searchTerm = null);
+    // Paged. Every caller was previously getting an unbounded list, which only stayed small
+    // because the orders screen bounded it by date - a search or a customer's history had
+    // no ceiling at all.
+    Task<PagedResult<OrderListItem>> GetOrderListAsync(
+        OrderStatus? status = null,
+        DeliveryType? deliveryType = null,
+        int? customerId = null,
+        DateTime? fromDate = null,
+        string? searchTerm = null,
+        int? page = null,
+        int? pageSize = null);
 
     Task<StagedEditOutcome> BuildStatusChangeEditAsync(int orderId, OrderStatus newStatus, string? notes);
 

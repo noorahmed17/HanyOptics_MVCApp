@@ -29,7 +29,7 @@ public class OrdersController : Controller
         _logger = logger;
     }
 
-    public async Task<IActionResult> Index(string? status, string? deliveryType)
+    public async Task<IActionResult> Index(string? status, string? deliveryType, int? page)
     {
         var statusFilter = Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var s) ? s : (OrderStatus?)null;
         var deliveryFilter = Enum.TryParse<DeliveryType>(deliveryType, ignoreCase: true, out var d) ? d : (DeliveryType?)null;
@@ -38,7 +38,8 @@ public class OrdersController : Controller
         ViewBag.StatusFilter = statusFilter;
         ViewBag.DeliveryFilter = deliveryFilter;
 
-        var orders = await _orderService.GetOrderListAsync(statusFilter, deliveryFilter, fromDate: fromDate);
+        var orders = await _orderService.GetOrderListAsync(
+            statusFilter, deliveryFilter, fromDate: fromDate, page: page);
         return View(orders);
     }
 
@@ -325,16 +326,16 @@ public class OrdersController : Controller
     // matching order elsewhere in time still needs to turn up (and be selectable for
     // BulkUpdateStatus like any other row).
     [HttpGet]
-    public async Task<IActionResult> SearchOrders(string term, string? status, string? deliveryType)
+    public async Task<IActionResult> SearchOrders(string term, string? status, string? deliveryType, int? page)
     {
         var statusFilter = Enum.TryParse<OrderStatus>(status, ignoreCase: true, out var s) ? s : (OrderStatus?)null;
         var deliveryFilter = Enum.TryParse<DeliveryType>(deliveryType, ignoreCase: true, out var d) ? d : (DeliveryType?)null;
 
         var orders = string.IsNullOrWhiteSpace(term)
-            ? await _orderService.GetOrderListAsync(statusFilter, deliveryFilter, fromDate: DateTime.Now.AddDays(-4))
-            : await _orderService.GetOrderListAsync(statusFilter, deliveryFilter, searchTerm: term);
+            ? await _orderService.GetOrderListAsync(statusFilter, deliveryFilter, fromDate: DateTime.Now.AddDays(-4), page: page)
+            : await _orderService.GetOrderListAsync(statusFilter, deliveryFilter, searchTerm: term, page: page);
 
-        return PartialView("_OrdersTableRows", orders);
+        return PartialView("_OrdersTableRows", orders.Items);
     }
 
     // Row-selection toolbar on Orders/Index - applies one status change to every

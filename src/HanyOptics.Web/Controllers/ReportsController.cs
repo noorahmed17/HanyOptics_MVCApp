@@ -1,7 +1,5 @@
-using System.Globalization;
 using System.Text;
 using HanyOptics.BusinessLogic.Interfaces;
-using HanyOptics.BusinessLogic.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -24,52 +22,29 @@ public class ReportsController : Controller
 
     public IActionResult Index() => View(_reports.Catalog);
 
-    public async Task<IActionResult> Show(string id, DateOnly? from, DateOnly? to)
+    public async Task<IActionResult> Show(string id, DateOnly? from, DateOnly? to, int? page)
     {
         var definition = _reports.Find(id);
         if (definition is null)
             return NotFound();
 
-        return View(await _reports.RunAsync(definition, from, to));
+        return View(await _reports.RunAsync(definition, from, to, page, pageSize: null));
     }
 
     // The owner will want these numbers in Excel sooner or later, and retyping a hundred
-    // rows off a screen is how figures get transcribed wrong.
+    // rows off a screen is how figures get transcribed wrong. Unlike the screen, this takes
+    // the whole range rather than one page.
     public async Task<IActionResult> Export(string id, DateOnly? from, DateOnly? to)
     {
         var definition = _reports.Find(id);
         if (definition is null)
             return NotFound();
 
-        var result = await _reports.RunAsync(definition, from, to);
+        var csv = await _reports.ExportCsvAsync(definition, from, to);
 
-        var csv = new StringBuilder();
-        csv.AppendLine(string.Join(',', result.Definition.Columns.Select(c => Escape(c.Label))));
-
-        foreach (var row in result.Rows)
-            csv.AppendLine(string.Join(',', row.Select(FormatForCsv).Select(Escape)));
-
-        // Excel opens a UTF-8 CSV as the system codepage unless it sees a BOM, which turns
+        // Excel reads a UTF-8 CSV as the system codepage unless it sees a BOM, which turns
         // every Arabic name into mojibake. The BOM is what makes the file readable.
-        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
-        var name = $"{definition.Key}-{DateTime.Now:yyyy-MM-dd}.csv";
-
-        return File(bytes, "text/csv", name);
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
+        return File(bytes, "text/csv", $"{definition.Key}-{DateTime.Now:yyyy-MM-dd}.csv");
     }
-
-    private static string FormatForCsv(object? value) => value switch
-    {
-        null => string.Empty,
-        DateTime dt => dt.TimeOfDay == TimeSpan.Zero
-            ? dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
-            : dt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-        DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-        decimal m => m.ToString("0.##", CultureInfo.InvariantCulture),
-        _ => value.ToString() ?? string.Empty
-    };
-
-    private static string Escape(string value) =>
-        value.Contains(',') || value.Contains('"') || value.Contains('\n')
-            ? $"\"{value.Replace("\"", "\"\"")}\""
-            : value;
 }

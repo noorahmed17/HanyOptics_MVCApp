@@ -156,6 +156,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .barcode-copied { font-size: 12px; font-weight: 600; color: #057a55; margin-right: 8px; opacity: 0; transition: opacity .15s; }
 .barcode-copied.show { opacity: 1; }
 
+/* ─── PAGER ─── */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid #f1f5f9; }
+.pager-info { font-size: 12px; color: #6b7280; font-variant-numeric: tabular-nums; }
+.pager-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pager-current { font-size: 12px; color: #374151; font-weight: 600; padding: 0 6px; font-variant-numeric: tabular-nums; }
+/* The ends of the range are spans, not links - there is nowhere to go, and a link that
+   does nothing is worse than one that is visibly unavailable. */
+.pager-disabled { background: #f8fafc; color: #cbd5e1; border-color: #eef2f7; cursor: default; }
+.pager-disabled:hover { background: #f8fafc; }
+
 /* ─── DAILY CLOSE ─── */
 /* The one number the whole screen exists to answer - what is in the drawer - so it gets
    twice the width and the dark treatment instead of sitting level with four siblings. */

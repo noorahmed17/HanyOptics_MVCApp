@@ -18,9 +18,11 @@ public class CustomersController : Controller
         _orderService = orderService;
     }
 
-    public async Task<IActionResult> Index(int? customerId)
+    public async Task<IActionResult> Index(int? customerId, string? q, int? page)
     {
-        ViewBag.Customers = await _customerService.GetAllAsync();
+        var customers = await _customerService.SearchAsync(q, page, null);
+        ViewBag.Customers = customers;
+        ViewBag.SearchTerm = q;
 
         if (customerId.HasValue)
         {
@@ -28,8 +30,17 @@ public class CustomersController : Controller
             if (customer is not null)
             {
                 ViewBag.SelectedCustomerId = customerId.Value;
-                var orders = await _orderService.GetOrderListAsync(customerId: customerId.Value);
-                return View(new CustomerDetailViewModel(customer, orders));
+                // The panel is a sidebar, not a screen of its own, so it takes the most
+                // recent slice rather than every order the customer has ever placed.
+                var orders = await _orderService.GetOrderListAsync(
+                    customerId: customerId.Value, pageSize: PageSizes.CustomerOrders);
+
+                // Totals come from an aggregate over every order, not from the recent slice
+                // above - otherwise a long-standing customer's spend and outstanding balance
+                // would both read low.
+                var totals = await _customerService.GetTotalsAsync(customerId.Value);
+
+                return View(new CustomerDetailViewModel(customer, orders.Items, totals));
             }
         }
 
@@ -37,4 +48,5 @@ public class CustomersController : Controller
     }
 }
 
-public record CustomerDetailViewModel(Customer Customer, IReadOnlyList<OrderListItem> Orders);
+public record CustomerDetailViewModel(
+    Customer Customer, IReadOnlyList<OrderListItem> RecentOrders, CustomerTotals Totals);

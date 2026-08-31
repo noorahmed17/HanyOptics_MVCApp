@@ -1,6 +1,6 @@
 @using System.Globalization
 @using HanyOptics.Domain.Enums
-@model IReadOnlyList<HanyOptics.BusinessLogic.Models.FrameListItem>
+@model HanyOptics.BusinessLogic.Models.PagedResult<HanyOptics.BusinessLogic.Models.FrameListItem>
 @{
     ViewData["Title"] = "المخزون";
     var statusFilter = (FrameStatus?)ViewBag.StatusFilter;
@@ -104,7 +104,7 @@
 
 <div class="card">
     <div class="card-body">
-        @if (!Model.Any())
+        @if (Model.TotalCount == 0)
         {
             <div class="empty-state">لا توجد إطارات مطابقة</div>
         }
@@ -124,7 +124,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var f in Model)
+                    @foreach (var f in Model.Items)
                     {
                         <tr>
                             <td><b><bdi>@f.Barcode</bdi></b></td>
@@ -155,4 +155,5 @@
             </table>
         }
     </div>
+    @await Html.PartialAsync("_Pager", HanyOptics.Web.Models.PagerInfo.From(Model))
 </div>

@@ -2,6 +2,7 @@ using System.Data;
 using HanyOptics.BusinessLogic.Interfaces;
 using HanyOptics.BusinessLogic.Models;
 using HanyOptics.DataAccess.Persistence;
+using HanyOptics.Domain.Entities;
 using HanyOptics.Domain.Enums;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -20,11 +21,14 @@ public class FrameInventoryService : IFrameInventoryService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<FrameListItem>> GetFramesAsync(
-        FrameStatus? status = null,
-        FrameCategory? category = null,
-        FrameTrackingType? trackingType = null,
-        string? searchTerm = null)
+    // The filters, in one place, so the listing and the summary can never drift apart -
+    // a summary built from a slightly different WHERE clause would quietly describe a
+    // different set of frames than the table under it.
+    private IQueryable<Frame> FilteredFrames(
+        FrameStatus? status,
+        FrameCategory? category,
+        FrameTrackingType? trackingType,
+        string? searchTerm)
     {
         var query = _dbContext.Frames.AsNoTracking().AsQueryable();
 
@@ -45,12 +49,30 @@ public class FrameInventoryService : IFrameInventoryService
                 (f.Color != null && EF.Functions.Like(f.Color, pattern)));
         }
 
+        return query;
+    }
+
+    public async Task<PagedResult<FrameListItem>> GetFramesAsync(
+        FrameStatus? status = null,
+        FrameCategory? category = null,
+        FrameTrackingType? trackingType = null,
+        string? searchTerm = null,
+        int? page = null,
+        int? pageSize = null)
+    {
+        var query = FilteredFrames(status, category, trackingType, searchTerm);
+
+        var total = await query.CountAsync();
+        var (currentPage, size) = PagedResult<FrameListItem>.Normalise(page, pageSize ?? PageSizes.Frames, total);
+
         // Whatever is still sellable first - that is what someone standing at the counter
         // with a customer needs to see - then newest, since recent stock is what staff are
         // least likely to remember.
-        return await query
+        var items = await query
             .OrderByDescending(f => f.QtyAvailable > 0)
             .ThenByDescending(f => f.FrameId)
+            .Skip((currentPage - 1) * size)
+            .Take(size)
             .Select(f => new FrameListItem
             {
                 FrameId = f.FrameId,
@@ -69,18 +91,48 @@ public class FrameInventoryService : IFrameInventoryService
                 Notes = f.Notes
             })
             .ToListAsync();
+
+        return new PagedResult<FrameListItem>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = currentPage,
+            PageSize = size
+        };
     }
 
-    // Runs over the already-fetched rows rather than issuing a second aggregate query, so
-    // the totals cannot disagree with the list they sit above - a separate COUNT/SUM could
-    // land either side of someone else's sale.
-    public FrameInventorySummary Summarise(IReadOnlyList<FrameListItem> frames) => new()
+    // Aggregated by the database over the whole filtered set. It runs off the same
+    // FilteredFrames query the listing uses, so the cards and the table always describe the
+    // same frames even though the table only shows one page of them.
+    public async Task<FrameInventorySummary> SummariseAsync(
+        FrameStatus? status = null,
+        FrameCategory? category = null,
+        FrameTrackingType? trackingType = null,
+        string? searchTerm = null)
     {
-        LineCount = frames.Count,
-        TotalUnitsAvailable = frames.Sum(f => f.QtyAvailable),
-        StockValueAtCost = frames.Sum(f => f.CostPrice * f.QtyAvailable),
-        StockValueAtSell = frames.Sum(f => f.SellPrice * f.QtyAvailable)
-    };
+        var query = FilteredFrames(status, category, trackingType, searchTerm);
+
+        // One round trip, and SUM over no rows is NULL in SQL rather than 0 - hence the
+        // casts to decimal? and the coalesce.
+        var totals = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                LineCount = g.Count(),
+                Units = (int?)g.Sum(f => f.QtyAvailable),
+                AtCost = (decimal?)g.Sum(f => f.CostPrice * f.QtyAvailable),
+                AtSell = (decimal?)g.Sum(f => f.SellPrice * f.QtyAvailable)
+            })
+            .FirstOrDefaultAsync();
+
+        return new FrameInventorySummary
+        {
+            LineCount = totals?.LineCount ?? 0,
+            TotalUnitsAvailable = totals?.Units ?? 0,
+            StockValueAtCost = totals?.AtCost ?? 0m,
+            StockValueAtSell = totals?.AtSell ?? 0m
+        };
+    }
 
     public async Task<AddFrameOutcome> AddFrameAsync(AddFrameRequest request)
     {

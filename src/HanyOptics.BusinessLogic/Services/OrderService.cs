@@ -52,9 +52,20 @@ public class OrderService : IOrderService
         return order.OrderId;
     }
 
-    public async Task<IReadOnlyList<OrderListItem>> GetOrderListAsync(OrderStatus? status = null, DeliveryType? deliveryType = null, int? customerId = null, DateTime? fromDate = null, string? searchTerm = null)
+    public async Task<PagedResult<OrderListItem>> GetOrderListAsync(
+        OrderStatus? status = null,
+        DeliveryType? deliveryType = null,
+        int? customerId = null,
+        DateTime? fromDate = null,
+        string? searchTerm = null,
+        int? page = null,
+        int? pageSize = null)
     {
-        var query = _dbContext.Orders.Include(o => o.OrderItems).AsNoTracking().AsQueryable();
+        // No Include here. The list needs each order's item types and a count, not the item
+        // rows themselves - Include would drag every column of every item across for every
+        // order on the page. The projection below asks the database for just those two
+        // things instead.
+        var query = _dbContext.Orders.AsNoTracking().AsQueryable();
 
         if (status.HasValue)
             query = query.Where(o => o.Status == status.Value);
@@ -83,29 +94,47 @@ public class OrderService : IOrderService
                 matchingCustomerIds.Contains(o.CustomerId));
         }
 
-        var orders = await query.OrderByDescending(o => o.OrderDate).ToListAsync();
+        var total = await query.CountAsync();
+        var (currentPage, size) = PagedResult<OrderListItem>.Normalise(page, pageSize ?? PageSizes.Orders, total);
 
-        var customerIds = orders.Select(o => o.CustomerId).Distinct().ToList();
-        var phones = await _dbContext.Customers
-            .AsNoTracking()
-            .Where(c => customerIds.Contains(c.CustomerId))
-            .ToDictionaryAsync(c => c.CustomerId, c => c.Phone);
+        // Ordered by date then id: two orders rung up in the same second would otherwise be
+        // free to swap places between one page and the next, so a row could show twice while
+        // another never appeared.
+        //
+        // The phone is a join rather than a second round trip, and the item types come back
+        // as a small projected list - so one query returns exactly what the page renders.
+        var items = await query
+            .OrderByDescending(o => o.OrderDate)
+            .ThenByDescending(o => o.OrderId)
+            .Skip((currentPage - 1) * size)
+            .Take(size)
+            .Select(o => new OrderListItem
+            {
+                OrderId = o.OrderId,
+                InvoiceNumber = o.InvoiceNumber,
+                OrderDate = o.OrderDate,
+                CustomerName = o.CustomerName,
+                CustomerPhone = _dbContext.Customers
+                    .Where(c => c.CustomerId == o.CustomerId)
+                    .Select(c => c.Phone)
+                    .FirstOrDefault(),
+                ItemTypes = o.OrderItems.Select(i => i.ItemType).Distinct().ToList(),
+                ItemCount = o.OrderItems.Count,
+                DeliveryType = o.DeliveryType,
+                Status = o.Status,
+                TotalAmount = o.TotalAmount,
+                PaidAmount = o.PaidAmount,
+                RemainingAmount = o.RemainingAmount
+            })
+            .ToListAsync();
 
-        return orders.Select(o => new OrderListItem
+        return new PagedResult<OrderListItem>
         {
-            OrderId = o.OrderId,
-            InvoiceNumber = o.InvoiceNumber,
-            OrderDate = o.OrderDate,
-            CustomerName = o.CustomerName,
-            CustomerPhone = phones.GetValueOrDefault(o.CustomerId),
-            ItemTypes = o.OrderItems.Select(i => i.ItemType).Distinct().ToList(),
-            ItemCount = o.OrderItems.Count,
-            DeliveryType = o.DeliveryType,
-            Status = o.Status,
-            TotalAmount = o.TotalAmount,
-            PaidAmount = o.PaidAmount,
-            RemainingAmount = o.RemainingAmount
-        }).ToList();
+            Items = items,
+            TotalCount = total,
+            Page = currentPage,
+            PageSize = size
+        };
     }
 
     // ── Staging: validate + describe an edit for the popup's pending list ─────────

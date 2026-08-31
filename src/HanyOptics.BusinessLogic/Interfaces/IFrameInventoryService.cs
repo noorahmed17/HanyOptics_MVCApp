@@ -15,15 +15,25 @@ namespace HanyOptics.BusinessLogic.Interfaces;
 // when they are built.
 public interface IFrameInventoryService
 {
-    Task<IReadOnlyList<FrameListItem>> GetFramesAsync(
+    Task<PagedResult<FrameListItem>> GetFramesAsync(
+        FrameStatus? status = null,
+        FrameCategory? category = null,
+        FrameTrackingType? trackingType = null,
+        string? searchTerm = null,
+        int? page = null,
+        int? pageSize = null);
+
+    // Summarises the whole filtered set, not the page on screen.
+    //
+    // This used to run over the fetched rows, which was right while the list was everything
+    // there is. Once the list is one page of a few thousand frames, summing what was fetched
+    // would turn "قيمة المخزون" into "value of these fifty rows" - a figure that changes as
+    // you page and means nothing. So it is now an aggregate over the same filters instead.
+    Task<FrameInventorySummary> SummariseAsync(
         FrameStatus? status = null,
         FrameCategory? category = null,
         FrameTrackingType? trackingType = null,
         string? searchTerm = null);
-
-    // Summarises the same filtered set the listing returns, so the totals on screen always
-    // describe the rows the user is actually looking at.
-    FrameInventorySummary Summarise(IReadOnlyList<FrameListItem> frames);
 
     // Adds one frame to stock and returns the barcode generated for it. This is the only
     // write in this service, and it exists because receiving new stock is the one stock

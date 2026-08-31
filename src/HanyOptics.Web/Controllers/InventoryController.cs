@@ -21,19 +21,22 @@ public class InventoryController : Controller
         _logger = logger;
     }
 
-    public async Task<IActionResult> Index(string? status, string? category, string? tracking, string? q)
+    public async Task<IActionResult> Index(string? status, string? category, string? tracking, string? q, int? page)
     {
         var statusFilter = Enum.TryParse<FrameStatus>(status, ignoreCase: true, out var s) ? s : (FrameStatus?)null;
         var categoryFilter = Enum.TryParse<FrameCategory>(category, ignoreCase: true, out var c) ? c : (FrameCategory?)null;
         var trackingFilter = Enum.TryParse<FrameTrackingType>(tracking, ignoreCase: true, out var t) ? t : (FrameTrackingType?)null;
 
-        var frames = await _frames.GetFramesAsync(statusFilter, categoryFilter, trackingFilter, q);
+        var frames = await _frames.GetFramesAsync(statusFilter, categoryFilter, trackingFilter, q, page);
 
         ViewBag.StatusFilter = statusFilter;
         ViewBag.CategoryFilter = categoryFilter;
         ViewBag.TrackingFilter = trackingFilter;
         ViewBag.SearchTerm = q;
-        ViewBag.Summary = _frames.Summarise(frames);
+
+        // Summarised over the same filters rather than over the page, so the cards keep
+        // describing the whole filtered stock however far into it you have paged.
+        ViewBag.Summary = await _frames.SummariseAsync(statusFilter, categoryFilter, trackingFilter, q);
 
         return View(frames);
     }

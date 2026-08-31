@@ -16,5 +16,15 @@ public interface IReportService
 
     // Runs one report. `from`/`to` are inclusive days and are ignored by reports that
     // describe a moment rather than a period (stock on hand, money currently owed).
+    //
+    // Returns one page of rows, but KPIs aggregated over the whole range - a report
+    // spanning thousands of rows still has to show true totals at the top.
     Task<ReportResult> RunAsync(ReportDefinition definition, DateOnly? from, DateOnly? to);
+
+    Task<ReportResult> RunAsync(
+        ReportDefinition definition, DateOnly? from, DateOnly? to, int? page, int? pageSize);
+
+    // The whole range as CSV, capped - a spreadsheet of one page would be useless, but an
+    // uncapped export is a way to ask the server for every row at once.
+    Task<string> ExportCsvAsync(ReportDefinition definition, DateOnly? from, DateOnly? to);
 }
