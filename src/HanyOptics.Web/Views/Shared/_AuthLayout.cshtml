@@ -4,7 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - هاني أوبتكس</title>
-    <link rel="stylesheet" href="~/css/site.css" />
+    @* Versioned like the main layout: the URL changes when the file does, which is what
+       lets the long cache header be safe. Without it this page's stylesheet was neither
+       cacheable nor bustable. *@
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
 <div class="auth-wrap">

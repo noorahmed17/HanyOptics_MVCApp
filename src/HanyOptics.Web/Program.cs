@@ -6,6 +6,7 @@ using HanyOptics.DataAccess;
 using HanyOptics.Web;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -13,6 +14,20 @@ var builder = WebApplication.CreateBuilder(args);
 // --- Services ---------------------------------------------------------
 
 builder.Services.AddControllersWithViews();
+
+// The shop runs on whatever connection it has, and these pages are mostly Arabic markup -
+// which compresses very well. Enabled for HTTPS too: the BREACH concern that used to rule
+// that out needs an attacker able to inject into a response that also echoes a secret, and
+// the only secret here is an HttpOnly cookie the body never reflects.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+    [
+        "application/json",
+        "image/svg+xml"
+    ]);
+});
 
 // Infrastructure: EF Core contexts, repositories, Identity store (AspNetUsers/AspNetRoles).
 builder.Services.AddHanyOpticsDataAccess(builder.Configuration);
@@ -118,7 +133,20 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
+app.UseResponseCompression();
+
+// The stylesheet and scripts are referenced with asp-append-version, so their URLs change
+// whenever their contents do. That makes a long cache safe: the browser can hold them for a
+// year and still pick up an edit immediately, because the edit produces a different URL.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var query = ctx.Context.Request.Query;
+        if (query.ContainsKey("v"))
+            ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+    }
+});
 
 app.UseRouting();
 
