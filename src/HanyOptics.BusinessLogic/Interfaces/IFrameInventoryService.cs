@@ -25,14 +25,13 @@ public interface IFrameInventoryService
     // describe the rows the user is actually looking at.
     FrameInventorySummary Summarise(IReadOnlyList<FrameListItem> frames);
 
-    // What a scan means before anything is written: whether this frame is already in stock,
-    // and - when the barcode follows sp_generate_barcode's shape - the sell price printed
-    // into it, so it does not have to be copied off the label by hand.
-    Task<FrameBarcodeLookupResult> LookupBarcodeAsync(string barcode);
-
-    // Adds one frame to stock. This is the only write in this service, and it exists
-    // because receiving new stock is the one stock movement that does not happen as a side
-    // effect of an order - everything else (reserving, returning, writing off) belongs to
-    // the order flow and runs through the stored procedures.
+    // Adds one frame to stock and returns the barcode generated for it. This is the only
+    // write in this service, and it exists because receiving new stock is the one stock
+    // movement that does not happen as a side effect of an order - everything else
+    // (reserving, returning, writing off) belongs to the order flow and runs through the
+    // stored procedures.
+    //
+    // The barcode is not supplied by the caller: sp_generate_barcode derives it from the
+    // sell price, because the shop prints the label after the frame is in the system.
     Task<AddFrameOutcome> AddFrameAsync(AddFrameRequest request);
 }

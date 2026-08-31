@@ -39,16 +39,11 @@ public class InventoryController : Controller
     }
 
     // ── Receiving new stock ────────────────────────────────────────────
-    // Built around the scanner: the label is already on the frame, so the barcode is read
-    // rather than typed, and everything that can be derived from it is filled in.
+    // The frame's details are entered, and the barcode comes back out: sp_generate_barcode
+    // derives it from the sell price, and the label is printed afterwards. Nothing is
+    // scanned here - there is no label on the frame yet.
     [HttpGet]
     public IActionResult AddFrame() => View(new AddFrameRequest());
-
-    // Called as the barcode is scanned, before anything is saved - it answers "is this
-    // frame already in stock, and what does its barcode tell us".
-    [HttpGet]
-    public async Task<IActionResult> LookupBarcode(string barcode)
-        => Json(await _frames.LookupBarcodeAsync(barcode ?? string.Empty));
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -64,7 +59,7 @@ public class InventoryController : Controller
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error adding frame {Barcode}", model.Barcode);
+            _logger.LogError(ex, "Unexpected error adding frame {Brand}", model.Brand);
             ModelState.AddModelError(string.Empty, "حدث خطأ غير متوقع — حاول مرة أخرى");
             return View(model);
         }
@@ -75,9 +70,11 @@ public class InventoryController : Controller
             return View(model);
         }
 
-        // Straight back to a blank form: stock arrives in boxes, so the next action after
-        // saving one frame is almost always scanning the next.
-        TempData["FrameAdded"] = $"تم إضافة الإطار {model.Brand} بنجاح";
+        // Straight back to a blank form - stock arrives in boxes - but carrying the
+        // generated barcode, which is the one thing the user still needs: it goes into
+        // BarTender to print the label that then goes on the frame.
+        TempData["FrameAddedName"] = $"{model.Brand} {model.ModelName}".Trim();
+        TempData["FrameAddedBarcode"] = outcome.Barcode;
         return RedirectToAction(nameof(AddFrame));
     }
 }

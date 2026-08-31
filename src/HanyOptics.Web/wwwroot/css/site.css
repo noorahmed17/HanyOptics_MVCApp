@@ -146,14 +146,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .input-group input { flex: 1; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-/* The scan bar: the barcode is the one field that starts every visit to this screen, so it
-   sits above the form rather than inside it, and stays a sensible size instead of
-   stretching the full width of the card. */
-.scan-bar { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
-.scan-bar label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-.scan-bar .input-group { max-width: 420px; }
-.scan-bar input { font-family: ui-monospace, "Consolas", monospace; font-size: 15px; letter-spacing: .5px; }
-.scan-hint { font-size: 12px; color: #6b7280; margin-top: 8px; }
+/* The barcode a save produced. It is the reason for saving - it goes into BarTender to
+   print the label - so it is set large and monospaced to be read off the screen and typed
+   or copied without transcribing a character wrong. */
+.barcode-result { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+.barcode-result-head { font-size: 14px; font-weight: 700; color: #065f46; margin-bottom: 10px; }
+.barcode-result-label { font-size: 12px; color: #047857; margin-bottom: 4px; }
+.barcode-result-code { font-family: ui-monospace, "Consolas", monospace; font-size: 26px; font-weight: 700; letter-spacing: 2px; color: #065f46; margin-bottom: 10px; direction: ltr; text-align: right; }
+.barcode-copied { font-size: 12px; font-weight: 600; color: #057a55; margin-right: 8px; opacity: 0; transition: opacity .15s; }
+.barcode-copied.show { opacity: 1; }
 
 /* ─── REPORTS ─── */
 .report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 20px; }

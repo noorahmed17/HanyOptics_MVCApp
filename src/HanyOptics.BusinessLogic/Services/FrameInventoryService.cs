@@ -82,57 +82,22 @@ public class FrameInventoryService : IFrameInventoryService
         StockValueAtSell = frames.Sum(f => f.SellPrice * f.QtyAvailable)
     };
 
-    public async Task<FrameBarcodeLookupResult> LookupBarcodeAsync(string barcode)
-    {
-        if (string.IsNullOrWhiteSpace(barcode))
-            return new FrameBarcodeLookupResult { Message = "امسح الباركود أو اكتبه" };
-
-        var code = barcode.Trim();
-
-        var existing = await _dbContext.Frames.AsNoTracking()
-            .FirstOrDefaultAsync(f => f.Barcode == code);
-
-        if (existing is not null)
-        {
-            return new FrameBarcodeLookupResult
-            {
-                AlreadyExists = true,
-                ExistingFrameId = existing.FrameId,
-                ExistingLabel = $"{existing.Brand} {existing.ModelName}".Trim(),
-                ExistingQtyAvailable = existing.QtyAvailable,
-                ExistingStatus = StatusLabel(existing.Status),
-                ExistingBrand = existing.Brand,
-                ExistingModelName = existing.ModelName,
-                ExistingColor = existing.Color,
-                ExistingSize = existing.Size,
-                ExistingCategory = existing.Category.ToString(),
-                ExistingTrackingType = existing.TrackingType.ToString(),
-                ExistingCostPrice = existing.CostPrice,
-                ExistingSellPrice = existing.SellPrice,
-                ExistingNotes = existing.Notes,
-                Message = "الباركود ده مسجّل بالفعل"
-            };
-        }
-
-        return new FrameBarcodeLookupResult
-        {
-            AlreadyExists = false,
-            DecodedSellPrice = FrameBarcode.TryReadSellPrice(code),
-            Message = "إطار جديد — أكمل البيانات"
-        };
-    }
-
     public async Task<AddFrameOutcome> AddFrameAsync(AddFrameRequest request)
     {
-        var barcode = request.Barcode?.Trim();
-        if (string.IsNullOrWhiteSpace(barcode))
-            return AddFrameOutcome.Failure("امسح الباركود أو اكتبه");
-
         if (string.IsNullOrWhiteSpace(request.Brand))
             return AddFrameOutcome.Failure("أدخل الماركة");
 
-        if (request.CostPrice < 0 || request.SellPrice < 0)
-            return AddFrameOutcome.Failure("السعر غير صحيح");
+        // sp_generate_barcode hides the sell price inside the code, so there is no barcode
+        // to generate without one. Left blank is not the same as zero, but neither can be
+        // saved: zero would produce a code meaning "free".
+        if (request.SellPrice is null or <= 0)
+            return AddFrameOutcome.Failure("أدخل سعر البيع — الباركود بيتولّد منه");
+
+        // Cost is genuinely optional - stock sometimes arrives before the invoice does -
+        // so a blank box means "not known yet" and stores as 0 rather than blocking a save.
+        var costPrice = request.CostPrice ?? 0m;
+        if (costPrice < 0)
+            return AddFrameOutcome.Failure("التكلفة غير صحيحة");
 
         // An individual frame is one physical piece, so its quantity is not the user's to
         // set - whatever the form posted is replaced rather than validated.
@@ -143,63 +108,73 @@ public class FrameInventoryService : IFrameInventoryService
         try
         {
             var frameIdParam = new SqlParameter("@p_frame_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
+            var barcodeOut = new SqlParameter("@p_barcode_out", SqlDbType.NVarChar, 50) { Direction = ParameterDirection.Output };
 
-            // No stored procedure for this one, so the statement carries the rules an SP
-            // normally would. The barcode check is inside the INSERT rather than a separate
-            // SELECT first: two people receiving stock at once would both pass a prior
-            // check and the second would then hit the unique index as a raw SQL error.
-            // Here the insert simply matches nothing, and the THROW says why in Arabic.
+            // Generating and inserting in one batch, with a retry, rather than two round
+            // trips. sp_generate_barcode checks the code is unused, but that check and our
+            // INSERT are not one instant: another till receiving stock at the same moment
+            // could take the code in between. The conditional INSERT catches that, and the
+            // loop simply asks for another code instead of failing in the user's face.
             await _dbContext.Database.ExecuteSqlRawAsync(
                 """
-                INSERT INTO frames (branch_id, barcode, tracking_type, category, brand, model_name,
-                                    color, size, cost_price, sell_price, qty_initial, qty_available,
-                                    status, notes)
-                SELECT 1, @p_barcode, @p_tracking, @p_category, @p_brand, @p_model,
-                       @p_color, @p_size, @p_cost, @p_sell, @p_qty, @p_qty,
-                       'available', @p_notes
-                WHERE NOT EXISTS (SELECT 1 FROM frames WHERE barcode = @p_barcode);
+                SET NOCOUNT ON;
 
-                IF @@ROWCOUNT = 0
-                    THROW 50000, N'الباركود ده مسجّل على إطار تاني بالفعل', 1;
+                DECLARE @attempt INT = 0, @barcode NVARCHAR(50), @done BIT = 0;
 
-                SET @p_frame_id = SCOPE_IDENTITY();
+                WHILE @attempt < 5 AND @done = 0
+                BEGIN
+                    EXEC sp_generate_barcode @sell_price = @p_sell, @barcode = @barcode OUTPUT;
+
+                    INSERT INTO frames (branch_id, barcode, tracking_type, category, brand, model_name,
+                                        color, size, cost_price, sell_price, qty_initial, qty_available,
+                                        status, notes)
+                    SELECT 1, @barcode, @p_tracking, @p_category, @p_brand, @p_model,
+                           @p_color, @p_size, @p_cost, @p_sell, @p_qty, @p_qty,
+                           'available', @p_notes
+                    WHERE NOT EXISTS (SELECT 1 FROM frames WHERE barcode = @barcode);
+
+                    IF @@ROWCOUNT = 1
+                    BEGIN
+                        SET @p_frame_id     = SCOPE_IDENTITY();
+                        SET @p_barcode_out  = @barcode;
+                        SET @done = 1;
+                    END
+
+                    SET @attempt = @attempt + 1;
+                END
+
+                IF @done = 0
+                    THROW 50000, N'تعذّر توليد باركود فريد للإطار — حاول تاني', 1;
                 """,
-                new SqlParameter("@p_barcode", SqlDbType.NVarChar, 50) { Value = barcode },
                 new SqlParameter("@p_tracking", SqlDbType.NVarChar, 10) { Value = request.TrackingType == FrameTrackingType.Bulk ? "bulk" : "individual" },
                 new SqlParameter("@p_category", SqlDbType.NVarChar, 10) { Value = request.Category == FrameCategory.Sun ? "sun" : "optical" },
                 new SqlParameter("@p_brand", SqlDbType.NVarChar, 100) { Value = request.Brand.Trim() },
                 new SqlParameter("@p_model", SqlDbType.NVarChar, 100) { Value = (object?)request.ModelName?.Trim() ?? DBNull.Value },
                 new SqlParameter("@p_color", SqlDbType.NVarChar, 50) { Value = (object?)request.Color?.Trim() ?? DBNull.Value },
                 new SqlParameter("@p_size", SqlDbType.NVarChar, 20) { Value = (object?)request.Size?.Trim() ?? DBNull.Value },
-                new SqlParameter("@p_cost", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = request.CostPrice },
-                new SqlParameter("@p_sell", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = request.SellPrice },
+                new SqlParameter("@p_cost", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = costPrice },
+                new SqlParameter("@p_sell", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = request.SellPrice.Value },
                 new SqlParameter("@p_qty", SqlDbType.Int) { Value = quantity },
                 new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)request.Notes?.Trim() ?? DBNull.Value },
-                frameIdParam);
+                frameIdParam,
+                barcodeOut);
 
             var frameId = frameIdParam.Value is int id ? id : 0;
-            _logger.LogInformation("Added frame {FrameId} ({Barcode}) to stock, qty {Qty}.", frameId, barcode, quantity);
-            return AddFrameOutcome.Success(frameId);
+            var barcode = barcodeOut.Value as string;
+
+            _logger.LogInformation("Added frame {FrameId} to stock as {Barcode}, qty {Qty}.", frameId, barcode, quantity);
+            return AddFrameOutcome.Success(frameId, barcode ?? string.Empty);
         }
         catch (SqlException ex)
         {
-            _logger.LogError(ex, "SQL error adding frame {Barcode}. SqlErrors={SqlErrors}",
-                barcode, StoredProcedureErrors.Describe(ex));
+            _logger.LogError(ex, "SQL error adding frame {Brand}. SqlErrors={SqlErrors}",
+                request.Brand, StoredProcedureErrors.Describe(ex));
             return AddFrameOutcome.Failure(StoredProcedureErrors.ToUserMessage(ex, "الباركود ده مسجّل بالفعل"));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error adding frame {Barcode}.", barcode);
+            _logger.LogError(ex, "Unexpected error adding frame {Brand}.", request.Brand);
             return AddFrameOutcome.Failure(StoredProcedureErrors.GenericMessage);
         }
     }
-
-    private static string StatusLabel(FrameStatus s) => s switch
-    {
-        FrameStatus.Available => "متاح",
-        FrameStatus.Reserved => "محجوز",
-        FrameStatus.Sold => "مباع",
-        FrameStatus.Damaged => "تالف",
-        _ => s.ToString()
-    };
 }

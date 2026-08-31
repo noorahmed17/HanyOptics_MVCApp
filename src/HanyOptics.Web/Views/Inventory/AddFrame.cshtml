@@ -1,6 +1,8 @@
 @model HanyOptics.BusinessLogic.Models.AddFrameRequest
 @{
     ViewData["Title"] = "إضافة إطار";
+    var addedName = TempData["FrameAddedName"] as string;
+    var addedBarcode = TempData["FrameAddedBarcode"] as string;
 }
 
 <div class="page-header">
@@ -8,37 +10,22 @@
     <a class="btn btn-outline" asp-action="Index">→ رجوع للمخزون</a>
 </div>
 
-@if (TempData["FrameAdded"] is string added)
+@* The generated barcode is the whole output of saving - it is what goes into BarTender to
+   print the label - so it gets its own panel rather than a line in a toast that disappears. *@
+@if (!string.IsNullOrEmpty(addedBarcode))
 {
-    <div class="alert alert-success">✅ @added</div>
+    <div class="barcode-result">
+        <div class="barcode-result-head">✅ تم إضافة @addedName للمخزون</div>
+        <div class="barcode-result-label">الباركود المتولّد — اطبعه على الإطار</div>
+        <div class="barcode-result-code" id="generatedBarcode">@addedBarcode</div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="copyBarcode()">📋 نسخ الباركود</button>
+        <span class="barcode-copied" id="barcodeCopied">اتنسخ ✔️</span>
+    </div>
 }
 
 <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
 
 <form asp-action="AddFrame" method="post" id="addFrameForm">
-    @* The barcode starts every visit to this screen, so it sits above the form rather
-       than as the first of fifteen identical-looking fields. *@
-    <div class="scan-bar">
-        <label for="frameBarcodeInput">🔖 الباركود *</label>
-        <div class="input-group">
-            @* data-role is how scanner.js finds the barcode box on any screen. *@
-            <input type="text" asp-for="Barcode" id="frameBarcodeInput" data-role="barcodeInput"
-                   placeholder="امسح الباركود بالقارئ أو اكتبه" autocomplete="off" />
-            <button type="button" class="btn btn-primary" onclick="lookupFrameBarcode()">🔍 بحث</button>
-        </div>
-        <span asp-validation-for="Barcode" class="field-error"></span>
-
-        <div class="frame-result" id="barcodeNew">
-            <div class="frame-result-title">✅ إطار جديد</div>
-            <div class="frame-meta" id="barcodeNewMeta"></div>
-        </div>
-        <div class="frame-error" id="barcodeExists"></div>
-
-        <div class="scan-hint">
-            الباركود المطبوع من المحل فيه السعر بس — الماركة والموديل واللون بتتكتب بإيدك.
-        </div>
-    </div>
-
     <div class="wizard-content">
         <div class="form-row">
             <div class="form-group">
@@ -48,25 +35,25 @@
             </div>
             <div class="form-group">
                 <label>الموديل</label>
-                <input asp-for="ModelName" id="frameModelInput" placeholder="مثال: RB5154" autocomplete="off" />
+                <input asp-for="ModelName" placeholder="مثال: RB5154" autocomplete="off" />
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
                 <label>اللون</label>
-                <input asp-for="Color" id="frameColorInput" placeholder="مثال: أسود" autocomplete="off" />
+                <input asp-for="Color" placeholder="مثال: أسود" autocomplete="off" />
             </div>
             <div class="form-group">
                 <label>المقاس</label>
-                <input asp-for="Size" id="frameSizeInput" placeholder="مثال: 54" autocomplete="off" />
+                <input asp-for="Size" placeholder="مثال: 54" autocomplete="off" />
             </div>
         </div>
 
         <div class="form-row">
             <div class="form-group">
                 <label>النوع</label>
-                <select asp-for="Category" id="frameCategoryInput">
+                <select asp-for="Category">
                     <option value="Optical">👓 طبي</option>
                     <option value="Sun">☀️ شمس</option>
                 </select>
@@ -85,14 +72,16 @@
         <div class="form-row">
             <div class="form-group">
                 <label>تكلفة الشراء (ج)</label>
-                <input type="number" asp-for="CostPrice" id="frameCostInput" min="0" step="0.01" />
+                <input type="number" asp-for="CostPrice" min="0" step="0.01" />
                 <span asp-validation-for="CostPrice" class="field-error"></span>
             </div>
             <div class="form-group">
                 <label>سعر البيع (ج) *</label>
                 <input type="number" asp-for="SellPrice" id="frameSellInput" min="0" step="0.01" />
                 <span asp-validation-for="SellPrice" class="field-error"></span>
-                <div class="scan-hint" id="sellPriceHint"></div>
+                @* Not a nicety: the price is encoded inside the barcode, so getting it wrong
+                   here means reprinting the label, not just editing a field. *@
+                <div class="form-hint">الباركود بيتولّد من السعر ده — تأكد منه قبل الحفظ.</div>
             </div>
         </div>
 
@@ -106,119 +95,42 @@
 
         <div class="form-group">
             <label>ملاحظات (اختياري)</label>
-            <input asp-for="Notes" id="frameNotesInput" placeholder="مثال: دفعة المورد رقم 12" autocomplete="off" />
+            <input asp-for="Notes" placeholder="مثال: دفعة المورد رقم 12" autocomplete="off" />
         </div>
 
         <div class="wizard-footer">
             <a class="btn btn-outline" asp-action="Index">إلغاء</a>
-            <button type="submit" class="btn btn-primary btn-lg" id="addFrameSubmit">✔️ إدخال</button>
+            <button type="submit" class="btn btn-primary btn-lg">✔️ إدخال وتوليد الباركود</button>
         </div>
     </div>
 </form>
 
 @section Scripts {
     <script>
-        // The scanner types the barcode and sends Enter. Enter inside a form submits it, so
-        // here that would try to save a frame with nothing but a barcode filled in. It runs
-        // the lookup instead - which is what the scan is for - and the user presses إدخال
-        // when the rest is filled in.
-        const barcodeInput = document.getElementById('frameBarcodeInput');
-        const submitBtn = document.getElementById('addFrameSubmit');
-
-        barcodeInput.addEventListener('keydown', function (e) {
-            if (e.key !== 'Enter') return;
-            e.preventDefault();
-            lookupFrameBarcode();
-        });
-
-        // Editing the barcode after a hit invalidates whatever the last lookup concluded,
-        // so the panels and the blocked submit button go back to neutral.
-        barcodeInput.addEventListener('input', resetLookupState);
-
-        function resetLookupState() {
-            document.getElementById('barcodeNew').classList.remove('show');
-            document.getElementById('barcodeExists').classList.remove('show');
-            submitBtn.disabled = false;
-        }
-
-        function setValue(id, value) {
-            document.getElementById(id).value = (value === null || value === undefined) ? '' : value;
-        }
-
-        function lookupFrameBarcode() {
-            const code = barcodeInput.value.trim();
-            resetLookupState();
-            if (!code) return;
-
-            fetch('@Url.Action("LookupBarcode")?barcode=' + encodeURIComponent(code))
-                .then(r => r.json())
-                .then(data => {
-                    if (data.alreadyExists) {
-                        showExisting(data);
-                    } else {
-                        showNew(data);
-                    }
-                });
-        }
-
-        // A barcode already in stock is the one case where the whole frame is known, so
-        // every field gets filled from the stored row. Saving is blocked though - this
-        // screen receives new stock, and a second row on the same barcode would be a
-        // duplicate the database rejects anyway.
-        function showExisting(data) {
-            setValue('frameBrandInput', data.existingBrand);
-            setValue('frameModelInput', data.existingModelName);
-            setValue('frameColorInput', data.existingColor);
-            setValue('frameSizeInput', data.existingSize);
-            setValue('frameCategoryInput', data.existingCategory);
-            setValue('frameTrackingInput', data.existingTrackingType);
-            setValue('frameCostInput', data.existingCostPrice);
-            setValue('frameSellInput', data.existingSellPrice);
-            setValue('frameNotesInput', data.existingNotes);
-            updateTrackingMode();
-
-            document.getElementById('sellPriceHint').textContent = '';
-            const box = document.getElementById('barcodeExists');
-            box.innerHTML =
-                '<b>⚠️ الإطار ده مسجّل بالفعل — رقم ' + data.existingFrameId + '</b><br>' +
-                'بياناته اتملت تحت عشان تشوفها، بس مينفعش يتسجّل تاني. ' +
-                'المتاح: ' + data.existingQtyAvailable + ' (' + (data.existingStatus || '') + ')';
-            box.classList.add('show');
-            submitBtn.disabled = true;
-        }
-
-        // A barcode nobody has seen before carries a price and nothing else, so that is all
-        // there is to fill in - the rest is typed.
-        function showNew(data) {
-            let meta = '<span>باركود جديد وغير مستخدم</span>';
-
-            if (data.decodedSellPrice !== null && data.decodedSellPrice !== undefined) {
-                setValue('frameSellInput', data.decodedSellPrice);
-                document.getElementById('sellPriceHint').textContent = 'اتقرا من الباركود — عدّله لو مختلف.';
-                meta += '<span>السعر من الباركود: <b>' +
-                    Number(data.decodedSellPrice).toLocaleString('ar-EG') + ' ج</b></span>';
-            } else {
-                document.getElementById('sellPriceHint').textContent = '';
-                meta += '<span>الباركود ده مافيهوش سعر — اكتب السعر بنفسك</span>';
-            }
-
-            document.getElementById('barcodeNewMeta').innerHTML = meta;
-            document.getElementById('barcodeNew').classList.add('show');
-            document.getElementById('frameBrandInput').focus();
-        }
-
         // An individual frame is a single piece; only a bulk line has a quantity to receive.
         function updateTrackingMode() {
-            const bulk = document.getElementById('frameTrackingInput').value === 'Bulk';
-            const qtyGroup = document.getElementById('frameQtyGroup');
-            const qtyInput = document.getElementById('frameQtyInput');
+            var bulk = document.getElementById('frameTrackingInput').value === 'Bulk';
+            var qtyGroup = document.getElementById('frameQtyGroup');
+            var qtyInput = document.getElementById('frameQtyInput');
 
             qtyGroup.style.display = bulk ? '' : 'none';
             qtyInput.disabled = !bulk;
-            if (!bulk) qtyInput.value = 1;
+            if (!bulk) { qtyInput.value = 1; }
+        }
+
+        function copyBarcode() {
+            var code = document.getElementById('generatedBarcode').textContent.trim();
+            var done = document.getElementById('barcodeCopied');
+
+            // Retyping a code into BarTender is exactly how a label ends up on the wrong
+            // frame, so make copying it the easy path.
+            navigator.clipboard.writeText(code).then(function () {
+                done.classList.add('show');
+                setTimeout(function () { done.classList.remove('show'); }, 1800);
+            });
         }
 
         updateTrackingMode();
-        barcodeInput.focus();
+        document.getElementById('frameBrandInput').focus();
     </script>
 }
