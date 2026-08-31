@@ -156,6 +156,56 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 .barcode-copied { font-size: 12px; font-weight: 600; color: #057a55; margin-right: 8px; opacity: 0; transition: opacity .15s; }
 .barcode-copied.show { opacity: 1; }
 
+/* ─── DAILY CLOSE ─── */
+/* The one number the whole screen exists to answer - what is in the drawer - so it gets
+   twice the width and the dark treatment instead of sitting level with four siblings. */
+.stat-card.hero { grid-column: span 2; background: linear-gradient(135deg, #1e2a3a, #28405c); border-color: #1e2a3a; color: #fff; }
+.stat-card.hero .stat-label { color: #a9bcd4; }
+.stat-card.hero .stat-value { color: #fff; font-size: 34px; }
+.stat-card.hero .stat-sub { color: #93a9c4; }
+
+/* .card-body has no padding because it usually holds a full-bleed table; prose inside a
+   card needs its own padded box. */
+.card-pad { padding: 16px 18px; }
+.card-note { font-size: 11.5px; color: #94a3b8; }
+
+/* Spells out where the working day starts and ends. Dashed, because it is a statement of
+   the rule rather than a figure read off the data. */
+.daywindow { margin-right: auto; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 7px 12px; font-size: 12px; color: #475569; }
+.daywindow b { color: #1a202c; }
+
+/* Cash vs visa at a glance, before anyone reads a single figure. */
+.splitbar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
+.splitbar div { height: 100%; }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #475569; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 6px; }
+
+/* A running total that has to add up on screen, so the last row is set apart as the sum. */
+.breakdown { width: 100%; font-size: 13px; }
+.breakdown td { padding: 9px 0; border-bottom: 1px dashed #eef2f7; }
+.breakdown tr:last-child td { border-bottom: none; font-weight: 700; font-size: 14px; padding-top: 12px; border-top: 2px solid #e2e8f0; }
+
+.alerts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.alert-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 13px 15px; background: #fff; }
+.alert-box.warn { background: #fffbeb; border-color: #fde68a; }
+.alert-box.info { background: #f8fafc; }
+.alert-title { font-size: 12.5px; font-weight: 700; margin-bottom: 4px; }
+.alert-value { font-size: 19px; font-weight: 700; }
+.alert-desc { font-size: 11.5px; color: #6b7280; margin-top: 3px; }
+
+/* A totals row belongs to the table it sums, so it stays put visually with the header. */
+tfoot td { background: #f8fafc; font-weight: 700; border-top: 1px solid #e2e8f0; border-bottom: none; }
+
+/* Rows worth a second look: after midnight, and money going back out. */
+.row-night td { background: #fdfbff; }
+.row-refund td { background: #fffafa; }
+
+.badge-night { background: #f3e8ff; color: #6b21a8; }
+.badge-old { background: #f1f5f9; color: #475569; }
+.badge-fl { background: #ede9fe; color: #5b21b6; }
+.badge-fo { background: #fff7ed; color: #c2410c; }
+.badge-lr { background: #f0fdf4; color: #15803d; }
+
 /* ─── REPORTS ─── */
 .report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .report-card { display: flex; gap: 12px; align-items: flex-start; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; text-decoration: none; color: inherit; transition: all .15s; }
@@ -176,6 +226,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6
 
 /* Figures line up on their digits, which is the only way a column of money is readable. */
 td.num, th.num { text-align: left; font-variant-numeric: tabular-nums; }
+/* Outside a table the alignment is the container's business, but the digits should still
+   be the same width so a figure does not jitter as it updates. */
+.num { font-variant-numeric: tabular-nums; }
 
 /* Only for money that is genuinely allowed to go negative - a profit line, a net total.
    A plain price never should, so a minus there stays black and reads as a data problem. */
