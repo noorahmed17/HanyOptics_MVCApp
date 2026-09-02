@@ -75,13 +75,10 @@
             <input type="number" asp-for="LensSellPrice" data-role="lensSellInput" min="0" step="0.01" />
             <span asp-validation-for="LensSellPrice" class="field-error"></span>
         </div>
-        @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
-        {
-            <div class="form-group">
-                <label>📦 تكلفة المورد (ج) <span style="font-size:10px;color:#9ca3af">— أدمن فقط</span></label>
-                <input type="number" asp-for="LensCostPrice" min="0" step="0.01" />
-            </div>
-        }
+        @* No supplier cost box. Nobody at the counter knows what the lab will charge at the
+           moment the order is taken, so it was being left blank or guessed - and a guessed
+           cost is worse than no cost, because it looks like a real figure in the profit
+           reports. See the note in NewOrderService. *@
     </div>
 
     <div data-role="doctorSection">

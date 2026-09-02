@@ -162,7 +162,12 @@ public class NewOrderService : INewOrderService
             ExternalFrameNotes = usesExternalFrame ? request.ExternalFrameNotes : null,
             LensDescription = needsLens ? request.LensDescription : null,
             LensSellPrice = needsLens ? request.LensSellPrice ?? 0 : 0,
-            LensCostPrice = needsLens ? request.LensCostPrice ?? 0 : 0,
+            // Always zero. The counter does not know the lab's price when the order is
+            // taken, so there is nothing truthful to record here - and a guessed figure
+            // would be worse than none, since the profit reports would present it as fact.
+            // Consequence worth knowing: lens cost is unknown for orders created this way,
+            // so their lens profit reads as the full lens revenue.
+            LensCostPrice = 0,
             Notes = request.Notes,
             RightSphere = request.RightSphere,
             RightCylinder = request.RightCylinder,
@@ -260,7 +265,6 @@ public class NewOrderService : INewOrderService
         ExternalFrameNotes = item.ExternalFrameNotes,
         LensDescription = item.LensDescription,
         LensSellPrice = item.LensSellPrice,
-        LensCostPrice = item.LensCostPrice,
         Notes = item.Notes,
         RightSphere = item.RightSphere,
         RightCylinder = item.RightCylinder,

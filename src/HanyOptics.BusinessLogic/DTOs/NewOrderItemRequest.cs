@@ -18,7 +18,6 @@ public class NewOrderItemRequest
 
     public string? LensDescription { get; set; }
     public decimal? LensSellPrice { get; set; }
-    public decimal? LensCostPrice { get; set; }
 
     public string? Notes { get; set; }
 
