@@ -431,6 +431,21 @@ public class OrderService : IOrderService
         if (item.Status != OrderItemStatus.Active)
             return StagedEditOutcome.Failure("هذا البند ملغي بالفعل");
 
+        // sp_cancel_order_item refuses outright once the order is ready or beyond - taking
+        // an item off an order that is already assembled and waiting at the counter is
+        // treated as an admin decision, not a routine edit. Checked here as well as there,
+        // so it is refused while staging rather than after تأكيد, by which point the user
+        // has done the work twice.
+        var orderStatus = await _dbContext.Orders.AsNoTracking()
+            .Where(o => o.OrderId == item.OrderId).Select(o => o.Status).FirstAsync();
+
+        if (orderStatus is OrderStatus.Delivered or OrderStatus.Cancelled)
+            return StagedEditOutcome.Failure("لا يمكن إلغاء بند في طلب تم تسليمه أو إلغاؤه");
+
+        if (orderStatus == OrderStatus.Ready)
+            return StagedEditOutcome.Failure(
+                "الطلب جاهز للتسليم — إلغاء بند في الحالة دي قرار إداري ولازم يتعمل يدوياً");
+
         // Worth saying up front rather than letting it come as a surprise after تأكيد:
         // sp_cancel_order_item cancels the whole order once nothing active is left in it.
         var otherActiveItems = await _dbContext.OrderItems

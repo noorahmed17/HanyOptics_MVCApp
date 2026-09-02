@@ -84,6 +84,11 @@
         i.Status == OrderItemStatus.Active && (i.FrameId.HasValue || i.ItemType == OrderItemType.LensesReplace);
 
     var orderIsTerminal = order.Status is OrderStatus.Delivered or OrderStatus.Cancelled;
+
+    // sp_cancel_order_item refuses once the order is ready - an assembled order waiting at
+    // the counter is not something to take an item off casually. Offering the button anyway
+    // would mean staging an edit and pressing تأكيد only to be told no.
+    var canCancelItems = !orderIsTerminal && order.Status != OrderStatus.Ready;
     var hasSwappableItem = !orderIsTerminal && order.OrderItems.Any(CanReplaceFrame);
 
     // Same philosophy as CanReplaceFrame: this only decides whether to offer the button.
@@ -246,7 +251,10 @@
                                     data-lens-price="@it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                     onclick="openLensModal(this)">👁️ تغيير العدسات</button>
                         }
+                        @if (canCancelItems)
+                        {
                         <button type="button" class="btn btn-outline btn-sm" onclick="openCancelItemModal(@it.ItemId, '@TypeLabel(it.ItemType)', @it.ItemTotal.ToString(System.Globalization.CultureInfo.InvariantCulture), @(activeItemCount == 1 ? "true" : "false"), @(it.FrameId.HasValue || it.CompensationFrameId.HasValue ? "true" : "false"))" style="color:#dc2626">🗑️ إلغاء البند</button>
+                        }
                     </div>
                 }
                 @if (!string.IsNullOrWhiteSpace(it.LensDescription))
