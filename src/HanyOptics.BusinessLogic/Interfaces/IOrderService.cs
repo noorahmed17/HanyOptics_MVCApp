@@ -62,17 +62,20 @@ public interface IOrderService
     // payment sp_add_payment accepts against a cancelled order.
     Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
 
-    // Replaces the lenses on an item that already has some. Lenses hold no stock, so there
-    // is nothing to reserve or return - the change is only what was fitted.
+    // Replaces the lenses on an item that already has some, and what they are charged at.
+    // Lenses hold no stock, so there is nothing to reserve or return.
     //
-    // Deliberately does not touch the price: BuildPriceChangeEditAsync owns that, and two
-    // routes to the same number is how they end up disagreeing.
-    Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, string? notes);
+    // The price belongs here rather than in BuildPriceChangeEditAsync: new lenses almost
+    // always cost something different, so the type and the price are one decision. Splitting
+    // them across two dialogs is how an item ends up described as one thing and priced as
+    // another.
+    Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, decimal? lensSellPrice, string? notes);
 
-    // Corrects what an item was charged without changing what was sold - a mistyped frame
-    // price, an agreed discount applied after the fact. Either figure may be null to leave
-    // it as it stands. The T2 trigger carries the new totals up into the order.
-    Task<StagedEditOutcome> BuildPriceChangeEditAsync(int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice, string? notes);
+    // Corrects the frame price without changing what was sold - a mistyped figure, an
+    // agreed discount applied after the fact. Frame only, even on an إطار + عدسات item: the
+    // lens price moves with the lenses, in BuildLensChangeEditAsync. Null leaves it as it
+    // stands. The T2 trigger carries the new total up into the order.
+    Task<StagedEditOutcome> BuildPriceChangeEditAsync(int itemId, decimal? frameAgreedPrice, string? notes);
 
     // Cancels one item out of an order, leaving the order's other items untouched.
     // sp_cancel_order_item handles the stock consequences (frame returned or written off,

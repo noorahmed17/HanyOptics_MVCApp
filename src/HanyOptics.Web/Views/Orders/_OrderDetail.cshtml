@@ -97,10 +97,13 @@
     var hasLensItem = !orderIsTerminal && order.OrderItems.Any(i =>
         i.Status == OrderItemStatus.Active && i.ItemType != OrderItemType.FrameOnly);
 
-    // Repricing is for items that were sold something out of the shop. استبدال عدسات is
-    // the customer's own frame with lenses priced when they were chosen, so it is excluded.
+    // The dialog now edits the frame price only, so it is offered exactly where there is a
+    // frame to reprice. استبدال عدسات is the customer's own frame and draws nothing from
+    // stock; the lens price on any item is changed through تغيير العدسات instead.
     static bool CanEditPrices(HanyOptics.Domain.Entities.OrderItem i) =>
-        i.Status == OrderItemStatus.Active && i.ItemType != OrderItemType.LensesReplace;
+        i.Status == OrderItemStatus.Active
+        && i.ItemType != OrderItemType.LensesReplace
+        && (i.FrameId.HasValue || i.CompensationFrameId.HasValue);
 
     // No point rendering the dialog for an order whose items are all استبدال عدسات.
     var hasPriceEditableItem = !orderIsTerminal && order.OrderItems.Any(CanEditPrices);
@@ -204,23 +207,22 @@
                 @if (!itemCancelled && !orderIsTerminal)
                 {
                     <div class="flex items-center gap-2 flex-wrap mt-2">
-                        @* Correcting what was charged, without changing what was sold - a
-                           mistyped price, or a discount agreed after the fact. The other
-                           buttons all replace something; this one only touches money.
+                        @* Correcting what the frame was charged, without changing what was
+                           sold - a mistyped price, or a discount agreed after the fact. The
+                           other buttons all replace something; this one only touches money.
 
-                           Not offered on استبدال عدسات: the lens price there is set through
-                           تغيير العدسات when the lenses are chosen, and the item draws no
-                           frame from stock, so there is nothing else to reprice. *@
+                           The frame only, even on an إطار + عدسات item: the lens price is
+                           changed in تغيير العدسات, together with the lenses it belongs to,
+                           because new lenses almost always cost something different. *@
                         @if (CanEditPrices(it))
                         {
-                            var hasFrameLine = it.FrameId.HasValue || it.CompensationFrameId.HasValue;
                             var hasLensLine = it.ItemType != OrderItemType.FrameOnly;
                             <button type="button" class="btn btn-outline btn-sm"
                                     data-price-item-id="@it.ItemId"
                                     data-price-item-label="@TypeLabel(it.ItemType)"
-                                    data-price-frame="@(hasFrameLine ? it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
+                                    data-price-frame="@it.FrameAgreedPrice.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                     data-price-lens="@(hasLensLine ? it.LensSellPrice.ToString(System.Globalization.CultureInfo.InvariantCulture) : "")"
-                                    onclick="openPriceModal(this)">💰 تعديل الأسعار</button>
+                                    onclick="openPriceModal(this)">💰 تعديل سعر الإطار</button>
                         }
                         @if (CanReplaceFrame(it))
                         {
@@ -513,7 +515,7 @@
     <div class="overlay" id="priceModalOverlay" style="z-index:110" onclick="closePriceModal()"></div>
     <div class="modal modal-sm" id="priceModal" style="z-index:111" onclick="event.stopPropagation()">
         <div class="modal-header">
-            <span class="modal-title">💰 تعديل الأسعار</span>
+            <span class="modal-title">💰 تعديل سعر الإطار</span>
             <button type="button" class="modal-close" onclick="closePriceModal()">✕</button>
         </div>
         <div class="modal-body">
@@ -523,18 +525,12 @@
                 <input type="hidden" name="orderId" value="@order.OrderId" />
                 <input type="hidden" name="itemId" id="priceItemId" />
 
-                @* Each row is hidden when the item has no such line - an إطار فقط item has
-                   no lens price, a استبدال عدسات item has no frame from stock. A hidden
-                   input is also disabled so it posts nothing and the server leaves that
-                   side untouched. *@
-                <div class="form-group" id="priceFrameGroup">
+                @* The frame only, even on an إطار + عدسات item. The lens price moves with
+                   the lenses themselves, in تغيير العدسات - changing what was fitted and
+                   what it cost are one decision, not two. *@
+                <div class="form-group">
                     <label>💰 سعر الإطار (ج)</label>
                     <input type="number" name="frameAgreedPrice" id="priceFrameInput" min="0" step="0.01" />
-                </div>
-
-                <div class="form-group" id="priceLensGroup">
-                    <label>💰 سعر العدسات (ج)</label>
-                    <input type="number" name="lensSellPrice" id="priceLensInput" min="0" step="0.01" />
                 </div>
 
                 <div class="alert alert-info mb-2" id="priceNewTotal"></div>
@@ -575,9 +571,16 @@
                            placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" required />
                 </div>
 
-                @* No price here on purpose - تعديل الأسعار owns that, and having two places
-                   to change the same number invites them disagreeing. This dialog is only
-                   about what lenses were fitted. *@
+                @* The price lives here rather than in تعديل سعر الإطار: new lenses almost
+                   always cost something different, and asking for the type in one dialog
+                   and the price in another is how the two end up disagreeing. *@
+                <div class="form-group">
+                    <label>💰 سعر العدسات الجديد (ج) *</label>
+                    <input type="number" name="lensSellPrice" id="lensSellPriceInput"
+                           min="0" step="0.01" required />
+                    <div class="form-hint" id="lensOldPriceHint"></div>
+                </div>
+
                 <div class="form-group">
                     <label>ملاحظة (اختياري)</label>
                     <input type="text" name="notes" id="lensNotesInput" placeholder="مثال: الزبون طلب خامة أعلى" />

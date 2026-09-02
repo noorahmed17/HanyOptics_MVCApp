@@ -52,11 +52,10 @@ public class PendingOrderEdit
     public decimal? PaymentAmount { get; set; }
     public PaymentMethod? PaymentMethod { get; set; }
 
-    // PriceChange - correcting what was charged, without changing what was sold. Either
-    // figure may be left null, meaning "leave this one alone": an إطار فقط item has no lens
-    // price to set, and a استبدال عدسات item has no frame from stock.
+    // PriceChange - correcting what the frame was charged, without changing what was sold.
+    // Frame only: the lens price travels with LensChange below, so each number has exactly
+    // one route to it.
     public decimal? NewFrameAgreedPriceOnly { get; set; }
-    public decimal? NewLensSellPriceOnly { get; set; }
 
     // LensChange - new lenses on an item that already has some. Lenses carry no stock of
     // their own (lens_stock is empty and nothing references it), so unlike a frame there is

@@ -328,7 +328,7 @@ public class OrderService : IOrderService
         });
     }
 
-    public async Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, string? notes)
+    public async Task<StagedEditOutcome> BuildLensChangeEditAsync(int itemId, string? lensDescription, decimal? lensSellPrice, string? notes)
     {
         var item = await _dbContext.OrderItems.AsNoTracking().FirstOrDefaultAsync(i => i.ItemId == itemId);
         if (item is null)
@@ -345,13 +345,22 @@ public class OrderService : IOrderService
         if (string.IsNullOrWhiteSpace(lensDescription))
             return StagedEditOutcome.Failure("أدخل نوع العدسات");
 
+        if (lensSellPrice is null)
+            return StagedEditOutcome.Failure("أدخل سعر العدسات الجديد");
+
+        if (lensSellPrice < 0)
+            return StagedEditOutcome.Failure("سعر العدسات غير صحيح");
+
         var order = await _dbContext.Orders.AsNoTracking().FirstAsync(o => o.OrderId == item.OrderId);
         if (order.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
             return StagedEditOutcome.Failure("لا يمكن تعديل بند في طلب تم تسليمه أو إلغاؤه");
 
-        // The price is left exactly as it was - if the new lenses cost something different,
-        // that is a separate, deliberate edit through تعديل الأسعار.
         var summary = $"تغيير العدسات إلى: {lensDescription.Trim()} (كانت: {item.LensDescription})";
+
+        // Only mentioned when it actually moved - listing an unchanged price as a change
+        // makes the pending list harder to read, not more complete.
+        if (lensSellPrice.Value != item.LensSellPrice)
+            summary += $" — السعر: {lensSellPrice.Value:N0} ج (كان: {item.LensSellPrice:N0} ج)";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -361,12 +370,13 @@ public class OrderService : IOrderService
             Kind = PendingEditKind.LensChange,
             ItemId = itemId,
             LensDescription = lensDescription.Trim(),
+            LensSellPrice = lensSellPrice.Value,
             Notes = notes,
             Summary = summary
         });
     }
 
-    public async Task<StagedEditOutcome> BuildPriceChangeEditAsync(int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice, string? notes)
+    public async Task<StagedEditOutcome> BuildPriceChangeEditAsync(int itemId, decimal? frameAgreedPrice, string? notes)
     {
         var item = await _dbContext.OrderItems.AsNoTracking().FirstOrDefaultAsync(i => i.ItemId == itemId);
         if (item is null)
@@ -381,36 +391,23 @@ public class OrderService : IOrderService
         if (item.ItemType == OrderItemType.LensesReplace)
             return StagedEditOutcome.Failure("بند «استبدال عدسات» لا يتم تعديل أسعاره من هنا");
 
-        if (frameAgreedPrice is null && lensSellPrice is null)
-            return StagedEditOutcome.Failure("أدخل سعراً واحداً على الأقل");
+        if (frameAgreedPrice is null)
+            return StagedEditOutcome.Failure("أدخل سعر الإطار");
 
-        if (frameAgreedPrice < 0 || lensSellPrice < 0)
+        if (frameAgreedPrice < 0)
             return StagedEditOutcome.Failure("السعر غير صحيح");
-
-        // إطار فقط has no lens line, and a lens-replacement item draws no frame from stock -
-        // setting the missing side would put money against something the item does not have.
-        if (lensSellPrice.HasValue && item.ItemType == OrderItemType.FrameOnly)
-            return StagedEditOutcome.Failure("بند «إطار فقط» لا يحتوي على عدسات");
-
-        if (frameAgreedPrice.HasValue && item.ItemType == OrderItemType.LensesReplace
-            && !item.FrameId.HasValue && !item.CompensationFrameId.HasValue)
-            return StagedEditOutcome.Failure("هذا البند لا يحتوي على إطار");
 
         var order = await _dbContext.Orders.AsNoTracking().FirstAsync(o => o.OrderId == item.OrderId);
         if (order.Status is OrderStatus.Delivered or OrderStatus.Cancelled)
             return StagedEditOutcome.Failure("لا يمكن تعديل بند في طلب تم تسليمه أو إلغاؤه");
 
-        // Spell out both the old and the new figure: this edit changes money without
-        // changing anything visible about the item, so the summary is the only place the
-        // difference can be seen before تأكيد commits it.
-        var parts = new List<string>();
-        if (frameAgreedPrice.HasValue)
-            parts.Add($"سعر الإطار {item.FrameAgreedPrice:N0} ← {frameAgreedPrice.Value:N0} ج");
-        if (lensSellPrice.HasValue)
-            parts.Add($"سعر العدسات {item.LensSellPrice:N0} ← {lensSellPrice.Value:N0} ج");
-
-        var newTotal = (frameAgreedPrice ?? item.FrameAgreedPrice) + (lensSellPrice ?? item.LensSellPrice);
-        var summary = $"تعديل الأسعار: {string.Join("، ", parts)} — إجمالي البند {item.ItemTotal:N0} ← {newTotal:N0} ج";
+        // Spell out the old and the new figure: this edit changes money without changing
+        // anything visible about the item, so the summary is the only place the difference
+        // can be seen before تأكيد commits it. The lens half is shown too, unchanged, so
+        // the new item total is not a number that appears from nowhere.
+        var newTotal = frameAgreedPrice.Value + item.LensSellPrice;
+        var summary = $"تعديل سعر الإطار: {item.FrameAgreedPrice:N0} ← {frameAgreedPrice.Value:N0} ج"
+                    + $" — إجمالي البند {item.ItemTotal:N0} ← {newTotal:N0} ج";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -420,7 +417,6 @@ public class OrderService : IOrderService
             Kind = PendingEditKind.PriceChange,
             ItemId = itemId,
             NewFrameAgreedPriceOnly = frameAgreedPrice,
-            NewLensSellPriceOnly = lensSellPrice,
             Notes = notes,
             Summary = summary
         });
@@ -535,10 +531,10 @@ public class OrderService : IOrderService
                         await ExecAddRefundAsync(orderId, edit.PaymentAmount!.Value, edit.PaymentMethod!.Value, edit.Notes);
                         break;
                     case PendingEditKind.LensChange:
-                        await ExecUpdateLensesAsync(edit.ItemId!.Value, edit.LensDescription);
+                        await ExecUpdateLensesAsync(edit.ItemId!.Value, edit.LensDescription, edit.LensSellPrice);
                         break;
                     case PendingEditKind.PriceChange:
-                        await ExecUpdateItemPricesAsync(edit.ItemId!.Value, edit.NewFrameAgreedPriceOnly, edit.NewLensSellPriceOnly);
+                        await ExecUpdateItemPricesAsync(edit.ItemId!.Value, edit.NewFrameAgreedPriceOnly);
                         break;
                 }
             }
@@ -654,13 +650,15 @@ public class OrderService : IOrderService
     // reporting success for a write that did not happen - which also routes the message
     // through the same path as every SP rejection, so it reaches the user in Arabic.
     //
-    // Only the description is written. The price is deliberately untouched here; changing
-    // it is a separate edit so there is one place, not two, where a price can move.
-    private Task ExecUpdateLensesAsync(int itemId, string? lensDescription) =>
+    // Description and price together - they are one change. Nothing recomputes item_total
+    // or the order total here; the computed column and trigger T2 do that, exactly as they
+    // do for the stored procedures.
+    private Task ExecUpdateLensesAsync(int itemId, string? lensDescription, decimal? lensSellPrice) =>
         _dbContext.Database.ExecuteSqlRawAsync(
             """
             UPDATE oi
-            SET oi.lens_description = @p_lens_description
+            SET oi.lens_description = @p_lens_description,
+                oi.lens_sell_price  = COALESCE(@p_lens_price, oi.lens_sell_price)
             FROM order_items oi
             INNER JOIN orders o ON o.order_id = oi.order_id
             WHERE oi.item_id = @p_item_id
@@ -671,24 +669,24 @@ public class OrderService : IOrderService
                 THROW 50000, N'تعذر تغيير العدسات — البند ملغي أو الطلب تم تسليمه أو إلغاؤه', 1;
             """,
             new SqlParameter("@p_item_id", itemId),
-            new SqlParameter("@p_lens_description", SqlDbType.NVarChar, 200) { Value = (object?)lensDescription ?? DBNull.Value });
+            new SqlParameter("@p_lens_description", SqlDbType.NVarChar, 200) { Value = (object?)lensDescription ?? DBNull.Value },
+            new SqlParameter("@p_lens_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object?)lensSellPrice ?? DBNull.Value });
 
     // Like ExecUpdateLensesAsync, this has no stored procedure behind it, so the statement
     // carries the guards itself rather than trusting the checks made when the edit was
     // staged - which can be minutes earlier, and an order delivered by someone else in the
     // meantime must not be quietly repriced.
     //
-    // COALESCE leaves either figure untouched when null: an إطار فقط item never has a lens
-    // price set on it, and a lens-replacement item never has a frame price.
+    // The frame price only. The lens side moves with the lenses in ExecUpdateLensesAsync,
+    // so there is exactly one route to each number.
     //
     // Nothing recomputes item_total or the order total here - the computed column and
     // trigger T2 do that, exactly as they do for the stored procedures.
-    private Task ExecUpdateItemPricesAsync(int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice) =>
+    private Task ExecUpdateItemPricesAsync(int itemId, decimal? frameAgreedPrice) =>
         _dbContext.Database.ExecuteSqlRawAsync(
             """
             UPDATE oi
-            SET oi.frame_agreed_price = COALESCE(@p_frame_price, oi.frame_agreed_price),
-                oi.lens_sell_price    = COALESCE(@p_lens_price,  oi.lens_sell_price)
+            SET oi.frame_agreed_price = COALESCE(@p_frame_price, oi.frame_agreed_price)
             FROM order_items oi
             INNER JOIN orders o ON o.order_id = oi.order_id
             WHERE oi.item_id = @p_item_id
@@ -696,11 +694,10 @@ public class OrderService : IOrderService
               AND o.status NOT IN ('delivered', 'cancelled');
 
             IF @@ROWCOUNT = 0
-                THROW 50000, N'تعذر تعديل الأسعار — البند ملغي أو الطلب تم تسليمه أو إلغاؤه', 1;
+                THROW 50000, N'تعذر تعديل سعر الإطار — البند ملغي أو الطلب تم تسليمه أو إلغاؤه', 1;
             """,
             new SqlParameter("@p_item_id", itemId),
-            new SqlParameter("@p_frame_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object?)frameAgreedPrice ?? DBNull.Value },
-            new SqlParameter("@p_lens_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object?)lensSellPrice ?? DBNull.Value });
+            new SqlParameter("@p_frame_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object?)frameAgreedPrice ?? DBNull.Value });
 
     // A refund is a payment row with payment_type='refund'; trigger T1 subtracts it when it
     // re-sums orders.paid_amount, so remaining_amount follows on its own. No amount is

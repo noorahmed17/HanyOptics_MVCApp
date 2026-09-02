@@ -499,9 +499,9 @@ public class OrdersController : Controller
     // price only ever moves from one place.
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StageLensChange(int orderId, int itemId, string? lensDescription, string? notes)
+    public async Task<IActionResult> StageLensChange(int orderId, int itemId, string? lensDescription, decimal? lensSellPrice, string? notes)
     {
-        var outcome = await SafeAsync(() => _orderService.BuildLensChangeEditAsync(itemId, lensDescription, notes), "تغيير العدسات");
+        var outcome = await SafeAsync(() => _orderService.BuildLensChangeEditAsync(itemId, lensDescription, lensSellPrice, notes), "تغيير العدسات");
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 
@@ -512,9 +512,9 @@ public class OrdersController : Controller
     // be omitted, which leaves that side as it stands.
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StagePriceChange(int orderId, int itemId, decimal? frameAgreedPrice, decimal? lensSellPrice, string? notes)
+    public async Task<IActionResult> StagePriceChange(int orderId, int itemId, decimal? frameAgreedPrice, string? notes)
     {
-        var outcome = await SafeAsync(() => _orderService.BuildPriceChangeEditAsync(itemId, frameAgreedPrice, lensSellPrice, notes), "تعديل الأسعار");
+        var outcome = await SafeAsync(() => _orderService.BuildPriceChangeEditAsync(itemId, frameAgreedPrice, notes), "تعديل سعر الإطار");
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 

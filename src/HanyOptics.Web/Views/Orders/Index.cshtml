@@ -349,42 +349,37 @@
         // Only the prices that apply to this item are shown. A hidden input is disabled as
         // well, so it posts nothing at all and the server leaves that side of the item
         // alone - rather than receiving an empty value it might read as zero.
+        // The frame price only. The lens side of an إطار + عدسات item is edited in
+        // تغيير العدسات, together with the lenses it belongs to.
         function openPriceModal(button) {
             const d = button.dataset;
-            const hasFrame = d.priceFrame !== '';
-            const hasLens = d.priceLens !== '';
+            const lensPart = d.priceLens !== '' ? (+d.priceLens || 0) : 0;
 
-            document.getElementById('priceItemLabel').textContent = 'تعديل أسعار البند: ' + d.priceItemLabel;
+            document.getElementById('priceItemLabel').textContent = 'تعديل سعر إطار البند: ' + d.priceItemLabel;
             document.getElementById('priceItemId').value = d.priceItemId;
 
-            const frameGroup = document.getElementById('priceFrameGroup');
-            const lensGroup = document.getElementById('priceLensGroup');
             const frameInput = document.getElementById('priceFrameInput');
-            const lensInput = document.getElementById('priceLensInput');
-
-            frameGroup.style.display = hasFrame ? '' : 'none';
-            lensGroup.style.display = hasLens ? '' : 'none';
-            frameInput.disabled = !hasFrame;
-            lensInput.disabled = !hasLens;
-            frameInput.value = hasFrame ? d.priceFrame : '';
-            lensInput.value = hasLens ? d.priceLens : '';
+            frameInput.value = d.priceFrame !== '' ? d.priceFrame : '';
+            // Carried so the running total can still show what the customer ends up paying,
+            // even though the lens half is not editable here.
+            frameInput.dataset.lensPart = lensPart;
 
             updatePriceTotal();
             document.getElementById('priceNotesInput').value = '';
             document.getElementById('priceModalOverlay').classList.add('show');
             document.getElementById('priceModal').classList.add('show');
-            (hasFrame ? frameInput : lensInput).focus();
+            frameInput.focus();
         }
 
-        // The running total is the point of the dialog: the figures being edited are parts,
-        // and what the customer is charged is their sum.
+        // The running total is the point of the dialog: the frame price is a part, and what
+        // the customer is charged is the whole item.
         function updatePriceTotal() {
             const frameInput = document.getElementById('priceFrameInput');
-            const lensInput = document.getElementById('priceLensInput');
-            const f = frameInput.disabled ? 0 : (+frameInput.value || 0);
-            const l = lensInput.disabled ? 0 : (+lensInput.value || 0);
+            const f = +frameInput.value || 0;
+            const l = +frameInput.dataset.lensPart || 0;
+            const note = l > 0 ? ' (منها ' + l.toLocaleString('ar-EG') + ' ج عدسات)' : '';
             document.getElementById('priceNewTotal').textContent =
-                'إجمالي البند بعد التعديل: ' + (f + l).toLocaleString('ar-EG') + ' ج';
+                'إجمالي البند بعد التعديل: ' + (f + l).toLocaleString('ar-EG') + ' ج' + note;
         }
 
         function closePriceModal() {
@@ -395,21 +390,27 @@
         // Delegated: the popup arrives by fetch and is replaced on every staged edit, so a
         // direct binding would attach to nothing and be discarded anyway.
         document.addEventListener('input', function (e) {
-            if (e.target && (e.target.id === 'priceFrameInput' || e.target.id === 'priceLensInput')) {
+            if (e.target && e.target.id === 'priceFrameInput') {
                 updatePriceTotal();
             }
         });
 
-        // Only the lens type is edited here - the price belongs to تعديل الأسعار. The
-        // current price is still shown in the heading, because changing the lenses without
-        // seeing what they are being charged at would be working blind.
+        // Both the lens type and its price: new lenses almost always cost something
+        // different, and this is the one place that pair is changed together.
         function openLensModal(button) {
             const d = button.dataset;
+            const current = Number(d.lensPrice) || 0;
 
-            document.getElementById('lensItemLabel').textContent =
-                'تغيير عدسات البند: ' + d.lensItemLabel + ' — السعر الحالي: ' + Number(d.lensPrice).toLocaleString('ar-EG') + ' ج';
+            document.getElementById('lensItemLabel').textContent = 'تغيير عدسات البند: ' + d.lensItemLabel;
             document.getElementById('lensItemId').value = d.lensItemId;
             document.getElementById('lensDescriptionInput').value = d.lensDescription || '';
+
+            // Pre-filled with the current price rather than left blank: most changes keep
+            // it, and an empty required box would make "no change" the hardest option.
+            document.getElementById('lensSellPriceInput').value = current;
+            document.getElementById('lensOldPriceHint').textContent =
+                'السعر الحالي: ' + current.toLocaleString('ar-EG') + ' ج';
+
             document.getElementById('lensNotesInput').value = '';
             document.getElementById('lensModalOverlay').classList.add('show');
             document.getElementById('lensModal').classList.add('show');
