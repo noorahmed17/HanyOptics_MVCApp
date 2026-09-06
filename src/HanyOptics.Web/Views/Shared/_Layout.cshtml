@@ -39,11 +39,12 @@
             <a class="@NavClassFor("Orders", "Index")" asp-controller="Orders" asp-action="Index"><span class="nav-icon">📋</span> الطلبات</a>
             <a class="@NavClass("Customers")" asp-controller="Customers" asp-action="Index"><span class="nav-icon">👥</span> العملاء</a>
             <a class="@NavClass("Inventory")" asp-controller="Inventory" asp-action="Index"><span class="nav-icon">📦</span> المخزون</a>
-            @* Reports are open to everyone for now - see the note on ReportsController. *@
+            @* قفلة اليوم stays open to everyone: whoever is closing up needs it, and that is
+               not always the owner. التقارير is admin-only - it carries costs and margins. *@
             <a class="@NavClass("DailyClose")" asp-controller="DailyClose" asp-action="Index"><span class="nav-icon">🌙</span> قفلة اليوم</a>
-            <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
             @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
             {
+                <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
                 <a class="nav-item" asp-controller="Home" asp-action="AdminOnly"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>
             }
         </nav>

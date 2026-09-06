@@ -8,7 +8,11 @@ public enum ReportColumnType
     Number,
     Money,
     Date,
-    DateTime
+    DateTime,
+
+    // Numeric but not a quantity, so it takes no thousands separator - a year rendered
+    // with one reads as "2٬026" rather than 2026.
+    Year
 }
 
 public class ReportColumn

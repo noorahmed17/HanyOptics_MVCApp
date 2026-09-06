@@ -72,7 +72,7 @@ internal static class ReportCatalog
             OrderBy = "sale_year DESC, sale_month DESC",
             Columns =
             [
-                new() { Key = "sale_year",     Label = "السنة",        Type = ReportColumnType.Number },
+                new() { Key = "sale_year",     Label = "السنة",        Type = ReportColumnType.Year },
                 new() { Key = "sale_month",    Label = "الشهر",        Type = ReportColumnType.Number },
                 new() { Key = "total_orders",  Label = "عدد الطلبات",   Type = ReportColumnType.Number },
                 new() { Key = "total_revenue", Label = "الإيراد",       Type = ReportColumnType.Money },

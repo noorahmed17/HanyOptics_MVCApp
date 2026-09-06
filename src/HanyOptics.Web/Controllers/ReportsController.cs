@@ -1,16 +1,16 @@
 using System.Text;
+using HanyOptics.BusinessLogic.Auth;
 using HanyOptics.BusinessLogic.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HanyOptics.Web.Controllers;
 
-// Open to any signed-in user for now, by the owner's decision. Worth remembering what that
-// means: these screens show cost prices, margins and per-staff performance, so anyone who
-// can log in can see what the shop pays for a frame and what each colleague sold. Putting
-// it back behind the owner is a one-line change - [Authorize(Roles = Roles.Admin)] - plus
-// the matching condition on the sidebar link in _Layout.
-[Authorize]
+// Admin only. These screens carry cost prices, per-item margins and what each member of
+// staff sold - the owner's view of the business, not something the counter needs. The
+// sidebar link in _Layout is gated on the same role, so a salesperson is not shown a door
+// they cannot open.
+[Authorize(Roles = Roles.Admin)]
 public class ReportsController : Controller
 {
     private readonly IReportService _reports;

@@ -18,6 +18,9 @@
                 return Convert.ToDecimal(value).ToString("N2", arEg) + " ج";
             case ReportColumnType.Number:
                 return Convert.ToDecimal(value).ToString("N0", arEg);
+            case ReportColumnType.Year:
+                // No group separator: a year is a label, not a quantity.
+                return Convert.ToDecimal(value).ToString("F0", arEg);
             case ReportColumnType.Date:
                 return Convert.ToDateTime(value).ToString("yyyy-MM-dd");
             case ReportColumnType.DateTime:
@@ -89,7 +92,11 @@
     <div class="card-body">
         @if (Model.Rows.Count == 0)
         {
-            <div class="empty-state">مفيش بيانات في المدى ده.</div>
+            @* Reports that describe this moment have no range to blame, so the message
+               must not mention one. *@
+            <div class="empty-state">
+                @(report.SupportsDateRange ? "مفيش بيانات في المدى ده." : "مفيش بيانات.")
+            </div>
         }
         else
         {
@@ -101,7 +108,7 @@
                     <tr>
                         @foreach (var column in report.Columns)
                         {
-                            <th class="@(column.Type == ReportColumnType.Money || column.Type == ReportColumnType.Number ? "num" : "")">@column.Label</th>
+                            <th class="@(column.Type is ReportColumnType.Money or ReportColumnType.Number or ReportColumnType.Year ? "num" : "")">@column.Label</th>
                         }
                     </tr>
                     </thead>
@@ -116,7 +123,7 @@
                                 var negative = column.SignedMoney
                                                && value is not null
                                                && Convert.ToDecimal(value) < 0;
-                                <td class="@(column.Type == ReportColumnType.Money || column.Type == ReportColumnType.Number ? "num" : "") @(negative ? "money-negative" : "")">
+                                <td class="@(column.Type is ReportColumnType.Money or ReportColumnType.Number or ReportColumnType.Year ? "num" : "") @(negative ? "money-negative" : "")">
                                     @Cell(value, column)
                                 </td>
                             }
