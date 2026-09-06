@@ -166,3 +166,9 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Top-level statements compile into an internal Program class, which a test host cannot
+// reach. Declaring it here makes WebApplicationFactory<Program> possible - the app can be
+// booted in-process and driven through its real middleware, controllers and views without
+// a browser or a login. Nothing at runtime is affected.
+public partial class Program;
