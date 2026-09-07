@@ -21,9 +21,6 @@ public class HomeController : Controller
         return View(orders);
     }
 
-    [Authorize(Roles = Roles.Admin)]
-    public IActionResult AdminOnly() => View();
-
     [AllowAnonymous]
     public IActionResult Error() => View();
 }

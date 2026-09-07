@@ -117,11 +117,6 @@ builder.Services.AddAuthentication(options =>
         };
     });
 
-builder.Services.AddAuthorization(options =>
-{
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole(Roles.Admin));
-});
-
 var app = builder.Build();
 
 // --- Middleware pipeline -----------------------------------------------

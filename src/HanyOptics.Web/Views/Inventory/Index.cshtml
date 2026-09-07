@@ -8,6 +8,11 @@
     var trackingFilter = (FrameTrackingType?)ViewBag.TrackingFilter;
     var searchTerm = (string?)ViewBag.SearchTerm;
     var summary = (HanyOptics.BusinessLogic.Models.FrameInventorySummary)ViewBag.Summary;
+
+    // What a frame costs and what it sells for are the owner's figures. One flag drives both
+    // the value cards and the two money columns - splitting the decision across the page is
+    // how one of them ends up left behind.
+    var showMoney = User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin);
     var arEg = new CultureInfo("ar-EG");
 
     string Money(decimal n) => n.ToString("N0", arEg) + " ج";
@@ -58,14 +63,17 @@
         <div class="stat-label">القطع المتاحة</div>
         <div class="stat-value c-green">@summary.TotalUnitsAvailable.ToString("N0", arEg)</div>
     </div>
-    <div class="stat-card">
-        <div class="stat-label">قيمة المخزون (تكلفة)</div>
-        <div class="stat-value c-blue">@Money(summary.StockValueAtCost)</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">قيمة المخزون (بيع)</div>
-        <div class="stat-value c-blue">@Money(summary.StockValueAtSell)</div>
-    </div>
+    @if (showMoney)
+    {
+        <div class="stat-card">
+            <div class="stat-label">قيمة المخزون (تكلفة)</div>
+            <div class="stat-value c-blue">@Money(summary.StockValueAtCost)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">قيمة المخزون (بيع)</div>
+            <div class="stat-value c-blue">@Money(summary.StockValueAtSell)</div>
+        </div>
+    }
 </div>
 
 <form asp-action="Index" method="get" id="inventoryFilterForm">
@@ -117,8 +125,11 @@
                         <th>الماركة / الموديل</th>
                         <th>النوع</th>
                         <th>التتبع</th>
-                        <th>التكلفة</th>
-                        <th>سعر البيع</th>
+                        @if (showMoney)
+                        {
+                            <th>التكلفة</th>
+                            <th>سعر البيع</th>
+                        }
                         <th>المتاح</th>
                         <th>الحالة</th>
                     </tr>
@@ -137,8 +148,11 @@
                             </td>
                             <td>@CategoryLabel(f.Category)</td>
                             <td><span class="text-sm">@TrackingLabel(f.TrackingType)</span></td>
-                            <td>@Money(f.CostPrice)</td>
-                            <td class="fw-bold c-blue">@Money(f.SellPrice)</td>
+                            @if (showMoney)
+                            {
+                                <td>@Money(f.CostPrice)</td>
+                                <td class="fw-bold c-blue">@Money(f.SellPrice)</td>
+                            }
                             @* A bulk line that has run down to zero is easy to miss when the
                                number is styled the same as a healthy one. *@
                             <td class="fw-bold @(f.QtyAvailable > 0 ? "c-green" : "c-red")">

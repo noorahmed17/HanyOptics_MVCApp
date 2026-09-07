@@ -141,6 +141,82 @@ var userDaily = await user.GetAsync("/DailyClose");
 Check("and قفلة اليوم stays open to a User",
       userDaily.StatusCode == HttpStatusCode.OK, userDaily.StatusCode.ToString());
 
+// The sidebar must not offer a door the user cannot open. Checked on rendered HTML rather
+// than by reading the view, because the point is what actually reaches the browser.
+var userSidebar = await user.GetStringAsync("/Orders");
+Check("sidebar hides التقارير from a User", !userSidebar.Contains("/Reports"),
+      userSidebar.Contains("/Reports") ? "link present" : "hidden");
+Check("لوحة الأدمن is gone from the sidebar entirely", !userSidebar.Contains("AdminOnly"));
+Check("but a User still sees الطلبات / العملاء / المخزون / قفلة اليوم",
+      userSidebar.Contains("/Customers") && userSidebar.Contains("/Inventory")
+      && userSidebar.Contains("/DailyClose"));
+
+currentRole = "Admin";
+var adminSidebar = await factory
+    .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
+    .GetStringAsync("/Orders");
+Check("sidebar DOES show التقارير to an Admin", adminSidebar.Contains("/Reports"));
+Check("لوحة الأدمن is gone for an Admin too - the page was removed",
+      !adminSidebar.Contains("AdminOnly"));
+
+// The route itself must be gone, not merely unlinked.
+var goneForAdmin = await factory
+    .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
+    .GetAsync("/Home/AdminOnly");
+Check("/Home/AdminOnly returns 404", goneForAdmin.StatusCode == HttpStatusCode.NotFound,
+      goneForAdmin.StatusCode.ToString());
+
+// ── المخزون: the money columns belong to the owner ─────────────────────────
+Console.WriteLine();
+Console.WriteLine("المخزون money columns:");
+Console.WriteLine();
+
+currentRole = "Admin";
+var adminStock = await factory
+    .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
+    .GetStringAsync("/Inventory");
+Check("Admin sees التكلفة", adminStock.Contains("التكلفة"));
+Check("Admin sees سعر البيع", adminStock.Contains("سعر البيع"));
+Check("Admin sees the stock-value cards", adminStock.Contains("قيمة المخزون"));
+
+currentRole = "User";
+var userStock = await factory
+    .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
+    .GetStringAsync("/Inventory");
+Check("User does NOT see التكلفة", !userStock.Contains("التكلفة"),
+      userStock.Contains("التكلفة") ? "column present" : "hidden");
+Check("User does NOT see سعر البيع", !userStock.Contains("سعر البيع"),
+      userStock.Contains("سعر البيع") ? "column present" : "hidden");
+Check("User does NOT see the stock-value cards", !userStock.Contains("قيمة المخزون"));
+Check("but a User still sees the rest of المخزون",
+      userStock.Contains("الباركود") && userStock.Contains("المتاح")
+      && userStock.Contains("الحالة") && userStock.Contains("القطع المتاحة"));
+
+// Optional: write the rendered HTML of a few screens to a folder, so they can be looked at
+// without signing in - useful when the browser cannot reach the app but the app itself is
+// fine, which is otherwise very hard to tell apart.
+if (args.Length >= 2 && args[0] == "--dump")
+{
+    var dir = args[1];
+    Directory.CreateDirectory(dir);
+    currentRole = "Admin";
+    var dumper = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+    foreach (var (name, url) in new[]
+    {
+        ("reports-index",  "/Reports"),
+        ("monthly-profit", "/Reports/Show?id=monthly-profit"),
+        ("daily-sales",    "/Reports/Show?id=daily-sales"),
+        ("outstanding",    "/Reports/Show?id=outstanding"),
+        ("orders",         "/Orders"),
+    })
+    {
+        var page = await dumper.GetStringAsync(url);
+        await File.WriteAllTextAsync(Path.Combine(dir, name + ".html"), page);
+        Console.WriteLine($"  wrote {name}.html  ({page.Length:N0} bytes)");
+    }
+}
+
 Console.WriteLine(failures == 0
     ? $"\nALL PASS"
     : $"\n{failures} FAILED");
