@@ -97,19 +97,22 @@ public class OrderService : IOrderService
         var total = await query.CountAsync();
         var (currentPage, size) = PagedResult<OrderListItem>.Normalise(page, pageSize ?? PageSizes.Orders, total);
 
-        // Newest first, and within the same moment the higher invoice number first. Two
-        // orders rung up in the same second would otherwise be free to swap places between
-        // one page and the next, so a row could show twice while another never appeared.
+        // Newest DAY first, then the highest invoice number within that day.
         //
-        // invoice_number carries a unique index, so it settles every tie on its own and the
-        // ordering is fully deterministic. Note it sorts as text, not as a number: that is
-        // right for the shop's codes (150-999-25, TESTSEED-20260831-036), which are not
-        // numeric, but it means a bare "9" would sort after "25".
+        // Ordering by the full timestamp instead would leave the invoice tiebreaker with
+        // nothing to do - every order is rung up at a different second, so the numbers would
+        // come out scrambled down the column even though the sort was "correct". Truncating
+        // to the date is what makes the second key actually sort anything.
+        //
+        // invoice_number carries a unique index, so it settles every tie on its own and
+        // paging stays deterministic. It sorts as text, not as a number: right for the
+        // shop's codes (150-999-25, TESTSEED-20260907-020), which are not numeric, though it
+        // means a bare "9" would sort after "25".
         //
         // The phone is a join rather than a second round trip, and the item types come back
         // as a small projected list - so one query returns exactly what the page renders.
         var items = await query
-            .OrderByDescending(o => o.OrderDate)
+            .OrderByDescending(o => o.OrderDate.Date)
             .ThenByDescending(o => o.InvoiceNumber)
             .Skip((currentPage - 1) * size)
             .Take(size)
