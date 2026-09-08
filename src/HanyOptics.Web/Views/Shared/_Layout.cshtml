@@ -45,6 +45,7 @@
             @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
             {
                 <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
+                <a class="@NavClass("Admin")" asp-controller="Admin" asp-action="Index"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>
             }
         </nav>
         <div class="sb-footer">
