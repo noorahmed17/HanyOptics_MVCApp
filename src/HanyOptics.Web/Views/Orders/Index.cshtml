@@ -437,6 +437,28 @@
         function openStatusModal() {
             document.getElementById('statusModalOverlay').classList.add('show');
             document.getElementById('statusModal').classList.add('show');
+            updateStatusPayment();
+        }
+
+        // The collect-the-balance section belongs to one status only. Showing it for جاهز or
+        // ملغي would offer to take money at a moment nobody is handing anything over.
+        //
+        // The section is only rendered at all when the order still owes something, so this
+        // exits quietly on a fully-paid order.
+        function updateStatusPayment() {
+            const section = document.getElementById('statusPaymentSection');
+            if (!section) return;
+
+            const select = document.getElementById('statusSelect');
+            const isDelivery = select && select.value === 'Delivered';
+            section.style.display = isDelivery ? '' : 'none';
+
+            // Unticking "collect now" leaves the method dropdown pointless, so it goes too.
+            const check = document.getElementById('collectPaymentCheck');
+            const methodGroup = document.getElementById('statusPaymentMethodGroup');
+            if (check && methodGroup) {
+                methodGroup.style.display = check.checked ? '' : 'none';
+            }
         }
 
         function closeStatusModal() {

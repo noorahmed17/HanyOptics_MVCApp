@@ -381,8 +381,41 @@ public class OrdersController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> StageStatusChange(int orderId, OrderStatus newStatus, string? notes)
+    // Handing an order over is usually the moment the rest of the money is collected, so
+    // marking it تسليم offers to take that payment in the same step - كاش or فيزا - instead
+    // of making it a second, separate, easily-forgotten action.
+    //
+    // The payment is staged BEFORE the status change so that when تأكيد commits them, the
+    // money lands while the order is still editable. sp_add_payment refuses a cancelled
+    // order and the app treats delivered as terminal, so the other order would fail.
+    //
+    // Collecting is optional: the shop does hand orders over on a promise to pay, and
+    // sp_update_order_status permits delivering with a balance outstanding.
+    public async Task<IActionResult> StageStatusChange(
+        int orderId, OrderStatus newStatus, string? notes,
+        bool collectPayment = false, PaymentMethod paymentMethod = PaymentMethod.Cash)
     {
+        if (newStatus == OrderStatus.Delivered && collectPayment)
+        {
+            var order = await _orderService.GetByIdAsync(orderId);
+
+            if (order is not null && order.RemainingAmount > 0)
+            {
+                var paymentOutcome = await SafeAsync(
+                    () => _orderService.BuildPaymentEditAsync(
+                        orderId, order.RemainingAmount, paymentMethod, "تحصيل عند التسليم"),
+                    "تسجيل دفعة");
+
+                // If the money cannot be staged, the status change is not staged either -
+                // otherwise تأكيد would deliver the order and quietly leave the balance.
+                if (paymentOutcome is not { Succeeded: true })
+                    return await RenderOrderDetailAsync(orderId,
+                        paymentOutcome?.ErrorMessage ?? "تعذر تسجيل الدفعة.");
+
+                StageEdit(orderId, paymentOutcome.Edit!);
+            }
+        }
+
         var outcome = await SafeAsync(() => _orderService.BuildStatusChangeEditAsync(orderId, newStatus, notes), "تحديث حالة الطلب");
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);

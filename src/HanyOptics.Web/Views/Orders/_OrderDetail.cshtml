@@ -364,7 +364,7 @@
                 <input type="hidden" name="orderId" value="@order.OrderId" />
                 <div class="form-group">
                     <label>الحالة الجديدة</label>
-                    <select name="newStatus" required>
+                    <select name="newStatus" id="statusSelect" required onchange="updateStatusPayment()">
                         <option value="" selected disabled>-- اختر الحالة --</option>
                         @foreach (var s in nextStatuses)
                         {
@@ -372,6 +372,38 @@
                         }
                     </select>
                 </div>
+
+                @* Handing the order over is when the rest of the money is normally collected,
+                   so it is offered here rather than left as a second action someone has to
+                   remember. Only rendered when there is actually a balance to collect. *@
+                @if (order.RemainingAmount > 0)
+                {
+                    <div id="statusPaymentSection" style="display:none">
+                        <div class="alert alert-warning mb-2">
+                            💰 متبقي على الطلب <b>@Money(order.RemainingAmount)</b>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="flex items-center gap-2" style="cursor:pointer">
+                                <input type="checkbox" name="collectPayment" value="true" id="collectPaymentCheck"
+                                       checked onchange="updateStatusPayment()" style="width:auto" />
+                                <span>تحصيل المتبقي دلوقتي</span>
+                            </label>
+                            @* Delivering with a balance is allowed - the shop does hand orders
+                               over on a promise to pay - so this can be turned off. *@
+                            <div class="form-hint">لو شيلت العلامة، هيتسلّم من غير تحصيل والمبلغ يفضل عليه.</div>
+                        </div>
+
+                        <div class="form-group" id="statusPaymentMethodGroup">
+                            <label>طريقة الدفع</label>
+                            <select name="paymentMethod">
+                                <option value="@PaymentMethod.Cash">💵 كاش</option>
+                                <option value="@PaymentMethod.Visa">💳 فيزا</option>
+                            </select>
+                        </div>
+                    </div>
+                }
+
                 <div class="form-group">
                     <label>ملاحظة (اختياري)</label>
                     <input type="text" name="notes" placeholder="مثال: العدسات وصلت من المورد" />

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -146,7 +147,18 @@ Check("and قفلة اليوم stays open to a User",
 var userSidebar = await user.GetStringAsync("/Orders");
 Check("sidebar hides التقارير from a User", !userSidebar.Contains("/Reports"),
       userSidebar.Contains("/Reports") ? "link present" : "hidden");
-Check("لوحة الأدمن is gone from the sidebar entirely", !userSidebar.Contains("AdminOnly"));
+Check("sidebar hides لوحة الأدمن from a User", !userSidebar.Contains("/Admin"),
+      userSidebar.Contains("/Admin") ? "link present" : "hidden");
+var userAdminPage = await user.GetAsync("/Admin");
+Check("/Admin is refused for a User",
+      userAdminPage.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect,
+      ((int)userAdminPage.StatusCode).ToString());
+var userCreate = await user.PostAsync("/Admin/CreateUser", new FormUrlEncodedContent(
+    new Dictionary<string, string> { ["Email"] = "sneak@x.local", ["Password"] = "Passw0rd!" }));
+Check("a User cannot POST a new account either",
+      userCreate.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect
+      or HttpStatusCode.BadRequest,
+      ((int)userCreate.StatusCode).ToString());
 Check("but a User still sees الطلبات / العملاء / المخزون / قفلة اليوم",
       userSidebar.Contains("/Customers") && userSidebar.Contains("/Inventory")
       && userSidebar.Contains("/DailyClose"));
@@ -156,15 +168,25 @@ var adminSidebar = await factory
     .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
     .GetStringAsync("/Orders");
 Check("sidebar DOES show التقارير to an Admin", adminSidebar.Contains("/Reports"));
-Check("لوحة الأدمن is gone for an Admin too - the page was removed",
-      !adminSidebar.Contains("AdminOnly"));
+Check("sidebar DOES show لوحة الأدمن to an Admin", adminSidebar.Contains("/Admin"));
 
-// The route itself must be gone, not merely unlinked.
-var goneForAdmin = await factory
-    .CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false })
-    .GetAsync("/Home/AdminOnly");
-Check("/Home/AdminOnly returns 404", goneForAdmin.StatusCode == HttpStatusCode.NotFound,
-      goneForAdmin.StatusCode.ToString());
+// ── لوحة الأدمن: creating a staff account ──────────────────────────────────
+Console.WriteLine();
+Console.WriteLine("لوحة الأدمن - user management:");
+Console.WriteLine();
+
+currentRole = "Admin";
+var adminClient = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+var adminPage = await adminClient.GetAsync("/Admin");
+Check("/Admin returns 200 for an Admin", adminPage.StatusCode == HttpStatusCode.OK,
+      adminPage.StatusCode.ToString());
+var adminHtml = await adminPage.Content.ReadAsStringAsync();
+Check("the page offers the create-user form",
+      adminHtml.Contains("CreateUser") && adminHtml.Contains("Password"));
+Check("the page lists existing users", adminHtml.Contains("admin@hanyoptics.local"));
+Check("the old placeholder route is gone",
+      (await adminClient.GetAsync("/Home/AdminOnly")).StatusCode == HttpStatusCode.NotFound);
 
 // ── المخزون: the money columns belong to the owner ─────────────────────────
 Console.WriteLine();
@@ -214,6 +236,219 @@ if (args.Length >= 2 && args[0] == "--dump")
         var page = await dumper.GetStringAsync(url);
         await File.WriteAllTextAsync(Path.Combine(dir, name + ".html"), page);
         Console.WriteLine($"  wrote {name}.html  ({page.Length:N0} bytes)");
+    }
+
+    // The popup for an order that still owes money - this is where the كاش/فيزا box lives.
+    using (var dumpScope = factory.Services.CreateScope())
+    {
+        var dumpDb = dumpScope.ServiceProvider
+            .GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
+        var owing = await dumpDb.Orders.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.Status == HanyOptics.Domain.Enums.OrderStatus.Sold
+                                   && o.RemainingAmount > 0);
+        if (owing is not null)
+        {
+            var detail = await dumper.GetStringAsync($"/Orders/Detail?id={owing.OrderId}");
+            await File.WriteAllTextAsync(Path.Combine(dir, "order-detail.html"), detail);
+            Console.WriteLine($"  wrote order-detail.html  (order {owing.OrderId}, {owing.RemainingAmount:N0} ج owed)");
+        }
+    }
+}
+
+// ── collecting the balance at تسليم ────────────────────────────────────────
+//
+// Marking an order delivered should offer to take the rest of the money in the same step.
+// Driven through the real staging + commit path, then rolled back by hand so the shop's
+// data is left as it was.
+Console.WriteLine();
+Console.WriteLine("Collecting the balance when marking delivered:");
+Console.WriteLine();
+
+using (var scope = factory.Services.CreateScope())
+{
+    var sp = scope.ServiceProvider;
+    var orders = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.IOrderService>();
+    var db = sp.GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
+
+    // The write path stamps created_by/changed_by from the signed-in user, which it reads
+    // off the current request. A bare DI scope has no request, so one is planted here with
+    // a real users.user_id - otherwise every commit fails before it reaches SQL.
+    var actorId = (await db.Database
+        .SqlQueryRaw<int>("SELECT TOP 1 user_id AS Value FROM users ORDER BY user_id")
+        .ToListAsync())[0];
+
+    sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().HttpContext =
+        new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, actorId.ToString())], "Stub")),
+            RequestServices = sp,
+        };
+
+    // A 'sold' order that still owes money - exactly the case the popup is for.
+    var target = await db.Orders.AsNoTracking()
+        .FirstOrDefaultAsync(o => o.Status == HanyOptics.Domain.Enums.OrderStatus.Sold && o.RemainingAmount > 0);
+
+    if (target is null)
+    {
+        Check("found a part-paid order to test with", false, "none in the database");
+    }
+    else
+    {
+        var owed = target.RemainingAmount;
+
+        // The popup itself: كاش/فيزا must be offered on an order that still owes money, and
+        // must not be offered on one that is already fully paid.
+        var owingHtml = await admin.GetStringAsync($"/Orders/Detail?id={target.OrderId}");
+        Check("the popup offers a payment method when money is owed",
+              owingHtml.Contains("statusPaymentSection")
+              && owingHtml.Contains("كاش") && owingHtml.Contains("فيزا"));
+        Check("it is hidden until تسليم is picked",
+              owingHtml.Contains("updateStatusPayment") || owingHtml.Contains("display:none"));
+
+        var settled = await db.Orders.AsNoTracking()
+            .FirstOrDefaultAsync(o => o.RemainingAmount == 0 && o.Status == HanyOptics.Domain.Enums.OrderStatus.Sold);
+        if (settled is not null)
+        {
+            var settledHtml = await admin.GetStringAsync($"/Orders/Detail?id={settled.OrderId}");
+            Check("no payment box on an order with nothing owed",
+                  !settledHtml.Contains("statusPaymentSection"), $"order {settled.OrderId}");
+        }
+
+        var pay = await orders.BuildPaymentEditAsync(
+            target.OrderId, owed, HanyOptics.Domain.Enums.PaymentMethod.Visa, "تحصيل عند التسليم");
+        Check("the balance can be staged as a payment", pay.Succeeded,
+              pay.Succeeded ? $"{owed:N0} ج" : pay.ErrorMessage);
+
+        var status = await orders.BuildStatusChangeEditAsync(
+            target.OrderId, HanyOptics.Domain.Enums.OrderStatus.Delivered, "تسليم");
+        Check("the delivery can be staged alongside it", status.Succeeded, status.ErrorMessage);
+
+        if (pay.Succeeded && status.Succeeded)
+        {
+            // Payment first, then the status - delivered is terminal, so the other order
+            // would leave the money unbookable.
+            var commit = await orders.CommitPendingEditsAsync(target.OrderId, [pay.Edit!, status.Edit!]);
+            Check("both commit together in one transaction", commit.Succeeded, commit.ErrorMessage);
+
+            var after = await db.Orders.AsNoTracking().FirstAsync(o => o.OrderId == target.OrderId);
+
+            Check("the order is now delivered",
+                  after.Status == HanyOptics.Domain.Enums.OrderStatus.Delivered, after.Status.ToString());
+            Check("the balance is settled", after.RemainingAmount == 0, $"{after.RemainingAmount:N0} ج");
+            Check("delivered_at was stamped", after.DeliveredAt is not null);
+
+            var visaRow = await db.Payments.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.OrderId == target.OrderId
+                                       && p.PaymentMethod == HanyOptics.Domain.Enums.PaymentMethod.Visa);
+            Check("the payment was recorded as visa, as chosen", visaRow is not null);
+
+            // Undo: remove the payment, put the status back. The triggers re-derive the money.
+            if (visaRow is not null)
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    "DELETE FROM payments WHERE payment_id = {0}", visaRow.PaymentId);
+            }
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE orders SET status='sold', delivered_at=NULL WHERE order_id={0}", target.OrderId);
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM order_status_log WHERE order_id={0} AND new_status='delivered'", target.OrderId);
+
+            var restored = await db.Orders.AsNoTracking().FirstAsync(o => o.OrderId == target.OrderId);
+            Check("the order was put back as it was",
+                  restored.Status == HanyOptics.Domain.Enums.OrderStatus.Sold
+                  && restored.RemainingAmount == owed,
+                  $"{restored.Status}, {restored.RemainingAmount:N0} ج owed");
+        }
+    }
+}
+
+// ── the round trip that matters: created here, can log in there ────────────
+//
+// Creating an account is only useful if the person can then sign in with it, and the two
+// halves live in different stores - the Identity login and the business `users` row, tied
+// together by a shared id. This drives the real services end to end and then removes the
+// account again, so the database is left as it was found.
+Console.WriteLine();
+Console.WriteLine("Created account can actually log in:");
+Console.WriteLine();
+
+using (var scope = factory.Services.CreateScope())
+{
+    var sp = scope.ServiceProvider;
+    var userAdmin = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.IUserAdminService>();
+    var auth = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.IAuthService>();
+    var directory = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.IBusinessUserDirectory>();
+    var userMgr = sp.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<
+        HanyOptics.DataAccess.Identity.ApplicationUser>>();
+
+    // Unique per run so repeated runs never collide, and prefixed so a leftover row is
+    // obvious if cleanup ever fails.
+    var email = $"zz-smoke-{Guid.NewGuid():N}"[..20] + "@hanyoptics.local";
+    const string password = "Smoke#12345";
+
+    var outcome = await userAdmin.CreateAsync(new HanyOptics.BusinessLogic.Models.CreateUserRequest
+    {
+        FullName = "موظف اختبار مؤقت",
+        Email = email,
+        Password = password,
+        ConfirmPassword = password,
+        IsAdmin = false
+    });
+
+    Check("the admin page creates the account", outcome.Succeeded,
+          outcome.Succeeded ? $"user_id {outcome.UserId}" : string.Join("; ", outcome.Errors));
+
+    if (outcome.Succeeded)
+    {
+        var login = await auth.LoginAsync(new HanyOptics.BusinessLogic.Models.LoginRequest
+        {
+            Email = email,
+            Password = password
+        });
+
+        Check("that account can log in", login.Succeeded,
+              login.Succeeded ? "token issued" : string.Join("; ", login.Errors));
+
+        var wrong = await auth.LoginAsync(new HanyOptics.BusinessLogic.Models.LoginRequest
+        {
+            Email = email,
+            Password = password + "x"
+        });
+        Check("the wrong password is refused", !wrong.Succeeded);
+
+        // The id in the token is what every stored procedure stamps as created_by, so it has
+        // to be the business users.user_id - not some unrelated Identity guid.
+        var businessId = await directory.FindIdByUsernameAsync(email);
+        Check("a matching business users row exists", businessId == outcome.UserId,
+              $"identity {outcome.UserId} vs users {businessId}");
+
+        var created = await userMgr.FindByEmailAsync(email);
+        Check("the Identity id equals the business user_id",
+              created is not null && created.Id == outcome.UserId.ToString(),
+              created?.Id);
+
+        var roles = created is null ? [] : await userMgr.GetRolesAsync(created);
+        Check("it was given the User role, not Admin",
+              roles.Contains("User") && !roles.Contains("Admin"), string.Join(",", roles));
+
+        var duplicate = await userAdmin.CreateAsync(new HanyOptics.BusinessLogic.Models.CreateUserRequest
+        {
+            FullName = "تاني", Email = email, Password = password,
+            ConfirmPassword = password, IsAdmin = false
+        });
+        Check("the same email cannot be used twice", !duplicate.Succeeded,
+              string.Join("; ", duplicate.Errors));
+
+        // Clean up - this is a throwaway account and must not be left in the shop's staff list.
+        if (created is not null) await userMgr.DeleteAsync(created);
+        await directory.DeleteIfUnreferencedAsync(outcome.UserId);
+
+        var goneIdentity = await userMgr.FindByEmailAsync(email);
+        var goneBusiness = await directory.FindIdByUsernameAsync(email);
+        Check("the test account was removed again",
+              goneIdentity is null && goneBusiness is null,
+              $"identity:{(goneIdentity is null ? "gone" : "left")} users:{(goneBusiness is null ? "gone" : "left")}");
     }
 }
 
