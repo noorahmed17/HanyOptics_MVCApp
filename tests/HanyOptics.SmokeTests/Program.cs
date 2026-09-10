@@ -207,8 +207,8 @@ var userStock = await factory
     .GetStringAsync("/Inventory");
 Check("User does NOT see التكلفة", !userStock.Contains("التكلفة"),
       userStock.Contains("التكلفة") ? "column present" : "hidden");
-Check("User does NOT see سعر البيع", !userStock.Contains("سعر البيع"),
-      userStock.Contains("سعر البيع") ? "column present" : "hidden");
+// سعر البيع is quoted to customers, so staff need it - only the cost stays hidden.
+Check("User DOES see سعر البيع", userStock.Contains("سعر البيع"));
 Check("User does NOT see the stock-value cards", !userStock.Contains("قيمة المخزون"));
 Check("but a User still sees the rest of المخزون",
       userStock.Contains("الباركود") && userStock.Contains("المتاح")

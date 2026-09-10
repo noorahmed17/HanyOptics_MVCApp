@@ -9,9 +9,8 @@
     var searchTerm = (string?)ViewBag.SearchTerm;
     var summary = (HanyOptics.BusinessLogic.Models.FrameInventorySummary)ViewBag.Summary;
 
-    // What a frame costs and what it sells for are the owner's figures. One flag drives both
-    // the value cards and the two money columns - splitting the decision across the page is
-    // how one of them ends up left behind.
+    // What a frame costs - and so the stock-value cards built from it - is the owner's
+    // figure. سعر البيع is not: staff quote it to customers, so everyone sees that column.
     var showMoney = User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin);
     var arEg = new CultureInfo("ar-EG");
 
@@ -128,8 +127,8 @@
                         @if (showMoney)
                         {
                             <th>التكلفة</th>
-                            <th>سعر البيع</th>
                         }
+                        <th>سعر البيع</th>
                         <th>المتاح</th>
                         <th>الحالة</th>
                     </tr>
@@ -151,8 +150,8 @@
                             @if (showMoney)
                             {
                                 <td>@Money(f.CostPrice)</td>
-                                <td class="fw-bold c-blue">@Money(f.SellPrice)</td>
                             }
+                            <td class="fw-bold c-blue">@Money(f.SellPrice)</td>
                             @* A bulk line that has run down to zero is easy to miss when the
                                number is styled the same as a healthy one. *@
                             <td class="fw-bold @(f.QtyAvailable > 0 ? "c-green" : "c-red")">
