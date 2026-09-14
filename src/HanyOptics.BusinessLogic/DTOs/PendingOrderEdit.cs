@@ -11,7 +11,8 @@ public enum PendingEditKind
     Payment,
     Refund,
     LensChange,
-    PriceChange
+    PriceChange,
+    InvoiceNumberChange
 }
 
 // What happens to the item's frame when the item is cancelled. 'return' puts it back in
@@ -78,6 +79,11 @@ public class PendingOrderEdit
 
     // ItemCancellation
     public CancelledFrameDisposition? FrameDisposition { get; set; }
+
+    // InvoiceNumberChange - corrects a typo on the invoice number printed at the top of
+    // the popup. Order-level, not item-level, so it carries nothing but the new value;
+    // the order it applies to is the popup's own orderId, same as StatusChange.
+    public string? NewInvoiceNumber { get; set; }
 
     public string? Notes { get; set; }
 }

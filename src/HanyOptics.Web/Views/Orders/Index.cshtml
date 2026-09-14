@@ -316,6 +316,22 @@
             document.getElementById('orderDetailModal').classList.remove('show');
         }
 
+        // Swaps the popup's title for an inline input in the same spot - reused every time
+        // the popup is reopened, since _OrderDetail always re-renders in display mode.
+        function startInvoiceNumberEdit() {
+            document.getElementById('invoiceTitleDisplay').style.display = 'none';
+            const form = document.getElementById('invoiceNumberForm');
+            form.style.display = 'flex';
+            const input = document.getElementById('invoiceNumberInput');
+            input.focus();
+            input.select();
+        }
+
+        function cancelInvoiceNumberEdit() {
+            document.getElementById('invoiceNumberForm').style.display = 'none';
+            document.getElementById('invoiceTitleDisplay').style.display = '';
+        }
+
         // Staging a change (تحديث الحالة / الإطار تالف / removing a pending edit) posts in
         // the background and swaps the response straight into the still-open popup -
         // never a real page navigation, so the popup itself never closes and reopens.

@@ -19,6 +19,13 @@ public interface IOrderService
     Task<int> CreateOrderAsync(Order order);
     Task<Doctor?> GetDoctorByIdAsync(int doctorId);
 
+    // OrderItem carries only frame_id/compensation_frame_id (plain FK columns, no EF
+    // navigation - see OrderItemConfiguration), so the order-detail popup asks separately
+    // for the barcodes it wants to show next to "سعر الإطار". Keyed by frame_id so the
+    // view can look up either FrameId or CompensationFrameId, whichever the item actually
+    // charged for.
+    Task<Dictionary<int, string>> GetFrameBarcodesAsync(IEnumerable<int> frameIds);
+
     // Flat, filterable listing used by Orders/Index and the Customers/Index detail panel.
     // searchTerm matches invoice number, customer name, or phone - used by the Orders/Index
     // search box to reach orders outside the default fromDate window (see SearchOrders
@@ -36,6 +43,13 @@ public interface IOrderService
         int? pageSize = null);
 
     Task<StagedEditOutcome> BuildStatusChangeEditAsync(int orderId, OrderStatus newStatus, string? notes);
+
+    // Corrects the invoice number printed at the top of the popup - a typo caught after
+    // the fact, not a business-rule-bearing change, so it carries no restriction on the
+    // order's status the way money/stock edits do. Checked for uniqueness while staging
+    // for quick feedback, but the database's own unique constraint on invoice_number is
+    // still the real guard applied at commit time.
+    Task<StagedEditOutcome> BuildInvoiceNumberEditAsync(int orderId, string newInvoiceNumber, string? notes);
 
     // Applies a status change to several orders at once (Orders/Index row-selection
     // toolbar). Each order goes through sp_update_order_status independently, so one

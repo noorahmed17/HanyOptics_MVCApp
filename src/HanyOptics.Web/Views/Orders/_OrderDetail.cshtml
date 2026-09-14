@@ -125,7 +125,26 @@
 }
 
 <div class="modal-header">
-    <span class="modal-title">تفاصيل <bdi>@order.InvoiceNumber</bdi></span>
+    @* Same look as always until clicked - "تفاصيل 1316" as plain text. Clicking swaps it
+       for a text input in the same spot rather than opening a separate popup for one
+       field; stageEdit() then submits it exactly like every other edit in this modal, so
+       the corrected number only actually lands once تأكيد commits it, and a rejected
+       number (already taken, say) just falls back to this same display with the error
+       shown in the usual place (the alert at the top of the body). *@
+    <span class="modal-title" id="invoiceTitleDisplay" onclick="startInvoiceNumberEdit()" style="cursor:pointer" title="اضغط للتعديل">
+        تفاصيل <bdi>@order.InvoiceNumber</bdi> <span style="font-size:12px;opacity:.5">✏️</span>
+    </span>
+    <form id="invoiceNumberForm" asp-action="StageInvoiceNumberChange" method="post" onsubmit="stageEdit(event)"
+          class="flex items-center gap-2" style="display:none">
+        <input type="hidden" name="orderId" value="@order.OrderId" />
+        <span>تفاصيل</span>
+        @* dir="ltr" only sets the input's own typing/caret direction - it does not change
+           the case of whatever is typed into it. *@
+        <input type="text" name="newInvoiceNumber" id="invoiceNumberInput" value="@order.InvoiceNumber"
+               dir="ltr" style="width:150px;padding:4px 8px" />
+        <button type="submit" class="btn btn-primary btn-sm" title="حفظ">✓</button>
+        <button type="button" class="btn btn-outline btn-sm" title="إلغاء" onclick="cancelInvoiceNumberEdit()">✕</button>
+    </form>
     <button type="button" class="modal-close" onclick="closeOrderDetail()">✕</button>
 </div>
 
@@ -207,7 +226,24 @@
                 </div>
                 @if (it.FrameId.HasValue || it.CompensationFrameId.HasValue || !string.IsNullOrWhiteSpace(it.ExternalFrameNotes))
                 {
-                    <div class="detail-row"><span class="detail-label">سعر الإطار</span><span class="detail-val">@Money(it.FrameAgreedPrice)</span></div>
+                    // Whichever frame this item actually charges for - the compensation frame
+                    // if it was assigned one, otherwise its own. Wrapped in <bdi> for the same
+                    // reason invoice numbers are (see Isolate() in OrdersController): a barcode
+                    // mixes digits and letters, both weak/neutral under the bidi algorithm, so
+                    // without isolation it can reorder when sitting inside this Arabic label -
+                    // and <bdi> only isolates direction, it never touches the letters' case.
+                    var frameIdForBarcode = it.CompensationFrameId ?? it.FrameId;
+                    var barcode = frameIdForBarcode.HasValue && Model.FrameBarcodes.TryGetValue(frameIdForBarcode.Value, out var bc) ? bc : null;
+                    <div class="detail-row">
+                        <span class="detail-label">
+                            سعر الإطار
+                            @if (barcode is not null)
+                            {
+                                <span class="badge" style="background:#eef2ff;color:#4338ca;margin-inline-start:6px"><bdi>@barcode</bdi></span>
+                            }
+                        </span>
+                        <span class="detail-val">@Money(it.FrameAgreedPrice)</span>
+                    </div>
                 }
                 @if (!itemCancelled && !orderIsTerminal)
                 {

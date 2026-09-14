@@ -546,6 +546,21 @@ public class OrdersController : Controller
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تغيير العدسات.");
     }
 
+    // Corrects the invoice number shown at the top of the popup. Posted from the inline
+    // edit on the title itself, not a modal - the response re-renders the whole popup like
+    // every other stageEdit() form, so the corrected value (once تأكيد applies it) shows up
+    // exactly where the plain text used to be.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StageInvoiceNumberChange(int orderId, string newInvoiceNumber, string? notes)
+    {
+        var outcome = await SafeAsync(() => _orderService.BuildInvoiceNumberEditAsync(orderId, newInvoiceNumber, notes), "تغيير رقم الفاتورة");
+        if (outcome is { Succeeded: true })
+            StageEdit(orderId, outcome.Edit!);
+
+        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تغيير رقم الفاتورة.");
+    }
+
     // Corrects what an item was charged without changing what was sold. Either price may
     // be omitted, which leaves that side as it stands.
     [HttpPost]
@@ -618,8 +633,16 @@ public class OrdersController : Controller
         var doctor = order.DoctorId.HasValue ? await _orderService.GetDoctorByIdAsync(order.DoctorId.Value) : null;
         var pendingEdits = _pendingEdits.Get(orderId)?.Edits ?? new List<PendingOrderEdit>();
 
+        // Whichever frame an item actually charges for - the compensation frame if it was
+        // assigned one, otherwise its own - is the one whose barcode is worth showing.
+        var frameIds = order.OrderItems
+            .Select(i => i.CompensationFrameId ?? i.FrameId)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value);
+        var frameBarcodes = await _orderService.GetFrameBarcodesAsync(frameIds);
+
         ViewBag.PendingEditError = error;
-        return PartialView("_OrderDetail", new OrderDetailViewModel(order, customer, doctor, pendingEdits));
+        return PartialView("_OrderDetail", new OrderDetailViewModel(order, customer, doctor, pendingEdits, frameBarcodes));
     }
 
     // Staging a status change replaces any previously-staged status change (only one
@@ -687,4 +710,5 @@ public record OrderDetailViewModel(
     HanyOptics.Domain.Entities.Order Order,
     HanyOptics.Domain.Entities.Customer? Customer,
     HanyOptics.Domain.Entities.Doctor? Doctor,
-    IReadOnlyList<PendingOrderEdit> PendingEdits);
+    IReadOnlyList<PendingOrderEdit> PendingEdits,
+    IReadOnlyDictionary<int, string> FrameBarcodes);

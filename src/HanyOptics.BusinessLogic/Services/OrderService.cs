@@ -37,6 +37,18 @@ public class OrderService : IOrderService
     public Task<Doctor?> GetDoctorByIdAsync(int doctorId) =>
         _dbContext.Doctors.AsNoTracking().FirstOrDefaultAsync(d => d.DoctorId == doctorId);
 
+    public async Task<Dictionary<int, string>> GetFrameBarcodesAsync(IEnumerable<int> frameIds)
+    {
+        var ids = frameIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return new Dictionary<int, string>();
+
+        return await _dbContext.Frames
+            .AsNoTracking()
+            .Where(f => ids.Contains(f.FrameId))
+            .ToDictionaryAsync(f => f.FrameId, f => f.Barcode);
+    }
+
     public async Task<IReadOnlyList<Order>> GetAllAsync(int take = 50) =>
         await _dbContext.Orders
             .Include(o => o.OrderItems)
@@ -167,6 +179,46 @@ public class OrderService : IOrderService
         {
             Kind = PendingEditKind.StatusChange,
             NewStatus = newStatus,
+            Notes = notes,
+            Summary = summary
+        });
+    }
+
+    public async Task<StagedEditOutcome> BuildInvoiceNumberEditAsync(int orderId, string newInvoiceNumber, string? notes)
+    {
+        var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);
+        if (order is null)
+            return StagedEditOutcome.Failure("الطلب غير موجود");
+
+        var trimmed = newInvoiceNumber.Trim();
+        if (trimmed.Length == 0)
+            return StagedEditOutcome.Failure("رقم الفاتورة مطلوب");
+
+        if (trimmed == order.InvoiceNumber)
+            return StagedEditOutcome.Failure("رقم الفاتورة الجديد مطابق للرقم الحالي");
+
+        // Quick feedback while staging; orders.invoice_number's own unique constraint is
+        // still the real guard at commit time (ExecUpdateInvoiceNumberAsync), which
+        // matters because another order could take this exact number in the time between
+        // staging this edit and pressing تأكيد.
+        var taken = await _dbContext.Orders.AsNoTracking().AnyAsync(o => o.OrderId != orderId && o.InvoiceNumber == trimmed);
+        if (taken)
+            return StagedEditOutcome.Failure("رقم الفاتورة مستخدم من قبل — اختر رقماً آخر");
+
+        // Isolated the same way OrdersController.Isolate() wraps invoice numbers in its own
+        // messages: an invoice number mixes digits and letters, both weak/neutral under the
+        // bidi algorithm, so embedded in this Arabic sentence it can reorder on screen
+        // without these controls. Summary is plain text (HTML-encoded when Razor renders
+        // it), so - like those messages - the isolation has to be characters, not a <bdi>
+        // tag.
+        var summary = $"تغيير رقم الفاتورة: {IsolateBidi(order.InvoiceNumber)} ← {IsolateBidi(trimmed)}";
+        if (!string.IsNullOrWhiteSpace(notes))
+            summary += $" ({notes})";
+
+        return StagedEditOutcome.Ok(new PendingOrderEdit
+        {
+            Kind = PendingEditKind.InvoiceNumberChange,
+            NewInvoiceNumber = trimmed,
             Notes = notes,
             Summary = summary
         });
@@ -559,6 +611,9 @@ public class OrderService : IOrderService
                     case PendingEditKind.PriceChange:
                         await ExecUpdateItemPricesAsync(edit.ItemId!.Value, edit.NewFrameAgreedPriceOnly);
                         break;
+                    case PendingEditKind.InvoiceNumberChange:
+                        await ExecUpdateInvoiceNumberAsync(orderId, edit.NewInvoiceNumber!);
+                        break;
                 }
             }
 
@@ -662,9 +717,9 @@ public class OrderService : IOrderService
             new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)notes ?? DBNull.Value });
     }
 
-    // One of two writes in the app with no stored procedure behind it (the other is
-    // ExecUpdateItemPricesAsync), so this statement carries the responsibility an SP
-    // normally would.
+    // One of three writes in the app with no stored procedure behind it (the others are
+    // ExecUpdateItemPricesAsync and ExecUpdateInvoiceNumberAsync), so this statement
+    // carries the responsibility an SP normally would.
     //
     // The guards live in the WHERE clause rather than in C# alone: the checks in
     // BuildLensChangeEditAsync happen when the edit is staged, which can be minutes before
@@ -722,6 +777,27 @@ public class OrderService : IOrderService
             new SqlParameter("@p_item_id", itemId),
             new SqlParameter("@p_frame_price", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = (object?)frameAgreedPrice ?? DBNull.Value });
 
+    // The third write with no stored procedure behind it. Unlike the other two, this one
+    // carries no order-status guard - correcting a typo in the invoice number is a data
+    // correction, not a business-rule-bearing change, so it's allowed regardless of where
+    // the order is in its lifecycle. The real guard is the WHERE clause matching no row
+    // (an order deleted between staging and تأكيد, which cannot happen today but costs
+    // nothing to check) and orders.invoice_number's own unique constraint, which turns a
+    // collision into SqlException 2627 - already mapped to the same duplicate-data
+    // message every other unique-key violation gets (see StoredProcedureErrors).
+    private Task ExecUpdateInvoiceNumberAsync(int orderId, string newInvoiceNumber) =>
+        _dbContext.Database.ExecuteSqlRawAsync(
+            """
+            UPDATE orders
+            SET invoice_number = @p_invoice_number
+            WHERE order_id = @p_order_id;
+
+            IF @@ROWCOUNT = 0
+                THROW 50000, N'تعذر تغيير رقم الفاتورة — الطلب غير موجود', 1;
+            """,
+            new SqlParameter("@p_order_id", orderId),
+            new SqlParameter("@p_invoice_number", SqlDbType.NVarChar, 50) { Value = newInvoiceNumber });
+
     // A refund is a payment row with payment_type='refund'; trigger T1 subtracts it when it
     // re-sums orders.paid_amount, so remaining_amount follows on its own. No amount is
     // re-derived here the way a payment's type is - a refund is only ever the figure staff
@@ -755,6 +831,14 @@ public class OrderService : IOrderService
 
     private static string DescribeEdits(IReadOnlyList<PendingOrderEdit> edits) =>
         string.Join(", ", edits.Select(e => $"{e.Kind}(item:{e.ItemId})"));
+
+    // Same two invisible bidi-isolation characters as OrdersController.Isolate() (U+2066
+    // LEFT-TO-RIGHT ISOLATE / U+2069 POP DIRECTIONAL ISOLATE) - see
+    // BuildInvoiceNumberEditAsync for why an invoice number needs this. Built from code
+    // points rather than written as literal characters for the same reason Isolate() is:
+    // both are invisible, and unseen bidi controls in source read differently from how
+    // they run.
+    private static string IsolateBidi(string text) => (char)0x2066 + text + (char)0x2069;
 
     private static string StatusLabel(OrderStatus s) => s switch
     {
