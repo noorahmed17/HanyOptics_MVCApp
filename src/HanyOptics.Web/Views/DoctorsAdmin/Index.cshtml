@@ -1,0 +1,79 @@
+@model HanyOptics.BusinessLogic.Models.CreateDoctorRequest
+@{
+    ViewData["Title"] = "الأطباء";
+    var doctors = (IReadOnlyList<HanyOptics.Domain.Entities.Doctor>)ViewBag.Doctors;
+}
+
+<div class="page-header">
+    <h2>🩺 لوحة الأدمن — الأطباء</h2>
+</div>
+
+@if (TempData["DoctorCreated"] is string created)
+{
+    <div class="alert alert-success">✅ @created</div>
+}
+
+<div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+<div class="section-divider"><span>➕ إضافة طبيب جديد</span></div>
+
+<form asp-controller="DoctorsAdmin" asp-action="Create" method="post">
+    <div class="wizard-content">
+        <div class="form-row">
+            <div class="form-group">
+                <label>اسم الطبيب *</label>
+                <input asp-for="Name" placeholder="مثال: د. أحمد فتحي" autocomplete="off" />
+                <span asp-validation-for="Name" class="field-error"></span>
+            </div>
+            <div class="form-group">
+                <label>العيادة (اختياري)</label>
+                <input asp-for="Clinic" placeholder="مثال: عيادة النور — شبرا" autocomplete="off" />
+                <span asp-validation-for="Clinic" class="field-error"></span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>رقم الهاتف (اختياري)</label>
+            <input asp-for="Phone" type="tel" placeholder="01XXXXXXXXX" autocomplete="off" />
+            <span asp-validation-for="Phone" class="field-error"></span>
+        </div>
+
+        <div class="wizard-footer">
+            <span class="text-muted text-sm">الطبيب هيظهر فوراً في قائمة «الطبيب المُحوِّل» عند إنشاء طلب جديد.</span>
+            <button type="submit" class="btn btn-primary btn-lg">✔️ إضافة الطبيب</button>
+        </div>
+    </div>
+</form>
+
+<div class="section-divider"><span>🩺 الأطباء الحاليين (@doctors.Count)</span></div>
+
+<div class="card">
+    <div class="card-body">
+        @if (doctors.Count == 0)
+        {
+            <div class="empty-state">مفيش أطباء مسجّلين.</div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>العيادة</th>
+                        <th>الهاتف</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var d in doctors)
+                {
+                    <tr>
+                        <td><b>د. @d.Name</b></td>
+                        <td>@(string.IsNullOrWhiteSpace(d.Clinic) ? "—" : d.Clinic)</td>
+                        <td>@(string.IsNullOrWhiteSpace(d.Phone) ? "—" : d.Phone)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>

@@ -19,6 +19,7 @@ public static class DependencyInjection
 
         services.AddScoped<IBusinessUserDirectory, BusinessUserDirectory>();
         services.AddScoped<IUserAdminService, UserAdminService>();
+        services.AddScoped<IDoctorAdminService, DoctorAdminService>();
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         services.AddScoped<IJwtTokenService, JwtTokenService>();
