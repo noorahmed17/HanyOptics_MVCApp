@@ -327,6 +327,14 @@ public class NewOrderService : INewOrderService
     {
         var orderIdParam = new SqlParameter("@p_order_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
 
+        // orders.customer_name is the name printed on THIS invoice, not the customer's own
+        // name - a phone number can belong to one customer whose orders are each for a
+        // different named person. Falls back to the customer's own name only if the
+        // invoice-name field was somehow left blank.
+        var nameOnInvoice = string.IsNullOrWhiteSpace(draft.CustomerNameOnInvoice)
+            ? customer.Name
+            : draft.CustomerNameOnInvoice;
+
         await _dbContext.Database.ExecuteSqlRawAsync(
             """
             EXEC sp_create_order
@@ -341,7 +349,7 @@ public class NewOrderService : INewOrderService
             new SqlParameter("@p_invoice_number", draft.InvoiceNumber),
             new SqlParameter("@p_customer_id", customer.CustomerId),
             new SqlParameter("@p_created_by", _currentUser.RequireUserId()),
-            new SqlParameter("@p_customer_name", SqlDbType.NVarChar, 100) { Value = (object?)customer.Name ?? DBNull.Value },
+            new SqlParameter("@p_customer_name", SqlDbType.NVarChar, 100) { Value = (object?)nameOnInvoice ?? DBNull.Value },
             new SqlParameter("@p_delivery_type", DeliveryTypeToDb(draft.DeliveryType)),
             new SqlParameter("@p_doctor_id", SqlDbType.Int) { Value = (object?)draft.DoctorId ?? DBNull.Value },
             orderIdParam);

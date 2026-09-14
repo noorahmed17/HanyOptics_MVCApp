@@ -11,7 +11,19 @@ namespace HanyOptics.BusinessLogic.Models;
 public class OrderDraft
 {
     public string? Phone { get; set; }
+
+    // The customer's own name - identifies them across every order they've ever placed
+    // (matched by phone in ResolveOrCreateCustomerAsync) and is what gets written back to
+    // customers.name. Deliberately never touched by CustomerNameOnInvoice below: a phone
+    // number belongs to one customer, but that customer's orders can each be for a
+    // different named person (a family member, someone they're buying for), and typing
+    // that person's name on this particular invoice must not rename the customer.
     public string? CustomerName { get; set; }
+
+    // The name printed on this specific invoice (orders.customer_name). Defaults to
+    // CustomerName when the wizard reaches step 2, but edited independently from then on.
+    public string? CustomerNameOnInvoice { get; set; }
+
     public bool IsWalkIn { get; set; }
 
     public string InvoiceNumber { get; set; } = string.Empty;

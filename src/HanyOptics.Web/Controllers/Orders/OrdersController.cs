@@ -124,7 +124,10 @@ public class OrdersController : Controller
         return View(new NewOrderItemRequest
         {
             DoctorId = draft.DoctorId,
-            CustomerNameOnInvoice = draft.CustomerName
+            // Defaults to the customer's own name the first time step 2 is reached, but
+            // once the counter has typed something here it must not be re-derived from
+            // CustomerName on a later visit - it's a value in its own right from then on.
+            CustomerNameOnInvoice = draft.CustomerNameOnInvoice ?? draft.CustomerName
         });
     }
 
@@ -146,7 +149,9 @@ public class OrdersController : Controller
             return RedirectToAction(nameof(New));
 
         // The invoice name is edited on this step, so keep it on the draft either way.
-        draft.CustomerName = model.CustomerNameOnInvoice;
+        // Kept separate from draft.CustomerName - that field belongs to the customer
+        // record (see OrderDraft), and this step must never overwrite it.
+        draft.CustomerNameOnInvoice = model.CustomerNameOnInvoice;
 
         var outcome = await SafeAsync(() => _newOrderService.ValidateItemAsync(model), "إضافة البند");
         if (outcome is null)
