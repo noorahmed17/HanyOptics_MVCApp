@@ -6,9 +6,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace HanyOptics.Web.Controllers;
 
-// Read-only for now: browsing and searching frame stock. Every write to frames happens
-// through the order flow's stored procedures (reserve on sale, return on cancel, write
-// off on damage), so there is deliberately no editing here - see IFrameInventoryService.
+// Mostly read-only: browsing and searching frame stock. Every stock change that happens as
+// a *side effect* of something else the shop does (reserve on sale, return on cancel, write
+// off on damage) runs through the order flow's stored procedures, never through here - see
+// IFrameInventoryService. Receiving new stock (AddFrame) and topping up existing bulk stock
+// (BulkRestock) are not side effects of anything else, so those two writes live here.
 [Authorize]
 public class InventoryController : Controller
 {
@@ -80,4 +82,43 @@ public class InventoryController : Controller
         TempData["FrameAddedBarcode"] = outcome.Barcode;
         return RedirectToAction(nameof(AddFrame));
     }
+
+    // Row-selection toolbar on Inventory/Index - adds the same quantity to every selected
+    // frame at once. A plain POST-and-redirect, not AJAX: the list needs to re-render with
+    // the now-updated quantities, and the filters are carried through so the redirect lands
+    // back on whatever view the selection was made from.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkRestock(int[] frameIds, int qtyToAdd, string? status, string? category, string? tracking, string? q)
+    {
+        if (frameIds is not { Length: > 0 })
+            return RedirectToAction(nameof(Index), new { status, category, tracking, q });
+
+        var result = await _frames.RestockFramesAsync(frameIds, qtyToAdd);
+
+        if (result.Failures.Count == 0)
+        {
+            TempData["BulkRestockMessage"] = $"تمت زيادة الكمية بمقدار {qtyToAdd} لـ {result.SuccessCount} إطار بنجاح";
+        }
+        else
+        {
+            var failureList = string.Join("، ", result.Failures.Select(f => $"{Isolate(f.Barcode)} ({f.ErrorMessage})"));
+            TempData["RestockError"] = result.SuccessCount == 0
+                ? $"تعذرت زيادة الكمية لأي إطار: {failureList}"
+                : $"تمت زيادة الكمية لـ {result.SuccessCount} إطار، وتعذر لـ: {failureList}";
+        }
+
+        return RedirectToAction(nameof(Index), new { status, category, tracking, q });
+    }
+
+    // Same reasoning as OrdersController.Isolate(): a barcode mixes digits and letters,
+    // both weak/neutral under the bidi algorithm, so embedded in this Arabic message it can
+    // reorder on screen without these controls. TempData carries plain text (HTML-encoded
+    // on render), so the isolation has to be characters, not a <bdi> tag. Built from code
+    // points rather than written as literal characters because both are invisible, and
+    // unseen bidi controls in source read differently from how they run.
+    private const char LeftToRightIsolate = (char)0x2066;
+    private const char PopDirectionalIsolate = (char)0x2069;
+
+    private static string Isolate(string text) => LeftToRightIsolate + text + PopDirectionalIsolate;
 }

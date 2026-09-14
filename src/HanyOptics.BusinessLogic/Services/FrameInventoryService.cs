@@ -13,11 +13,13 @@ namespace HanyOptics.BusinessLogic.Services;
 public class FrameInventoryService : IFrameInventoryService
 {
     private readonly HanyOpticsDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<FrameInventoryService> _logger;
 
-    public FrameInventoryService(HanyOpticsDbContext dbContext, ILogger<FrameInventoryService> logger)
+    public FrameInventoryService(HanyOpticsDbContext dbContext, ICurrentUser currentUser, ILogger<FrameInventoryService> logger)
     {
         _dbContext = dbContext;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -228,5 +230,62 @@ public class FrameInventoryService : IFrameInventoryService
             _logger.LogError(ex, "Unexpected error adding frame {Brand}.", request.Brand);
             return AddFrameOutcome.Failure(StoredProcedureErrors.GenericMessage);
         }
+    }
+
+    // Independent per-frame attempts, not one shared transaction - the same reasoning as
+    // BulkUpdateStatusAsync: a batch that mixes bulk and individually-tracked frames (a
+    // selection made by mistake, or the checkbox's own tracking-type restriction bypassed
+    // some other way) is expected to partially fail, and failing the whole batch over one
+    // frame that was never going to accept a restock would be worse than reporting exactly
+    // which ones didn't.
+    public async Task<BulkRestockResult> RestockFramesAsync(IReadOnlyList<int> frameIds, int qtyToAdd)
+    {
+        var barcodes = await _dbContext.Frames
+            .AsNoTracking()
+            .Where(f => frameIds.Contains(f.FrameId))
+            .ToDictionaryAsync(f => f.FrameId, f => f.Barcode);
+
+        // Checked once, up front, rather than letting sp_restock_bulk_frame reject every
+        // single call with the same message - a batch cannot be partially valid on this
+        // one condition the way it can be on tracking type.
+        if (qtyToAdd <= 0)
+        {
+            return new BulkRestockResult
+            {
+                Failures = frameIds
+                    .Select(id => new BulkRestockFailure(id, barcodes.GetValueOrDefault(id, id.ToString()), "الكمية المُضافة يجب أن تكون أكبر من صفر"))
+                    .ToList()
+            };
+        }
+
+        var recordedBy = _currentUser.RequireUserId();
+        var failures = new List<BulkRestockFailure>();
+        var successCount = 0;
+
+        foreach (var frameId in frameIds)
+        {
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(
+                    "EXEC sp_restock_bulk_frame @frame_id=@p_frame_id, @qty_to_add=@p_qty_to_add, @recorded_by=@p_recorded_by",
+                    new SqlParameter("@p_frame_id", frameId),
+                    new SqlParameter("@p_qty_to_add", qtyToAdd),
+                    new SqlParameter("@p_recorded_by", recordedBy));
+                successCount++;
+            }
+            catch (SqlException ex)
+            {
+                _logger.LogError(ex,
+                    "SQL error restocking frame {FrameId}. QtyToAdd={QtyToAdd} SqlErrors={SqlErrors}",
+                    frameId, qtyToAdd, StoredProcedureErrors.Describe(ex));
+
+                failures.Add(new BulkRestockFailure(
+                    frameId,
+                    barcodes.GetValueOrDefault(frameId, frameId.ToString()),
+                    StoredProcedureErrors.ToUserMessage(ex, "خطأ في البيانات")));
+            }
+        }
+
+        return new BulkRestockResult { SuccessCount = successCount, Failures = failures };
     }
 }
