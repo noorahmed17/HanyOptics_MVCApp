@@ -235,7 +235,13 @@ tfoot td { background: #f8fafc; font-weight: 700; border-top: 1px solid #e2e8f0;
 .table-scroll table { min-width: 100%; white-space: nowrap; }
 
 /* Figures line up on their digits, which is the only way a column of money is readable. */
-td.num, th.num { text-align: left; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+td.num .sub {
+    display: block;
+    margin-top: 3px;
+    font-weight: 400;
+}
 /* Outside a table the alignment is the container's business, but the digits should still
    be the same width so a figure does not jitter as it updates. */
 .num { font-variant-numeric: tabular-nums; }
