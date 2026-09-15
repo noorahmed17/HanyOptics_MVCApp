@@ -147,19 +147,19 @@ else
             <table class="breakdown">
                 <tr>
                     <td>دفعات على فواتير اتفتحت اليوم</td>
-                    <td class="num" style="text-align:left">@Money(s.FromTodayInvoices)</td>
+                    <td class="num">@Money(s.FromTodayInvoices)</td>
                 </tr>
                 <tr>
                     <td>باقي فواتير قديمة اتحصّل اليوم <span class="badge badge-old">عميل جه استلم</span></td>
-                    <td class="num" style="text-align:left">@Money(s.FromOldInvoices)</td>
+                    <td class="num">@Money(s.FromOldInvoices)</td>
                 </tr>
                 <tr>
                     <td>مردودات طلعت من الدرج</td>
-                    <td class="num c-red" style="text-align:left">@(s.RefundsTotal > 0 ? "− " + Money(s.RefundsTotal) : Money(0))</td>
+                    <td class="num c-red"><bdi>@(s.RefundsTotal > 0 ? "−" + Money(s.RefundsTotal) : Money(0))</bdi></td>
                 </tr>
                 <tr>
                     <td>صافي اللي في الدرج آخر اليوم</td>
-                    <td class="num" style="text-align:left">@Money(s.NetTotal)</td>
+                    <td class="num">@Money(s.NetTotal)</td>
                 </tr>
             </table>
         </div>
@@ -221,7 +221,7 @@ else
                                 }
                                 else if (o.RemainingAmount < 0)
                                 {
-                                    <text>@Num(Math.Abs(o.RemainingAmount)) <span class="badge badge-cancelled">زيادة</span></text>
+                                    <text>@Num(Math.Abs(o.RemainingAmount))<span class="sub"><span class="badge badge-cancelled">زيادة</span></span></text>
                                 }
                                 else
                                 {
@@ -354,7 +354,7 @@ else
                                 </span>
                             </td>
                             <td class="num @(refund ? "c-red" : "c-green")">
-                                @(refund ? "− " + Num(p.Amount) : Num(p.Amount))
+                                    <bdi>@(refund ? "−" + Num(p.Amount) : Num(p.Amount))</bdi>  
                             </td>
                             <td>@p.ReceivedBy</td>
                         </tr>
