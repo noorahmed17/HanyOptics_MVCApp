@@ -224,6 +224,13 @@ public class NewOrderService : INewOrderService
             if (amount > 0)
                 await AddPaymentAsync(orderId, amount, draft.TotalAmount, payment.PaymentMethod);
 
+            // An immediate-delivery order is handed over at the counter the moment it is taken,
+            // so it is closed here rather than left waiting for a separate status change nobody
+            // will make. Inside the same transaction as everything else: the order is either
+            // saved as delivered or not saved at all.
+            if (draft.DeliveryType == DeliveryType.Immediate)
+                await MarkDeliveredAsync(orderId);
+            
             await transaction.CommitAsync();
             return CommitDraftOutcome.Success(orderId);
         }
@@ -427,6 +434,18 @@ public class NewOrderService : INewOrderService
             new SqlParameter("@p_payment_method", PaymentMethodToDb(method)),
             new SqlParameter("@p_received_by", _currentUser.RequireUserId()));
     }
+
+    // The same stored procedure OrderService.ExecUpdateStatusAsync calls - it stays the sole
+    // authority on which transitions are allowed. The transition here is always sold ->
+    // delivered, on an order created moments ago in this very transaction, so the SP's own
+    // guards (valid transition, at least one active item) are already satisfied.
+    private Task MarkDeliveredAsync(int orderId) =>
+    _dbContext.Database.ExecuteSqlRawAsync(
+        "EXEC sp_update_order_status @order_id=@p_order_id, @new_status=@p_new_status, @changed_by=@p_changed_by, @notes=@p_notes",
+        new SqlParameter("@p_order_id", orderId),
+        new SqlParameter("@p_new_status", "delivered"),
+        new SqlParameter("@p_changed_by", _currentUser.RequireUserId()),
+        new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = "تسليم فوري" });
 
     // Best-effort cleanup - the NOT EXISTS guard means a customer this attempt just created
     // is only removed if it's still unused, so an existing customer (or the shared walk-in
