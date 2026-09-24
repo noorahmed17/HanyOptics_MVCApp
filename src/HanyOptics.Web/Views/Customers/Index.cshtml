@@ -86,8 +86,42 @@
                 <span class="card-title">👤 @(Model.Customer.Name ?? "بدون اسم")</span>
             </div>
             <div style="padding:18px">
+                @if (TempData["CustomerMessage"] is string saved)
+                {
+                    <div class="alert alert-success">✅ @saved</div>
+                }
+                @if (TempData["CustomerError"] is string failed)
+                {
+                    <div class="alert alert-danger">⚠️ @failed</div>
+                }
+
+                @* The walk-in row is shared by every walk-in order, so renaming it would rename
+                   all of them - sp_update_customer refuses it, and the form is not offered. *@
+                @if (HanyOptics.BusinessLogic.Models.WalkInCustomer.IsWalkInPhone(Model.Customer.Phone))
+                {
+                    <div class="detail-row mb-3"><span class="detail-label">الهاتف</span><span class="detail-val"><bdi>@Model.Customer.Phone</bdi></span></div>
+                    <div class="form-hint mb-3">«زبون عابر» مشترك بين كل الطلبات العابرة، فلا يمكن تعديله. لتعديل الاسم على فاتورة معيّنة استخدم صفحة التصحيحات.</div>
+                }
+                else
+                {
+                    <form asp-action="Update" method="post" class="search-bar mb-3">
+                        <input type="hidden" name="customerId" value="@Model.Customer.CustomerId" />
+                        <input type="hidden" name="q" value="@searchTerm" />
+                        <input type="hidden" name="page" value="@customers.Page" />
+                        <div class="form-group">
+                            <label for="custName">الاسم</label>
+                            <input id="custName" name="name" value="@Model.Customer.Name" maxlength="100" autocomplete="off" />
+                        </div>
+                        <div class="form-group">
+                            <label for="custPhone">رقم الهاتف</label>
+                            <input id="custPhone" name="phone" type="tel" value="@Model.Customer.Phone" maxlength="20" placeholder="01XXXXXXXXX" autocomplete="off" style="direction:ltr;text-align:right" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">💾 حفظ</button>
+                    </form>
+                    <div class="form-hint mb-3" style="margin-top:-6px">الفواتير القديمة تحتفظ بالاسم الذي طُبع عليها.</div>
+                }
+
                 <div class="detail-grid mb-3">
-                    <div class="detail-row"><span class="detail-label">الهاتف</span><span class="detail-val">@(Model.Customer.Phone ?? "—")</span></div>
                     <div class="detail-row"><span class="detail-label">ملاحظات</span><span class="detail-val">@(Model.Customer.Notes ?? "—")</span></div>
                     @* Aggregated over every order this customer has placed, not over the
                        recent ones listed below - a long-standing customer's spend and the

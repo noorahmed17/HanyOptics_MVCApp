@@ -15,4 +15,8 @@ public interface ICustomerService
     // Lifetime totals for one customer, over every order they have placed - not just the
     // recent ones the detail panel happens to show.
     Task<CustomerTotals> GetTotalsAsync(int customerId);
+
+    // Name and phone only. Refused for the shared walk-in row and for a phone that already
+    // belongs to someone else.
+    Task<OperationResult> UpdateAsync(int customerId, string? name, string? phone);
 }

@@ -16,6 +16,9 @@ public static class DependencyInjection
         services.AddScoped<IFrameInventoryService, FrameInventoryService>();
         services.AddScoped<IReportService, ReportService>();
         services.AddScoped<IDailyCloseService, DailyCloseService>();
+        services.AddScoped<IExpenseService, ExpenseService>();
+        services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<ICorrectionService, CorrectionService>();
 
         services.AddScoped<IBusinessUserDirectory, BusinessUserDirectory>();
         services.AddScoped<IUserAdminService, UserAdminService>();

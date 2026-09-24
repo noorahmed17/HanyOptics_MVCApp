@@ -452,6 +452,188 @@ using (var scope = factory.Services.CreateScope())
     }
 }
 
+// ── المصروفات: حركة الدرج · المصروفات والإيرادات · الموردون · التصحيحات ─────────────
+Console.WriteLine();
+Console.WriteLine("المصروفات pages:");
+Console.WriteLine();
+
+currentRole = "Admin";
+var expAdmin = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+foreach (var (url, marker) in new[]
+{
+    ("/Drawer", "الرصيد الحالي في الدرج"),
+    ("/Expenses", "تقرير المصروفات"),
+    ("/Suppliers", "إضافة مورد"),
+    ("/Corrections", "رقم الفاتورة"),
+    ("/Corrections?tab=entries", "آخر تصحيحات المصروفات"),
+})
+{
+    var res = await expAdmin.GetAsync(url);
+    var html = await res.Content.ReadAsStringAsync();
+    Check($"Admin: {url} renders", res.StatusCode == HttpStatusCode.OK && html.Contains(marker), res.StatusCode.ToString());
+}
+
+var expensesForm = await expAdmin.GetStringAsync("/Expenses");
+Check("المصروفات والإيرادات offers no payment-method choice",
+      !expensesForm.Contains("طريقة الدفع") && !expensesForm.Contains("type=\"radio\" name=\"PaymentMethod\""));
+
+var someCustomer = await expAdmin.GetStringAsync("/Customers?customerId=2");
+Check("a selected customer shows editable name and phone",
+      someCustomer.Contains("/Customers/Update") && someCustomer.Contains("name=\"phone\""));
+
+currentRole = "User";
+var expUser =factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+var userDrawer = await expUser.GetAsync("/Drawer");
+var userDrawerHtml = await userDrawer.Content.ReadAsStringAsync();
+Check("User: حركة الدرج is open to staff", userDrawer.StatusCode == HttpStatusCode.OK);
+Check("User: the sidebar offers حركة الدرج only",
+      userDrawerHtml.Contains("حركة الدرج") && !userDrawerHtml.Contains("/Corrections") && !userDrawerHtml.Contains("/Suppliers"));
+foreach (var url in new[] { "/Expenses", "/Suppliers", "/Corrections" })
+{
+    var res = await expUser.GetAsync(url);
+    Check($"User: {url} is refused", res.StatusCode != HttpStatusCode.OK, res.StatusCode.ToString());
+}
+
+Console.WriteLine();
+Console.WriteLine("المصروفات writes (through the stored procedures, cleaned up afterwards):");
+Console.WriteLine();
+
+using (var scope = factory.Services.CreateScope())
+{
+    var sp = scope.ServiceProvider;
+    var db = sp.GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
+    sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>().HttpContext =
+        new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "1")], "Stub")),
+            RequestServices = sp,
+        };
+
+    var expenses = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.IExpenseService>();
+    var suppliersSvc = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.ISupplierService>();
+    var corrections = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.ICorrectionService>();
+    var tag = "SMOKE-" + Guid.NewGuid().ToString("N")[..8];
+
+    async Task<int> TaggedId() => (await db.Database
+        .SqlQueryRaw<int>("SELECT TOP 1 expense_id AS Value FROM expenses WHERE description = {0} ORDER BY expense_id DESC", tag)
+        .ToListAsync()).FirstOrDefault();
+
+    try
+    {
+        var before = (await expenses.GetDrawerAsync()).Balance;
+
+        var card = await expenses.AddAsync(new HanyOptics.BusinessLogic.Models.ExpenseRequest
+        {
+            EntryType = "income", Amount = 200, FundingSource = "drawer", PaymentMethod = "visa", Description = tag
+        });
+        var afterCard = (await expenses.GetDrawerAsync()).Balance;
+        Check("card income is recorded", card.Succeeded, card.ErrorMessage);
+        Check("card income leaves the drawer unchanged", afterCard == before, $"{before} → {afterCard}");
+
+        var id = await TaggedId();
+        var edit = await expenses.UpdateAsync(new HanyOptics.BusinessLogic.Models.UpdateExpenseRequest
+        {
+            ExpenseId = id, EntryType = "income", Amount = 150, FundingSource = "drawer", PaymentMethod = "cash",
+            Description = tag, Reason = "smoke test"
+        });
+        var afterEdit = (await expenses.GetDrawerAsync()).Balance;
+        Check("editing it to cash 150 goes through sp_update_expense", edit.Succeeded, edit.ErrorMessage);
+        Check("…and the drawer rises by exactly 150", afterEdit == before + 150, $"{before} → {afterEdit}");
+
+        var tooMuch = await expenses.AddAsync(new HanyOptics.BusinessLogic.Models.ExpenseRequest
+        {
+            EntryType = "owner_draw", Amount = afterEdit + 1000, FundingSource = "drawer", Description = tag
+        });
+        Check("a draw larger than the drawer is refused with the procedure's message",
+              !tooMuch.Succeeded && (tooMuch.ErrorMessage ?? "").Contains("الدرج"), tooMuch.ErrorMessage);
+
+        var cancel = await expenses.CancelAsync(id, "smoke test", todayOnly: true);
+        Check("today's entry can be cancelled from the drawer screen", cancel.Succeeded, cancel.ErrorMessage);
+        Check("…and the drawer is back where it started", (await expenses.GetDrawerAsync()).Balance == before);
+
+        // Suppliers: create, invoice, return - the balance is invoice - return.
+        var supplier = await suppliersSvc.CreateAsync(new HanyOptics.BusinessLogic.Models.CreateSupplierRequest { Name = tag });
+        Check("a supplier can be added", supplier.Succeeded, supplier.ErrorMessage);
+        var dupSupplier = await suppliersSvc.CreateAsync(new HanyOptics.BusinessLogic.Models.CreateSupplierRequest { Name = tag });
+        Check("the same supplier name cannot be added twice", !dupSupplier.Succeeded, dupSupplier.ErrorMessage);
+
+        if (supplier.Id is int sid)
+        {
+            var inv = await suppliersSvc.AddInvoiceAsync(new HanyOptics.BusinessLogic.Models.SupplierInvoiceRequest { SupplierId = sid, Amount = 1000 });
+            var ret = await suppliersSvc.AddReturnAsync(new HanyOptics.BusinessLogic.Models.SupplierReturnRequest { SupplierId = sid, Amount = 300 });
+            var detail = await suppliersSvc.GetAsync(sid);
+            Check("invoice and return are recorded", inv.Succeeded && ret.Succeeded, inv.ErrorMessage ?? ret.ErrorMessage);
+            Check("vw_supplier_balances shows 700 owed", detail?.Balance.BalanceDue == 700, detail?.Balance.BalanceDue.ToString());
+            Check("the account history lists both lines", detail?.History.Count == 2, detail?.History.Count.ToString());
+        }
+
+        // Corrections: a payment's method flipped and flipped back, both logged.
+        var payment = (await db.Database.SqlQueryRaw<int>(
+            "SELECT TOP 1 p.payment_id AS Value FROM payments p JOIN orders o ON o.order_id = p.order_id WHERE p.payment_method = 'cash' AND p.payment_type <> 'refund' AND o.status <> 'cancelled' ORDER BY p.payment_id DESC")
+            .ToListAsync()).FirstOrDefault();
+        if (payment > 0)
+        {
+            var toVisa = await corrections.CorrectPaymentAsync(payment, "visa", null, tag);
+            var method = (await db.Database.SqlQueryRaw<string>("SELECT payment_method AS Value FROM payments WHERE payment_id = {0}", payment).ToListAsync())[0];
+            var back = await corrections.CorrectPaymentAsync(payment, "cash", null, tag);
+            Check("sp_admin_correct_payment changes the method", toVisa.Succeeded && method == "visa", toVisa.ErrorMessage);
+            Check("…and changes it back", back.Succeeded, back.ErrorMessage);
+
+            var invoiceNo = (await db.Database.SqlQueryRaw<string>(
+                "SELECT o.invoice_number AS Value FROM payments p JOIN orders o ON o.order_id = p.order_id WHERE p.payment_id = {0}", payment).ToListAsync())[0];
+            var found = await corrections.FindOrderAsync(invoiceNo);
+            Check("the order's correction log shows both changes",
+                  found is not null && found.Log.Count(l => l.Reason == tag) == 2, found?.Log.Count.ToString());
+        }
+
+        // العملاء: name and phone edited through sp_update_customer, then put back.
+        var customersSvc = sp.GetRequiredService<HanyOptics.BusinessLogic.Interfaces.ICustomerService>();
+        var pair = await db.Customers.AsNoTracking()
+            .Where(c => c.Phone != null && c.Phone != "01000000000")
+            .OrderByDescending(c => c.CustomerId).Take(2).ToListAsync();
+        if (pair.Count == 2)
+        {
+            var (c1, c2) = (pair[0], pair[1]);
+            var renamed = await customersSvc.UpdateAsync(c1.CustomerId, tag, c1.Phone);
+            var nameNow = (await db.Customers.AsNoTracking().FirstAsync(c => c.CustomerId == c1.CustomerId)).Name;
+            Check("a customer's name can be edited", renamed.Succeeded && nameNow == tag, renamed.ErrorMessage);
+
+            var clash = await customersSvc.UpdateAsync(c1.CustomerId, tag, c2.Phone);
+            Check("a phone that belongs to another customer is refused",
+                  !clash.Succeeded && (clash.ErrorMessage ?? "").Contains("مسجّل لعميل آخر"), clash.ErrorMessage);
+
+            var restored = await customersSvc.UpdateAsync(c1.CustomerId, c1.Name ?? c1.Phone, c1.Phone);
+            Check("…and put back", restored.Succeeded, restored.ErrorMessage);
+            await db.Database.ExecuteSqlRawAsync(
+                "DELETE FROM corrections_log WHERE entity = 'customer' AND entity_id = {0} AND changed_at >= DATEADD(minute, -5, GETDATE())", c1.CustomerId);
+        }
+
+        var walkIn = await db.Customers.AsNoTracking().FirstOrDefaultAsync(c => c.Phone == "01000000000");
+        if (walkIn is not null)
+        {
+            var refused = await customersSvc.UpdateAsync(walkIn.CustomerId, "x", walkIn.Phone);
+            Check("the shared walk-in customer cannot be edited", !refused.Succeeded, refused.ErrorMessage);
+        }
+
+        var noReason = await corrections.RevertOrderStatusAsync(1, " ");
+        Check("a revert without a reason is refused before reaching the database", !noReason.Succeeded);
+    }
+    finally
+    {
+        // Everything this block wrote carries the tag; remove it all.
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM corrections_log WHERE reason = {0} OR (entity = 'expense' AND entity_id IN (SELECT expense_id FROM expenses WHERE description = {0}))", tag);
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM expenses WHERE description = {0}", tag);
+        await db.Database.ExecuteSqlRawAsync("DELETE r FROM purchase_returns r JOIN suppliers s ON s.supplier_id = r.supplier_id WHERE s.name = {0}", tag);
+        await db.Database.ExecuteSqlRawAsync("DELETE i FROM purchase_invoices i JOIN suppliers s ON s.supplier_id = i.supplier_id WHERE s.name = {0}", tag);
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM suppliers WHERE name = {0}", tag);
+
+        var leftovers = (await db.Database.SqlQueryRaw<int>(
+            "SELECT (SELECT COUNT(*) FROM expenses WHERE description = {0}) + (SELECT COUNT(*) FROM suppliers WHERE name = {0}) + (SELECT COUNT(*) FROM corrections_log WHERE reason = {0}) AS Value", tag)
+            .ToListAsync())[0];
+        Check("the test rows were removed again", leftovers == 0, leftovers.ToString());
+    }
+}
+
 Console.WriteLine(failures == 0
     ? $"\nALL PASS"
     : $"\n{failures} FAILED");

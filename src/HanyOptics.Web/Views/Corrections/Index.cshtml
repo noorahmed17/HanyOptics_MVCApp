@@ -1,0 +1,358 @@
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@using System.Globalization
+@{
+    ViewData["Title"] = "التصحيحات";
+    var tab = (string)ViewBag.Tab;
+    var invoice = ViewBag.Invoice as string;
+    var order = ViewBag.Order as CorrectionOrder;
+    var entries = ViewBag.Entries as PagedResult<ExpenseEntry>;
+    var editModel = ViewBag.EditModel as UpdateExpenseRequest;
+    var recent = ViewBag.RecentCorrections as IReadOnlyList<CorrectionLogEntry> ?? [];
+    string Invariant(decimal v) => v.ToString(CultureInfo.InvariantCulture);
+    var dateHint = (ViewBag.EditPaidAt is DateTime currentPaidAt
+                       ? $"التاريخ الحالي: {ExpenseDisplay.DateTimeShort(currentPaidAt)}. "
+                       : "")
+                   + "اتركه فارغًا ليبقى كما هو، وغيّره فقط إذا كان التاريخ نفسه خطأ.";
+}
+
+<div class="page-header">
+    <h2>✏️ التصحيحات</h2>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">
+    صحّح هنا أي بيانات سُجّلت بالخطأ. كل تصحيح يُحفظ مع سببه واسم من قام به.
+</p>
+
+@if (TempData["CorrectionMessage"] is string message)
+{
+    <div class="alert alert-success">✅ @message</div>
+}
+@if (TempData["CorrectionError"] is string error)
+{
+    <div class="alert alert-danger">⚠️ @error</div>
+}
+
+<div class="tabs">
+    <a class="tab @(tab == "orders" ? "active" : "")" asp-action="Index" asp-route-tab="orders">الطلبات</a>
+    <a class="tab @(tab == "entries" ? "active" : "")" asp-action="Index" asp-route-tab="entries">المصروفات والإيرادات</a>
+</div>
+
+@if (tab == "orders")
+{
+    <form method="get" class="filter-bar">
+        <input type="hidden" name="tab" value="orders" />
+        <div class="filter-field">
+            <label for="invoice">رقم الفاتورة</label>
+            <input id="invoice" name="invoice" value="@invoice" placeholder="مثال: 1245" autocomplete="off" autofocus />
+        </div>
+        <button type="submit" class="btn btn-primary">🔍 بحث</button>
+    </form>
+
+    @if (!string.IsNullOrWhiteSpace(invoice) && order is null)
+    {
+        <div class="card"><div class="empty-state">لا يوجد طلب بهذا الرقم.</div></div>
+    }
+    else if (order is not null)
+    {
+        var (statusCss, statusLabel) = ExpenseDisplay.OrderStatus(order.Status);
+
+        <div class="card card-pad">
+            <div class="flex justify-between items-center mb-3">
+                <div style="font-size:16px;font-weight:700">فاتورة رقم <bdi>@order.InvoiceNumber</bdi></div>
+                <span class="badge @statusCss">@statusLabel</span>
+            </div>
+            <div class="stats-grid compact" style="margin-bottom:0">
+                <div class="stat-card"><div class="stat-label">العميل</div><div class="stat-value" style="font-size:15px">@(order.CustomerName ?? "—")</div><div class="stat-sub num"><bdi>@order.CustomerPhone</bdi></div></div>
+                <div class="stat-card"><div class="stat-label">الإجمالي</div><div class="stat-value num">@ExpenseDisplay.Money(order.TotalAmount)</div></div>
+                <div class="stat-card"><div class="stat-label">المدفوع</div><div class="stat-value num">@ExpenseDisplay.Money(order.PaidAmount)</div></div>
+                <div class="stat-card @(order.RemainingAmount > 0 ? "due" : "")"><div class="stat-label">المتبقي</div><div class="stat-value num">@ExpenseDisplay.Money(order.RemainingAmount)</div></div>
+            </div>
+        </div>
+
+        <div class="card card-pad">
+            <div class="mini-title mb-2">اسم العميل على الفاتورة</div>
+            <form asp-action="SetCustomerName" method="post" class="search-bar">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                <div class="form-group">
+                    <label for="customerName">الاسم</label>
+                    <input id="customerName" name="customerName" value="@order.CustomerName" maxlength="100" required autocomplete="off" />
+                </div>
+                <div class="form-group">
+                    <label for="nameReason">السبب (اختياري)</label>
+                    <input id="nameReason" name="reason" maxlength="500" placeholder="مثال: الاسم كُتب خطأ" autocomplete="off" />
+                </div>
+                <button type="submit" class="btn btn-primary">حفظ الاسم</button>
+            </form>
+            <div class="form-hint mt-2">يتغيّر الاسم المطبوع على هذه الفاتورة فقط، ولا تتغيّر بيانات العميل.</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title">دفعات الطلب</span></div>
+            <div class="card-body table-scroll">
+                @if (order.Payments.Count == 0)
+                {
+                    <div class="empty-state">لا توجد دفعات على هذا الطلب.</div>
+                }
+                else
+                {
+                    <table>
+                        <thead><tr><th>التاريخ</th><th>النوع</th><th>الطريقة</th><th class="num">المبلغ</th><th>استلمها</th><th></th></tr></thead>
+                        <tbody>
+                        @foreach (var p in order.Payments)
+                        {
+                            var label = $"{ExpenseDisplay.PaymentType(p.PaymentType)} · {ExpenseDisplay.Method(p.PaymentMethod)} · {ExpenseDisplay.Money(p.Amount)}";
+                            <tr class="@(p.IsRefund ? "row-refund" : "")">
+                                <td class="num">@ExpenseDisplay.DateTimeShort(p.PaidAt)</td>
+                                <td>@ExpenseDisplay.PaymentType(p.PaymentType)</td>
+                                <td><span class="badge @(p.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@ExpenseDisplay.Method(p.PaymentMethod)</span></td>
+                                <td class="num fw-bold @(p.IsRefund ? "c-red" : "")">@(p.IsRefund ? "−" : "")@ExpenseDisplay.Money(p.Amount)</td>
+                                <td>@(p.ReceivedBy ?? "—")</td>
+                                <td class="actions">
+                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="paymentModal"
+                                            data-fields='@Json.Serialize(new { paymentId = p.PaymentId, newMethod = p.PaymentMethod, newAmount = Invariant(p.Amount), label })'>تعديل</button>
+                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="deletePaymentModal"
+                                            data-fields='@Json.Serialize(new { paymentId = p.PaymentId, label })'>حذف</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div class="card-pad" style="padding-top:0">
+                <div class="alert alert-warning" style="margin:12px 0 0">⚠️ تصحيح أي دفعة يغيّر أرقام إغلاق اليومية لليوم الذي سُجّلت فيه.</div>
+            </div>
+        </div>
+
+        <div class="card card-pad">
+            <div class="flex justify-between items-center mb-2">
+                <span class="mini-title">حالة الطلب</span>
+                <span class="badge @statusCss">@statusLabel</span>
+            </div>
+            @if (order.Status == "cancelled")
+            {
+                <div class="form-hint">لا يمكن التراجع عن إلغاء طلب. سجّل طلبًا جديدًا بدلًا منه.</div>
+            }
+            else if (order.RevertTarget is null)
+            {
+                <div class="form-hint">الطلب في أول حالة، ولا توجد حالة سابقة.</div>
+            }
+            else
+            {
+                var (_, targetLabel) = ExpenseDisplay.OrderStatus(order.RevertTarget);
+                <button type="button" class="btn btn-outline" data-modal-open="revertModal"
+                        data-fields='@Json.Serialize(new { target = targetLabel })'>↩️ إرجاع إلى «@targetLabel»</button>
+                <div class="form-hint mt-2">يرجع الطلب خطوة واحدة، وتعود إطاراته محجوزة. إذا سُجّلت دفعة الباقي بالخطأ عند التسليم، احذفها من دفعات الطلب.</div>
+            }
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title">سجل التصحيحات</span></div>
+            <div class="card-body table-scroll">
+                <partial name="_CorrectionLog" model="order.Log" />
+            </div>
+        </div>
+
+        <div class="overlay" id="exOverlay"></div>
+
+        <div class="modal modal-sm" id="paymentModal" role="dialog" aria-modal="true" aria-labelledby="paymentTitle">
+            <form asp-action="CorrectPayment" method="post" data-require-reason>
+                <div class="modal-header">
+                    <span class="modal-title" id="paymentTitle">تصحيح الدفعة</span>
+                    <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3 text-sm">الدفعة الحالية: <b data-text="label"></b></p>
+                    <input type="hidden" name="paymentId" />
+                    <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                    <div class="form-group">
+                        <label>طريقة الدفع</label>
+                        <div class="seg">
+                            <label><input type="radio" name="newMethod" value="@PaymentMethods.Cash" /><span>نقدًا</span></label>
+                            <label><input type="radio" name="newMethod" value="@PaymentMethods.Visa" /><span>بطاقة</span></label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="newAmount">المبلغ (ج)</label>
+                        <input id="newAmount" name="newAmount" type="number" min="0.01" step="0.01" required />
+                    </div>
+                    <div class="form-group">
+                        <label for="payReason">سبب التصحيح *</label>
+                        <input id="payReason" name="reason" data-clear maxlength="500" placeholder="مثال: سُجّلت كاش وهي فيزا" autocomplete="off" />
+                        <div class="field-error" data-reason-warn hidden>اكتب سبب التصحيح.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                    <button type="submit" class="btn btn-primary">حفظ التصحيح</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal modal-sm" id="deletePaymentModal" role="dialog" aria-modal="true" aria-labelledby="deleteTitle">
+            <form asp-action="DeletePayment" method="post" data-require-reason>
+                <div class="modal-header">
+                    <span class="modal-title" id="deleteTitle">حذف الدفعة</span>
+                    <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3 text-sm">الدفعة: <b data-text="label"></b></p>
+                    <div class="alert alert-warning" style="font-size:12px">
+                        احذف الدفعة فقط إذا لم يدفعها العميل فعلًا. إذا استرد العميل مبلغًا، سجّل استرجاعًا من نافذة الطلب بدلًا من الحذف.
+                    </div>
+                    <input type="hidden" name="paymentId" />
+                    <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                    <div class="form-group">
+                        <label for="delReason">سبب الحذف *</label>
+                        <input id="delReason" name="reason" data-clear maxlength="500" placeholder="مثال: الدفعة سُجّلت ولم تُدفع" autocomplete="off" />
+                        <div class="field-error" data-reason-warn hidden>اكتب سبب الحذف.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                    <button type="submit" class="btn btn-danger">حذف الدفعة</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="modal modal-sm" id="revertModal" role="dialog" aria-modal="true" aria-labelledby="revertTitle">
+            <form asp-action="RevertStatus" method="post" data-require-reason>
+                <div class="modal-header">
+                    <span class="modal-title" id="revertTitle">رجوع حالة الطلب</span>
+                    <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3 text-sm">سيعود الطلب إلى «<b data-text="target"></b>». هل تريد المتابعة؟</p>
+                    <input type="hidden" name="orderId" value="@order.OrderId" />
+                    <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                    <div class="form-group">
+                        <label for="revReason">سبب التصحيح *</label>
+                        <input id="revReason" name="reason" data-clear maxlength="500" placeholder="مثال: اتسلّم بالخطأ" autocomplete="off" />
+                        <div class="field-error" data-reason-warn hidden>اكتب سبب التصحيح.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                    <button type="submit" class="btn btn-primary">إرجاع الحالة</button>
+                </div>
+            </form>
+        </div>
+    }
+}
+else
+{
+    <datalist id="catExpense"></datalist>
+    <datalist id="catIncome"></datalist>
+
+    @if (editModel is not null)
+    {
+        <div class="card card-pad" id="editEntry">
+            <div class="flex justify-between items-center mb-3">
+                <span class="mini-title">تعديل الحركة رقم @editModel.ExpenseId</span>
+                <a class="btn btn-outline btn-sm" asp-action="Index" asp-route-tab="entries" asp-route-page="@entries?.Page">✕ إغلاق</a>
+            </div>
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+            <form asp-action="UpdateExpense" method="post" class="js-expense-form" data-require-reason>
+                <input type="hidden" name="ExpenseId" value="@editModel.ExpenseId" />
+                <input type="hidden" name="page" value="@entries?.Page" />
+                <partial name="_ExpenseFields" model="editModel"
+                         view-data="@(new ViewDataDictionary(ViewData) { ["Suppliers"] = ViewBag.Suppliers, ["DateHint"] = dateHint })" />
+                <div class="form-group">
+                    <label for="Reason">سبب التصحيح *</label>
+                    <input id="Reason" name="Reason" value="@editModel.Reason" maxlength="500" placeholder="مثال: المبلغ كُتب خطأ" autocomplete="off" />
+                    <div class="field-error" data-reason-warn hidden>اكتب سبب التصحيح.</div>
+                </div>
+                <div class="wizard-footer">
+                    <span class="text-muted text-sm">يُحفظ ما كانت عليه الحركة قبل التعديل في سجل التصحيحات.</span>
+                    <button type="submit" class="btn btn-primary btn-lg">حفظ التعديل</button>
+                </div>
+            </form>
+        </div>
+    }
+
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">المصروفات والإيرادات</span>
+            <span class="text-muted text-sm">عدّل أو ألغِ أي مصروف أو إيراد سُجّل بالخطأ.</span>
+        </div>
+        <div class="card-body table-scroll">
+            @if (entries is null || entries.TotalCount == 0)
+            {
+                <div class="empty-state">لا توجد حركات مسجّلة بعد.</div>
+            }
+            else
+            {
+                <table>
+                    <thead><tr><th>التاريخ</th><th>النوع</th><th>المصدر</th><th class="num">المبلغ</th><th>التصنيف</th><th>المورد</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var e in entries.Items)
+                    {
+                        var (typeCss, typeLabel) = ExpenseDisplay.Type(e.EntryType);
+                        var (srcCss, srcLabel) = ExpenseDisplay.Source(e);
+                        <tr class="@(e.IsCancelled ? "row-cancelled" : "")">
+                            <td class="num">@ExpenseDisplay.DateTimeShort(e.PaidAt)</td>
+                            <td><span class="badge @typeCss">@typeLabel</span></td>
+                            <td><span class="badge @srcCss">@srcLabel</span></td>
+                            <td class="num amount">@ExpenseDisplay.Money(e.Amount)</td>
+                            <td>@(e.Category ?? "—")</td>
+                            <td>@(e.SupplierName ?? "—")</td>
+                            <td class="actions">
+                                @if (e.IsCancelled)
+                                {
+                                    <span class="badge badge-user" title="@e.CancelReason">ملغاة</span>
+                                }
+                                else
+                                {
+                                    <a class="btn btn-outline btn-sm" asp-action="Index" asp-route-edit="@e.ExpenseId" asp-route-page="@entries.Page" asp-fragment="editEntry">تعديل</a>
+                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="cancelModal"
+                                            data-fields='@Json.Serialize(new { expenseId = e.ExpenseId, label = $"{typeLabel} — {ExpenseDisplay.Money(e.Amount)}" })'>إلغاء</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+        @if (entries is not null)
+        {
+            <partial name="_Pager" model="PagerInfo.From(entries)" />
+        }
+    </div>
+
+    <div class="card">
+        <div class="card-header"><span class="card-title">آخر تصحيحات المصروفات والإيرادات</span></div>
+        <div class="card-body table-scroll">
+            <partial name="_CorrectionLog" model="recent" />
+        </div>
+    </div>
+
+    <div class="overlay" id="exOverlay"></div>
+    <div class="modal modal-sm" id="cancelModal" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+        <form asp-action="CancelExpense" method="post">
+            <div class="modal-header">
+                <span class="modal-title" id="cancelTitle">إلغاء الحركة</span>
+                <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3 text-sm">ستُلغى هذه الحركة وتخرج من الأرصدة والتقارير: <b data-text="label"></b></p>
+                <input type="hidden" name="expenseId" />
+                <input type="hidden" name="page" value="@entries?.Page" />
+                <div class="form-group">
+                    <label for="cancelReason">السبب (اختياري)</label>
+                    <input id="cancelReason" name="reason" data-clear maxlength="500" placeholder="مثال: سُجّلت بالخطأ" autocomplete="off" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                <button type="submit" class="btn btn-danger">إلغاء الحركة</button>
+            </div>
+        </form>
+    </div>
+}
+
+@section Scripts {
+    <script src="~/js/expenses.js" asp-append-version="true"></script>
+}

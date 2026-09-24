@@ -1,0 +1,157 @@
+@model HanyOptics.BusinessLogic.Models.ExpenseRequest
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@{
+    ViewData["Title"] = "المصروفات والإيرادات";
+    var drawer = (DrawerSummary)ViewBag.Drawer;
+    var entries = (PagedResult<ExpenseEntry>)ViewBag.Entries;
+    var report = (ExpenseMonthReport)ViewBag.Report;
+    var expenseCats = (IReadOnlyList<string>)ViewBag.ExpenseCategories;
+    var incomeCats = (IReadOnlyList<string>)ViewBag.IncomeCategories;
+    var max = report.Categories.Count > 0 ? report.Categories.Max(c => c.Total) : 0m;
+}
+
+<div class="page-header">
+    <h2>💸 المصروفات والإيرادات</h2>
+    <a class="btn btn-outline" href="#report">📊 التقرير الشهري</a>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">
+    سجّل كل ما يصرفه المحل وكل ما يدخله بدون فاتورة، سواء من الدرج أو من خارجه.
+</p>
+
+@if (TempData["ExpenseMessage"] is string message)
+{
+    <div class="alert alert-success">✅ @message</div>
+}
+@if (TempData["ExpenseError"] is string error)
+{
+    <div class="alert alert-danger">⚠️ @error</div>
+}
+<div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+<datalist id="catExpense">@foreach (var c in expenseCats) { <option value="@c"></option> }</datalist>
+<datalist id="catIncome">@foreach (var c in incomeCats) { <option value="@c"></option> }</datalist>
+
+<div class="section-divider"><span>➕ تسجيل حركة جديدة</span></div>
+
+<form asp-action="Add" method="post" class="js-expense-form" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+    <div class="wizard-content mb-3">
+        <partial name="_ExpenseFields" model="Model" view-data="@(new ViewDataDictionary(ViewData) { ["Suppliers"] = ViewBag.Suppliers })" />
+        <div class="wizard-footer">
+            <span class="text-muted text-sm">رصيد الدرج الآن: <b class="num">@ExpenseDisplay.Money(drawer.Balance)</b></span>
+            <button type="submit" class="btn btn-primary btn-lg">✔️ تسجيل الحركة</button>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">آخر الحركات</span>
+        <span class="text-muted text-sm">يمكنك إلغاء أي حركة سُجّلت بالخطأ، أو تعديلها من صفحة التصحيحات.</span>
+    </div>
+    <div class="card-body table-scroll">
+        @if (entries.TotalCount == 0)
+        {
+            <div class="empty-state">لا توجد حركات مسجّلة بعد.</div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr><th>التاريخ</th><th>النوع</th><th>المصدر</th><th class="num">المبلغ</th><th>التصنيف</th><th>المورد</th><th>المستخدم</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var e in entries.Items)
+                {
+                    var (typeCss, typeLabel) = ExpenseDisplay.Type(e.EntryType);
+                    var (srcCss, srcLabel) = ExpenseDisplay.Source(e);
+                    <tr class="@(e.IsCancelled ? "row-cancelled" : "")">
+                        <td class="num">@ExpenseDisplay.DateTimeShort(e.PaidAt)</td>
+                        <td><span class="badge @typeCss">@typeLabel</span></td>
+                        <td><span class="badge @srcCss">@srcLabel</span></td>
+                        <td class="num amount @(e.IsIncome ? "amt-in" : "")">@ExpenseDisplay.Money(e.Amount)</td>
+                        <td>@(e.Category ?? "—")</td>
+                        <td>@(e.SupplierName ?? "—")</td>
+                        <td>@(e.CreatedBy ?? "—")</td>
+                        <td class="actions">
+                            @if (e.IsCancelled)
+                            {
+                                <span class="badge badge-user" title="@e.CancelReason">ملغاة</span>
+                            }
+                            else
+                            {
+                                <a class="btn btn-outline btn-sm" asp-controller="Corrections" asp-action="Index" asp-route-edit="@e.ExpenseId">تعديل</a>
+                                <button type="button" class="btn btn-outline btn-sm" data-modal-open="cancelModal"
+                                        data-fields='@Json.Serialize(new { expenseId = e.ExpenseId, label = $"{typeLabel} — {ExpenseDisplay.Money(e.Amount)}" })'>إلغاء</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+    <partial name="_Pager" model="PagerInfo.From(entries)" />
+</div>
+
+<div class="card" id="report">
+    <div class="card-header">
+        <span class="card-title">تقرير المصروفات — @ExpenseDisplay.MonthName(report.Year, report.Month)</span>
+        <form method="get" class="flex gap-2 items-center">
+            <input type="month" name="month" value="@($"{report.Year:D4}-{report.Month:D2}")" style="width:170px" aria-label="الشهر" />
+            <button type="submit" class="btn btn-outline btn-sm">عرض</button>
+        </form>
+    </div>
+    <div class="card-pad">
+        <p class="card-note mb-3">إجمالي مصروفات المحل لكل تصنيف خلال الشهر. لا يشمل مسحوبات المالك.</p>
+        @if (report.Categories.Count == 0)
+        {
+            <div class="empty-state" style="padding:20px">لا توجد مصروفات في هذا الشهر.</div>
+        }
+        else
+        {
+            <div class="cat-bars">
+                @foreach (var c in report.Categories)
+                {
+                    var width = max > 0 ? Math.Max(3, c.Total / max * 100) : 0;
+                    <div class="cat-row" title="@c.Count حركة">
+                        <span class="cat-name">@c.Category</span>
+                        <div class="cat-track"><div class="cat-fill" style="width:@(width.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></div></div>
+                        <span class="cat-val">@ExpenseDisplay.Money(c.Total)</span>
+                    </div>
+                }
+            </div>
+            <div class="flex justify-between mt-3" style="border-top:1px solid #f1f5f9;padding-top:10px;font-size:13px">
+                <b>الإجمالي</b><b class="num">@ExpenseDisplay.Money(report.Total)</b>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="overlay" id="exOverlay"></div>
+<div class="modal modal-sm" id="cancelModal" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+    <form asp-action="Cancel" method="post">
+        <div class="modal-header">
+            <span class="modal-title" id="cancelTitle">إلغاء الحركة</span>
+            <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="mb-3" style="font-size:13px">ستُلغى هذه الحركة وتخرج من الأرصدة والتقارير: <b data-text="label"></b></p>
+            <input type="hidden" name="expenseId" />
+            <input type="hidden" name="page" value="@entries.Page" />
+            <div class="form-group">
+                <label for="cancelReason">السبب (اختياري)</label>
+                <input id="cancelReason" name="reason" data-clear placeholder="مثال: سُجّلت بالخطأ" autocomplete="off" />
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+            <button type="submit" class="btn btn-danger">إلغاء الحركة</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script src="~/js/expenses.js" asp-append-version="true"></script>
+}

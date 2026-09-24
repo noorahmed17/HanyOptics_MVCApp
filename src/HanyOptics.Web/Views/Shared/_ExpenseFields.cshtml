@@ -1,0 +1,85 @@
+@model HanyOptics.BusinessLogic.Models.ExpenseRequest
+@using HanyOptics.BusinessLogic.Models
+@*
+    The fields of an expense / draw / income entry, shared by the add form (المصروفات
+    والإيرادات) and the edit form (التصحيحات) so both follow the same rules. The form around
+    it carries class "js-expense-form"; expenses.js keeps the choices consistent as they are
+    clicked, and sp_add_expense / sp_update_expense decide in the end.
+
+    ViewData: "Suppliers" (IReadOnlyList<SupplierOption>), "DateHint" (string, optional).
+    The page renders <datalist id="catExpense"> and <datalist id="catIncome"> once.
+*@
+@{
+    var suppliers = ViewData["Suppliers"] as IReadOnlyList<SupplierOption> ?? [];
+    var dateHint = ViewData["DateHint"] as string ?? "اتركه فارغًا لحركة اليوم، واستخدمه فقط لتسجيل حركة سابقة.";
+    bool IsType(string t) => Model.EntryType == t;
+    bool IsSource(string s) => (Model.FundingSource ?? FundingSources.Drawer) == s;
+}
+
+<div class="form-group">
+    <label>نوع الحركة</label>
+    <div class="seg">
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.Expense" checked="@IsType(ExpenseEntryTypes.Expense)" /><span>مصروف</span></label>
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.OwnerDraw" checked="@IsType(ExpenseEntryTypes.OwnerDraw)" /><span>مسحوبات المالك</span></label>
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.Income" checked="@IsType(ExpenseEntryTypes.Income)" /><span>إيراد آخر</span></label>
+    </div>
+    <div class="form-hint" data-show-if="EntryType=expense">مبلغ يُدفع لتشغيل المحل، ويظهر في تقرير المصروفات.</div>
+    <div class="form-hint" data-show-if="EntryType=owner_draw">مبلغ شخصي للمالك، ولا يُحسب من مصروفات المحل.</div>
+    <div class="form-hint" data-show-if="EntryType=income">مبلغ يدخل المحل بدون فاتورة بيع، مثل التصليحات.</div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Amount">المبلغ (ج) *</label>
+        <input asp-for="Amount" type="number" min="0.01" step="0.01" placeholder="مثال: 1500" autocomplete="off" />
+        <div class="field-error" data-drawer-warn hidden></div>
+    </div>
+    <div class="form-group">
+        <label>مصدر المبلغ</label>
+        <div class="seg">
+            <label><input type="radio" name="FundingSource" value="@FundingSources.Drawer" checked="@IsSource(FundingSources.Drawer)" /><span>من الدرج</span></label>
+            <label><input type="radio" name="FundingSource" value="@FundingSources.Outside" checked="@IsSource(FundingSources.Outside)" /><span>من خارج الدرج</span></label>
+        </div>
+        <div class="form-hint" data-show-if="EntryType=income">الإيراد الآخر يُضاف إلى الدرج دائمًا.</div>
+        <div class="form-hint" data-show-if="EntryType=expense,owner_draw&FundingSource=drawer">يُخصم من رصيد الدرج ويظهر في إغلاق اليومية.</div>
+        <div class="form-hint" data-show-if="EntryType=expense,owner_draw&FundingSource=outside">مبلغ دُفع من مال محفوظ خارج الدرج، فلا يغيّر رصيد اليوم.</div>
+    </div>
+</div>
+
+@* No payment-method choice on this form: a new entry is always cash. The hidden field
+   carries an existing entry's method through an edit untouched, so correcting the amount
+   of an old card entry does not quietly turn it into cash. Moving an expense onto the
+   drawer still makes it cash - ExpenseService.Normalise applies that rule. *@
+<input type="hidden" name="PaymentMethod" value="@(Model.PaymentMethod ?? PaymentMethods.Cash)" />
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Category">التصنيف</label>
+        <input asp-for="Category" maxlength="100" data-list-expense="catExpense" data-list-income="catIncome"
+               placeholder="اختر أو اكتب، مثل: كهرباء" autocomplete="off" />
+        <div class="form-hint">يُستخدم لتجميع المصروفات في التقرير الشهري.</div>
+    </div>
+    <div class="form-group" data-show-if="EntryType=expense">
+        <label for="SupplierId">المورد (عند الدفع لمورد)</label>
+        <select asp-for="SupplierId">
+            <option value="">بدون مورد</option>
+            @foreach (var s in suppliers)
+            {
+                <option value="@s.SupplierId" selected="@(Model.SupplierId == s.SupplierId)">@s.Name</option>
+            }
+        </select>
+        <div class="form-hint">اختر المورد ليُخصم المبلغ من المستحق له.</div>
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Description">ملاحظات</label>
+        <input asp-for="Description" maxlength="500" placeholder="أي تفاصيل إضافية (اختياري)" autocomplete="off" />
+    </div>
+    <div class="form-group">
+        <label for="PaidAt">تاريخ الحركة (اختياري)</label>
+        <input name="PaidAt" id="PaidAt" type="datetime-local" value="@Model.PaidAt?.ToString("yyyy-MM-ddTHH:mm")" />
+        <div class="form-hint">@dateHint</div>
+    </div>
+</div>

@@ -1,0 +1,208 @@
+@model HanyOptics.BusinessLogic.Models.ExpenseRequest
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@{
+    ViewData["Title"] = "حركة الدرج";
+    var drawer = (DrawerSummary)ViewBag.Drawer;
+
+    // A refused post comes back with the type still chosen, so the form reopens where the
+    // user left it instead of making them pick the action again.
+    var chosen = ViewData.ModelState.IsValid ? null : Model.EntryType;
+    bool Is(string type) => chosen == type;
+    bool IsSource(string source) => (Model.FundingSource ?? FundingSources.Drawer) == source;
+    bool IsMethod(string method) => (Model.PaymentMethod ?? PaymentMethods.Cash) == method;
+}
+
+<div class="page-header">
+    <h2>💵 حركة الدرج</h2>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">
+    سجّل هنا أي مبلغ تصرفه أو يدخل المحل اليوم بدون فاتورة بيع.
+</p>
+
+@if (TempData["DrawerMessage"] is string message)
+{
+    <div class="alert alert-success">✅ @message</div>
+}
+@if (TempData["DrawerError"] is string error)
+{
+    <div class="alert alert-danger">⚠️ @error</div>
+}
+<div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+<div class="stats-grid">
+    <div class="stat-card hero">
+        <div class="stat-label">الرصيد الحالي في الدرج</div>
+        <div class="stat-value num">@ExpenseDisplay.Money(drawer.Balance)</div>
+        <div class="stat-sub">نقدية اليوم بعد احتساب المرتجعات وكل الحركات المسجلة.</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-label">نقدية المبيعات اليوم</div>
+        <div class="stat-value num c-blue">@ExpenseDisplay.Money(drawer.SalesCash)</div>
+        <div class="stat-sub">كاش الفواتير ناقص المردودات</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon">↕️</div>
+        <div class="stat-label">صافي حركات الدرج</div>
+        <div class="stat-value num @(drawer.EntriesEffect < 0 ? "c-red" : "c-green")">@ExpenseDisplay.Money(drawer.EntriesEffect)</div>
+        <div class="stat-sub">إيرادات نقدية ناقص ما صُرف من الدرج</div>
+    </div>
+</div>
+
+<form asp-action="Add" method="post" class="js-expense-form" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+    <div class="wizard-content mb-3">
+        <div class="action-cards">
+            <label class="action-card k-expense">
+                <input type="radio" name="EntryType" value="@ExpenseEntryTypes.Expense" checked="@Is(ExpenseEntryTypes.Expense)" />
+                <span class="ac-body">
+                    <span class="ac-icon">🧾</span>
+                    <span class="ac-title">صرف مصروف</span>
+                    <span class="ac-desc">مبلغ دُفع لمصروف يخص المحل</span>
+                </span>
+            </label>
+            <label class="action-card k-owner">
+                <input type="radio" name="EntryType" value="@ExpenseEntryTypes.OwnerDraw" checked="@Is(ExpenseEntryTypes.OwnerDraw)" />
+                <span class="ac-body">
+                    <span class="ac-icon">👛</span>
+                    <span class="ac-title">سحب للمالك</span>
+                    <span class="ac-desc">مبلغ يأخذه المالك من الدرج لاستخدام شخصي</span>
+                </span>
+            </label>
+            <label class="action-card k-income">
+                <input type="radio" name="EntryType" value="@ExpenseEntryTypes.Income" checked="@Is(ExpenseEntryTypes.Income)" />
+                <span class="ac-body">
+                    <span class="ac-icon">🪙</span>
+                    <span class="ac-title">إيراد آخر</span>
+                    <span class="ac-desc">مبلغ يدخل بدون فاتورة، مثل التصليحات</span>
+                </span>
+            </label>
+        </div>
+
+        <div data-show-if="EntryType=expense,owner_draw,income" hidden>
+            <div class="section-divider">
+                <span data-show-if="EntryType=expense">تسجيل مصروف</span>
+                <span data-show-if="EntryType=owner_draw">تسجيل سحب للمالك</span>
+                <span data-show-if="EntryType=income">تسجيل إيراد آخر</span>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="Amount">المبلغ (ج) *</label>
+                    <input asp-for="Amount" type="number" min="0.01" step="0.01" placeholder="مثال: 250" autocomplete="off" />
+                    <div class="field-error" data-drawer-warn hidden></div>
+                </div>
+                <div class="form-group">
+                    <label for="Description">
+                        <span data-show-if="EntryType=expense">سبب الصرف *</span>
+                        <span data-show-if="EntryType=owner_draw">سبب السحب *</span>
+                        <span data-show-if="EntryType=income">مصدر الإيراد *</span>
+                    </label>
+                    <input asp-for="Description" maxlength="100" required placeholder="مثال: فاتورة الكهرباء / تصليح نظارة" autocomplete="off" />
+                </div>
+            </div>
+
+            @* Only an expense can come from outside the drawer at the till: a draw is by
+               definition money taken out of it, and income always goes in. *@
+            <div class="form-group" data-show-if="EntryType=expense">
+                <label>مصدر المبلغ</label>
+                <div class="seg">
+                    <label><input type="radio" name="FundingSource" value="@FundingSources.Drawer" checked="@IsSource(FundingSources.Drawer)" /><span>من إيرادات اليوم</span></label>
+                    <label><input type="radio" name="FundingSource" value="@FundingSources.Outside" checked="@IsSource(FundingSources.Outside)" /><span>من خارج الدرج</span></label>
+                </div>
+                <div class="form-hint" data-show-if="EntryType=expense&FundingSource=drawer">يُخصم من رصيد الدرج.</div>
+                <div class="form-hint" data-show-if="EntryType=expense&FundingSource=outside">مبلغ دُفع من مال آخر، فلا يغيّر رصيد الدرج.</div>
+            </div>
+
+            @* Payment method only matters where it can differ from cash: income, or an
+               expense paid from outside the drawer. *@
+            <div class="form-group" data-show-if="EntryType=income|EntryType=expense&FundingSource=outside">
+                <label>طريقة الدفع</label>
+                <div class="seg">
+                    <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Cash" checked="@IsMethod(PaymentMethods.Cash)" /><span>نقدًا</span></label>
+                    <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Visa" checked="@IsMethod(PaymentMethods.Visa)" /><span>بطاقة</span></label>
+                </div>
+                <div class="form-hint" data-show-if="EntryType=income&PaymentMethod=visa">المبلغ بالبطاقة لا يُضاف لنقدية الدرج.</div>
+            </div>
+
+            <div class="wizard-footer">
+                <span class="text-muted text-sm">تظهر الحركة فورًا في جدول اليوم وفي رصيد الدرج.</span>
+                <button type="submit" class="btn btn-primary btn-lg">✔️ تسجيل</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">حركات اليوم</span>
+        <span class="text-muted text-sm">يوم الشغل @drawer.BusinessDate.ToString("dddd d MMMM", ExpenseDisplay.ArEg)</span>
+    </div>
+    <div class="card-body table-scroll">
+        @if (drawer.TodayEntries.Count == 0)
+        {
+            <div class="empty-state">لم تُسجَّل أي حركة اليوم.</div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr><th>الوقت</th><th>النوع</th><th>المصدر</th><th class="num">المبلغ</th><th>الوصف</th><th>المستخدم</th><th></th></tr>
+                </thead>
+                <tbody>
+                @foreach (var e in drawer.TodayEntries)
+                {
+                    var (typeCss, typeLabel) = ExpenseDisplay.Type(e.EntryType);
+                    var (srcCss, srcLabel) = ExpenseDisplay.Source(e);
+                    <tr class="@(e.IsCancelled ? "row-cancelled" : "")">
+                        <td class="num">@ExpenseDisplay.Time(e.PaidAt)</td>
+                        <td><span class="badge @typeCss">@typeLabel</span></td>
+                        <td><span class="badge @srcCss">@srcLabel</span></td>
+                        <td class="num amount @(e.IsIncome ? "amt-in" : "amt-out")">@(e.IsIncome ? "+" : "−")@ExpenseDisplay.Money(e.Amount)</td>
+                        <td>@(e.Description ?? e.Category ?? "—")</td>
+                        <td>@(e.CreatedBy ?? "—")</td>
+                        <td class="actions">
+                            @if (e.IsCancelled)
+                            {
+                                <span class="badge badge-user" title="@e.CancelReason">ملغاة</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-outline btn-sm" data-modal-open="cancelModal"
+                                        data-fields='@Json.Serialize(new { expenseId = e.ExpenseId, label = $"{typeLabel} — {ExpenseDisplay.Money(e.Amount)}" })'>إلغاء</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<div class="overlay" id="exOverlay"></div>
+<div class="modal modal-sm" id="cancelModal" role="dialog" aria-modal="true" aria-labelledby="cancelTitle">
+    <form asp-action="Cancel" method="post">
+        <div class="modal-header">
+            <span class="modal-title" id="cancelTitle">إلغاء الحركة</span>
+            <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+        </div>
+        <div class="modal-body">
+            <p class="mb-3" style="font-size:13px">ستُلغى هذه الحركة ويتغيّر رصيد الدرج: <b data-text="label"></b></p>
+            <input type="hidden" name="expenseId" />
+            <div class="form-group">
+                <label for="cancelReason">السبب (اختياري)</label>
+                <input id="cancelReason" name="reason" data-clear placeholder="مثال: سُجّلت بالخطأ" autocomplete="off" />
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+            <button type="submit" class="btn btn-danger">إلغاء الحركة</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script src="~/js/expenses.js" asp-append-version="true"></script>
+}

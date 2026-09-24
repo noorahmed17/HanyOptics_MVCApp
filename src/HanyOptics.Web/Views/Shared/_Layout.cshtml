@@ -7,6 +7,8 @@
     string NavClassFor(string controller, string action) =>
         currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) && currentAction.Equals(action, StringComparison.OrdinalIgnoreCase)
             ? "nav-item active" : "nav-item";
+    var inExpenses = new[] { "Drawer", "Expenses", "Suppliers", "Corrections" }
+        .Contains(currentController, StringComparer.OrdinalIgnoreCase);
 }
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -42,6 +44,19 @@
             @* قفلة اليوم stays open to everyone: whoever is closing up needs it, and that is
                not always the owner. التقارير is admin-only - it carries costs and margins. *@
             <a class="@NavClass("DailyClose")" asp-controller="DailyClose" asp-action="Index"><span class="nav-icon">🌙</span> قفلة اليوم</a>
+            @* المصروفات opens into its own pages. حركة الدرج is for whoever is at the till; the
+               other three move the shop's money and are the admin's. Open while any of them
+               is the current page, so the user can see where they are. *@
+            <details class="nav-group" open="@(inExpenses ? "open" : null)">
+                <summary class="nav-item@(inExpenses ? " active" : "")"><span class="nav-icon">💸</span> المصروفات <span class="nav-caret">‹</span></summary>
+                <a class="@NavClass("Drawer") nav-sub" asp-controller="Drawer" asp-action="Index">حركة الدرج</a>
+                @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+                {
+                    <a class="@NavClass("Expenses") nav-sub" asp-controller="Expenses" asp-action="Index">المصروفات والإيرادات</a>
+                    <a class="@NavClass("Suppliers") nav-sub" asp-controller="Suppliers" asp-action="Index">الموردون</a>
+                    <a class="@NavClass("Corrections") nav-sub" asp-controller="Corrections" asp-action="Index">التصحيحات</a>
+                }
+            </details>
             @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
             {
                 <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
