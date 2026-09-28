@@ -17,6 +17,7 @@ public class ExpenseService : IExpenseService
     // has actually been used is offered alongside these (see GetCategorySuggestionsAsync).
     private static readonly string[] ExpenseStarters = ["كهرباء", "إيجار", "رواتب", "نظافة", "شركة عدسات", "تجار إطارات"];
     private static readonly string[] IncomeStarters = ["تصليحات", "إكسسوارات"];
+    private static readonly string[] OwnerDrawStarters = ["مصاريف شخصية", "مصاريف البيت", "سلفة"];
 
     // Joined rather than read from the table alone so the list shows who and which
     // supplier instead of bare ids.
@@ -132,11 +133,20 @@ public class ExpenseService : IExpenseService
             {
                 ExpenseEntryTypes.Expense => ExpenseStarters,
                 ExpenseEntryTypes.Income => IncomeStarters,
+                ExpenseEntryTypes.OwnerDraw => OwnerDrawStarters,
                 _ => []
             };
 
             return used.Concat(starters).Distinct().ToList();
         });
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetCategoryListsAsync() =>
+        new Dictionary<string, IReadOnlyList<string>>
+        {
+            [ExpenseEntryTypes.Expense] = await GetCategorySuggestionsAsync(ExpenseEntryTypes.Expense),
+            [ExpenseEntryTypes.OwnerDraw] = await GetCategorySuggestionsAsync(ExpenseEntryTypes.OwnerDraw),
+            [ExpenseEntryTypes.Income] = await GetCategorySuggestionsAsync(ExpenseEntryTypes.Income)
+        };
 
     public async Task<OperationResult> AddAsync(ExpenseRequest request)
     {
@@ -243,7 +253,16 @@ public class ExpenseService : IExpenseService
 
         if (request.EntryType == ExpenseEntryTypes.Income)
             request.FundingSource = FundingSources.Drawer;
-        else if (request.FundingSource == FundingSources.Drawer)
+
+        // An owner's draw is cash taken out of the drawer, by definition (v8). Forced here
+        // rather than trusted from the form: on حركة الدرج the "from outside" choice belongs
+        // to the expense card, and if the user picked it there and then switched to سحب
+        // للمالك the hidden radio still posted "outside" - recording the draw without
+        // taking it off the drawer or checking the balance.
+        if (request.EntryType == ExpenseEntryTypes.OwnerDraw)
+            request.FundingSource = FundingSources.Drawer;
+
+        if (request.EntryType != ExpenseEntryTypes.Income && request.FundingSource == FundingSources.Drawer)
             request.PaymentMethod = PaymentMethods.Cash;
 
         if (request.EntryType != ExpenseEntryTypes.Expense)

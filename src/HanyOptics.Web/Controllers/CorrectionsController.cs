@@ -130,6 +130,7 @@ public class CorrectionsController : Controller
             ViewBag.EditModel = editModel;
             ViewBag.Suppliers = await _suppliers.GetOptionsAsync();
             ViewBag.RecentCorrections = await _corrections.GetRecentExpenseCorrectionsAsync();
+            ViewBag.CategoryLists = await _expenses.GetCategoryListsAsync();
         }
     }
 

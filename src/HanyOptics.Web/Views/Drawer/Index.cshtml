@@ -31,6 +31,8 @@
 }
 <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
 
+<partial name="_CategoryLists" model="(IReadOnlyDictionary<string, IReadOnlyList<string>>)ViewBag.CategoryLists" />
+
 <div class="stats-grid">
     <div class="stat-card hero">
         <div class="stat-label">الرصيد الحالي في الدرج</div>
@@ -51,7 +53,7 @@
     </div>
 </div>
 
-<form asp-action="Add" method="post" class="js-expense-form" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+<form asp-action="Add" method="post" class="js-expense-form" data-default-source="outside" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
     <div class="wizard-content mb-3">
         <div class="action-cards">
             <label class="action-card k-expense">
@@ -99,7 +101,8 @@
                         <span data-show-if="EntryType=owner_draw">سبب السحب *</span>
                         <span data-show-if="EntryType=income">مصدر الإيراد *</span>
                     </label>
-                    <input asp-for="Description" maxlength="100" required placeholder="مثال: فاتورة الكهرباء / تصليح نظارة" autocomplete="off" />
+                    <input asp-for="Description" maxlength="100" required class="combo" data-category
+                           placeholder="اختر من القائمة أو اكتب" autocomplete="off" />
                 </div>
             </div>
 

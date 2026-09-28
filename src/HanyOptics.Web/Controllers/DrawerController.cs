@@ -22,7 +22,11 @@ public class DrawerController : Controller
     public async Task<IActionResult> Index()
     {
         ViewBag.Drawer = await _expenses.GetDrawerAsync();
-        return View(new ExpenseRequest());
+        ViewBag.CategoryLists = await _expenses.GetCategoryListsAsync();
+
+        // صرف مصروف starts on «من خارج الدرج»; a draw and income are forced to the drawer
+        // whatever this says.
+        return View(new ExpenseRequest { FundingSource = FundingSources.Outside });
     }
 
     [HttpPost]
@@ -41,6 +45,7 @@ public class DrawerController : Controller
         {
             ModelState.AddModelError(string.Empty, outcome.ErrorMessage!);
             ViewBag.Drawer = await _expenses.GetDrawerAsync();
+            ViewBag.CategoryLists = await _expenses.GetCategoryListsAsync();
             return View(nameof(Index), model);
         }
 

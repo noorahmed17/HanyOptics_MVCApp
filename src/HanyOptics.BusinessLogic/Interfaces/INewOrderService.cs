@@ -20,6 +20,11 @@ public interface INewOrderService
     Task<CustomerLookupResult> LookupCustomerByPhoneAsync(string phone);
     Task<FrameLookupResult> LookupFrameByBarcodeAsync(string barcode);
     Task<IReadOnlyList<Doctor>> GetDoctorsAsync();
+
+    // The lens descriptions typed most often, most-used first - offered as the drop-down on
+    // the lens box so the counter picks a common one instead of retyping it (and spelling it
+    // a slightly different way each time).
+    Task<IReadOnlyList<string>> GetLensSuggestionsAsync();
     Task<Customer?> GetCustomerAsync(int customerId);
 
     // Checked while the user is still on step 1 so a clash is reported immediately rather

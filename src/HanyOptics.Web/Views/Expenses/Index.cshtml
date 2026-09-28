@@ -6,8 +6,6 @@
     var drawer = (DrawerSummary)ViewBag.Drawer;
     var entries = (PagedResult<ExpenseEntry>)ViewBag.Entries;
     var report = (ExpenseMonthReport)ViewBag.Report;
-    var expenseCats = (IReadOnlyList<string>)ViewBag.ExpenseCategories;
-    var incomeCats = (IReadOnlyList<string>)ViewBag.IncomeCategories;
     var max = report.Categories.Count > 0 ? report.Categories.Max(c => c.Total) : 0m;
 }
 
@@ -30,12 +28,11 @@
 }
 <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
 
-<datalist id="catExpense">@foreach (var c in expenseCats) { <option value="@c"></option> }</datalist>
-<datalist id="catIncome">@foreach (var c in incomeCats) { <option value="@c"></option> }</datalist>
+<partial name="_CategoryLists" model="(IReadOnlyDictionary<string, IReadOnlyList<string>>)ViewBag.CategoryLists" />
 
 <div class="section-divider"><span>➕ تسجيل حركة جديدة</span></div>
 
-<form asp-action="Add" method="post" class="js-expense-form" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
+<form asp-action="Add" method="post" class="js-expense-form" data-default-source="outside" data-drawer-balance="@drawer.Balance.ToString(System.Globalization.CultureInfo.InvariantCulture)">
     <div class="wizard-content mb-3">
         <partial name="_ExpenseFields" model="Model" view-data="@(new ViewDataDictionary(ViewData) { ["Suppliers"] = ViewBag.Suppliers })" />
         <div class="wizard-footer">

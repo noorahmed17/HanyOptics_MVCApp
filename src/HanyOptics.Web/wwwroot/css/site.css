@@ -1,5 +1,8 @@
 /* Ported from HanyOptics_Prototype.html / HanyOptics_Scenarios.html design system. */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* The hidden attribute must always hide. Without this any class that sets display (a
+   .form-row is a grid) quietly overrides it, and a field meant to be gone stays on screen. */
+[hidden] { display: none !important; }
 body {
     /* Tahoma first, not Segoe UI: Segoe UI's Arabic coverage is partial and only some
        weights fall back to a properly-shaped Arabic face, which is why bold labels looked
@@ -452,3 +455,40 @@ td.actions .btn + .btn, td.actions form + form, td.actions .btn + form { margin-
     .action-cards, .two-col, .form-row, .master-detail { grid-template-columns: 1fr; }
     .cat-row { grid-template-columns: 90px 1fr 90px; }
 }
+
+/* الموردون: what to record, as three separate choices rather than two look-alike forms
+   side by side. Each has its own colour, carried into the window it opens, and says which
+   way it moves the amount owed. */
+.supplier-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+.supplier-action { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 16px 12px; border: 1.5px solid #e2e8f0; border-top-width: 4px; border-radius: 12px; background: #fff; cursor: pointer; font-family: inherit; color: inherit; text-decoration: none; transition: all .15s; }
+.supplier-action:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, .07); transform: translateY(-1px); }
+.supplier-action:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.sa-icon { font-size: 24px; line-height: 1; }
+.sa-title { font-size: 14px; font-weight: 700; color: #1a202c; }
+.sa-desc { font-size: 11.5px; color: #6b7280; line-height: 1.5; }
+.sa-effect { margin-top: 4px; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.supplier-action.tone-invoice { border-top-color: #1a56db; }
+.supplier-action.tone-invoice .sa-effect { background: #fee2e2; color: #b91c1c; }
+.supplier-action.tone-return { border-top-color: #c2410c; }
+.supplier-action.tone-return .sa-effect,
+.supplier-action.tone-payment .sa-effect { background: #dcfce7; color: #15803d; }
+.supplier-action.tone-payment { border-top-color: #057a55; }
+
+.modal-header.tone-invoice { border-top: 4px solid #1a56db; }
+.modal-header.tone-return { border-top: 4px solid #c2410c; }
+.btn-return { background: #c2410c; color: #fff; }
+.btn-return:hover { background: #9a3412; }
+
+.balance-preview { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: #475569; }
+.balance-preview b { color: #1a202c; }
+
+@media (max-width: 900px) { .supplier-actions { grid-template-columns: 1fr; } }
+
+/* A pick-or-type box (a category, a lens description) says so with a permanent drop-down
+   arrow like a <select>. The browser's own list marker only appears on hover, so it is
+   replaced; clicking the box opens the list (site.js). */
+input.combo {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: left 12px center; padding-left: 32px; cursor: pointer;
+}
+input.combo::-webkit-calendar-picker-indicator { display: none !important; }

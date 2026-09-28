@@ -24,7 +24,10 @@ public class ExpensesController : Controller
     public async Task<IActionResult> Index(int? page, string? month)
     {
         await PrepareAsync(page, month);
-        return View(new ExpenseRequest());
+
+        // A new expense starts as paid from outside the drawer - the usual case for the
+        // shop's running costs. Paying one from the drawer is a deliberate choice.
+        return View(new ExpenseRequest { FundingSource = FundingSources.Outside });
     }
 
     [HttpPost]
@@ -72,7 +75,6 @@ public class ExpensesController : Controller
         ViewBag.Entries = await _expenses.GetEntriesAsync(page);
         ViewBag.Report = await _expenses.GetMonthReportAsync(year, monthNo);
         ViewBag.Suppliers = await _suppliers.GetOptionsAsync();
-        ViewBag.ExpenseCategories = await _expenses.GetCategorySuggestionsAsync(ExpenseEntryTypes.Expense);
-        ViewBag.IncomeCategories = await _expenses.GetCategorySuggestionsAsync(ExpenseEntryTypes.Income);
+        ViewBag.CategoryLists = await _expenses.GetCategoryListsAsync();
     }
 }

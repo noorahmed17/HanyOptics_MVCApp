@@ -39,7 +39,10 @@
         var type = checkedValue(form, "EntryType");
         var outside = form.querySelector('input[name="FundingSource"][value="outside"]');
 
-        if (type === "income") {
+        // Income always goes into the drawer, and an owner's draw always comes out of it -
+        // so for both, "from outside" is switched back and locked. Without this a choice
+        // made on the expense card survived, hidden, after switching to سحب للمالك.
+        if (type === "income" || type === "owner_draw") {
             setChecked(form, "FundingSource", "drawer");
             if (outside) outside.disabled = true;
         } else if (outside) {
@@ -56,13 +59,10 @@
             el.hidden = !matches(form, el.getAttribute("data-show-if"));
         });
 
-        // Each type suggests its own categories; an owner draw has none worth suggesting.
-        var category = form.querySelector("input[data-list-expense]");
-        if (category) {
-            var list = type === "income" ? category.getAttribute("data-list-income")
-                : type === "expense" ? category.getAttribute("data-list-expense") : "";
-            if (list) category.setAttribute("list", list); else category.removeAttribute("list");
-        }
+        // Every type has its own list (rendered by _CategoryLists as cat-<type>), so the box
+        // looks and works the same - a drop-down arrow with choices - whichever is picked.
+        var category = form.querySelector("input[data-category]");
+        if (category && type) category.setAttribute("list", "cat-" + type);
 
         checkDrawer(form);
     }
@@ -90,9 +90,38 @@
     }
 
     document.querySelectorAll("form.js-expense-form").forEach(function (form) {
-        form.addEventListener("change", function () { syncExpenseForm(form); });
+        form.addEventListener("change", function (e) {
+            // On a new-entry form (data-default-source), choosing مصروف starts it on that
+            // source again - otherwise the drawer that a draw or income forced stays
+            // selected. Only on the type switch itself, so a source the user then picks
+            // is kept.
+            var fallback = form.getAttribute("data-default-source");
+            if (fallback && e.target.name === "EntryType" && e.target.value === "expense")
+                setChecked(form, "FundingSource", fallback);
+            syncExpenseForm(form);
+        });
         form.addEventListener("input", function () { checkDrawer(form); });
         syncExpenseForm(form);
+    });
+
+    // ── "Owed after saving" line (الموردون) ──────────────────────────────
+    // data-current is what is owed now, data-sign +1 for an invoice and -1 for a return; the
+    // figure updates as the amount is typed, so the direction of the change is visible
+    // before the form is sent.
+    function updatePreview(preview) {
+        var form = preview.closest("form");
+        var amountBox = form && form.querySelector('input[name="Amount"]');
+        var amount = parseFloat(amountBox && amountBox.value) || 0;
+        var after = (parseFloat(preview.getAttribute("data-current")) || 0)
+            + amount * (parseFloat(preview.getAttribute("data-sign")) || 0);
+        var target = preview.querySelector("[data-after]");
+        // Below zero the supplier owes the shop, which a minus sign does not say clearly.
+        if (target) target.textContent = after < 0 ? "لك عند المورد " + money(-after) : money(after);
+    }
+
+    document.querySelectorAll("[data-balance-preview]").forEach(function (preview) {
+        var form = preview.closest("form");
+        if (form) form.addEventListener("input", function () { updatePreview(preview); });
     });
 
     // ── Modals ─────────────────────────────────────────────────────────
@@ -117,6 +146,7 @@
         });
 
         modal.querySelectorAll("[data-clear]").forEach(function (input) { input.value = ""; });
+        modal.querySelectorAll("[data-balance-preview]").forEach(updatePreview);
         modal.classList.add("show");
         if (overlay) overlay.classList.add("show");
 

@@ -7,13 +7,14 @@
     clicked, and sp_add_expense / sp_update_expense decide in the end.
 
     ViewData: "Suppliers" (IReadOnlyList<SupplierOption>), "DateHint" (string, optional).
-    The page renders <datalist id="catExpense"> and <datalist id="catIncome"> once.
+    The page renders the category lists once, with the _CategoryLists partial.
 *@
 @{
     var suppliers = ViewData["Suppliers"] as IReadOnlyList<SupplierOption> ?? [];
     var dateHint = ViewData["DateHint"] as string ?? "اتركه فارغًا لحركة اليوم، واستخدمه فقط لتسجيل حركة سابقة.";
     bool IsType(string t) => Model.EntryType == t;
     bool IsSource(string s) => (Model.FundingSource ?? FundingSources.Drawer) == s;
+    bool IsMethod(string m) => (Model.PaymentMethod ?? PaymentMethods.Cash) == m;
 }
 
 <div class="form-group">
@@ -41,22 +42,32 @@
             <label><input type="radio" name="FundingSource" value="@FundingSources.Outside" checked="@IsSource(FundingSources.Outside)" /><span>من خارج الدرج</span></label>
         </div>
         <div class="form-hint" data-show-if="EntryType=income">الإيراد الآخر يُضاف إلى الدرج دائمًا.</div>
-        <div class="form-hint" data-show-if="EntryType=expense,owner_draw&FundingSource=drawer">يُخصم من رصيد الدرج ويظهر في إغلاق اليومية.</div>
-        <div class="form-hint" data-show-if="EntryType=expense,owner_draw&FundingSource=outside">مبلغ دُفع من مال محفوظ خارج الدرج، فلا يغيّر رصيد اليوم.</div>
+        <div class="form-hint" data-show-if="EntryType=owner_draw">سحب المالك يكون من الدرج ونقدًا دائمًا.</div>
+        <div class="form-hint" data-show-if="EntryType=expense&FundingSource=drawer">يُخصم من رصيد الدرج ويظهر في إغلاق اليومية.</div>
+        <div class="form-hint" data-show-if="EntryType=expense&FundingSource=outside">مبلغ دُفع من مال محفوظ خارج الدرج، فلا يغيّر رصيد اليوم.</div>
     </div>
 </div>
 
-@* No payment-method choice on this form: a new entry is always cash. The hidden field
-   carries an existing entry's method through an edit untouched, so correcting the amount
-   of an old card entry does not quietly turn it into cash. Moving an expense onto the
-   drawer still makes it cash - ExpenseService.Normalise applies that rule. *@
-<input type="hidden" name="PaymentMethod" value="@(Model.PaymentMethod ?? PaymentMethods.Cash)" />
+@* Cash or card, offered only where it can differ: other income, or an expense paid from
+   outside the drawer. It matters most in التصحيحات - card income entered as cash makes
+   the drawer look 300 richer than it is, and this is the only place to put that right
+   for a past day. An owner's draw and anything paid from the drawer are always cash. *@
+<div class="form-row" data-show-if="EntryType=income|EntryType=expense&FundingSource=outside">
+    <div class="form-group">
+        <label>طريقة الدفع</label>
+        <div class="seg">
+            <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Cash" checked="@IsMethod(PaymentMethods.Cash)" /><span>نقدًا</span></label>
+            <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Visa" checked="@IsMethod(PaymentMethods.Visa)" /><span>بطاقة</span></label>
+        </div>
+        <div class="form-hint" data-show-if="EntryType=income&PaymentMethod=visa">المبلغ بالبطاقة لا يُضاف لنقدية الدرج.</div>
+    </div>
+</div>
 
 <div class="form-row">
     <div class="form-group">
         <label for="Category">التصنيف</label>
-        <input asp-for="Category" maxlength="100" data-list-expense="catExpense" data-list-income="catIncome"
-               placeholder="اختر أو اكتب، مثل: كهرباء" autocomplete="off" />
+        <input asp-for="Category" maxlength="100" class="combo" data-category
+               placeholder="اختر من القائمة أو اكتب" autocomplete="off" />
         <div class="form-hint">يُستخدم لتجميع المصروفات في التقرير الشهري.</div>
     </div>
     <div class="form-group" data-show-if="EntryType=expense">

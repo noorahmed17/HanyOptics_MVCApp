@@ -21,6 +21,10 @@ public interface IExpenseService
     // form's suggestion list.
     Task<IReadOnlyList<string>> GetCategorySuggestionsAsync(string entryType);
 
+    // The same, for all three entry types at once, keyed by entry type - what a form that
+    // lets the user switch type needs, so its category box always has a list to offer.
+    Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetCategoryListsAsync();
+
     Task<OperationResult> AddAsync(ExpenseRequest request);
 
     Task<OperationResult> UpdateAsync(UpdateExpenseRequest request);

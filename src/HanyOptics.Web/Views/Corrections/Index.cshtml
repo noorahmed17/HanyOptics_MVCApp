@@ -243,8 +243,7 @@
 }
 else
 {
-    <datalist id="catExpense"></datalist>
-    <datalist id="catIncome"></datalist>
+    <partial name="_CategoryLists" model="(IReadOnlyDictionary<string, IReadOnlyList<string>>)ViewBag.CategoryLists" />
 
     @if (editModel is not null)
     {

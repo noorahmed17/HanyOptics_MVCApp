@@ -19,3 +19,16 @@
         el.blur();
     }, { passive: true });
 })();
+
+// A pick-or-type box (input.combo with a list: a category, a lens description) opens its
+// list on click, like the <select> it looks like. showPicker is not available everywhere;
+// where it is missing, the list still appears as the user types - the browser's own
+// behaviour. Delegated, so it covers boxes in windows fetched after page load too.
+(function () {
+    document.addEventListener("click", function (e) {
+        var combo = e.target.closest && e.target.closest("input.combo[list]");
+        if (combo && typeof combo.showPicker === "function") {
+            try { combo.showPicker(); } catch (err) { /* not allowed right now - typing still works */ }
+        }
+    });
+})();

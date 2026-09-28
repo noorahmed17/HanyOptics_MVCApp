@@ -231,6 +231,10 @@ if (args.Length >= 2 && args[0] == "--dump")
         ("daily-sales",    "/Reports/Show?id=daily-sales"),
         ("outstanding",    "/Reports/Show?id=outstanding"),
         ("orders",         "/Orders"),
+        ("drawer",         "/Drawer"),
+        ("expenses",       "/Expenses"),
+        ("suppliers",      "/Suppliers"),
+        ("corrections",    "/Corrections"),
     })
     {
         var page = await dumper.GetStringAsync(url);
@@ -474,8 +478,48 @@ foreach (var (url, marker) in new[]
 }
 
 var expensesForm = await expAdmin.GetStringAsync("/Expenses");
-Check("المصروفات والإيرادات offers no payment-method choice",
-      !expensesForm.Contains("طريقة الدفع") && !expensesForm.Contains("type=\"radio\" name=\"PaymentMethod\""));
+Check("المصروفات والإيرادات offers نقدًا/بطاقة again",
+      expensesForm.Contains("طريقة الدفع") && expensesForm.Contains("name=\"PaymentMethod\" value=\"visa\""));
+
+foreach (var url in new[] { "/Drawer", "/Expenses" })
+{
+    var page = await expAdmin.GetStringAsync(url);
+    Check($"{url}: a new expense starts on «من خارج الدرج»",
+          System.Text.RegularExpressions.Regex.IsMatch(page, "name=\"FundingSource\" value=\"outside\" checked"));
+    Check($"{url}: one category drop-down with a list for each of the three types",
+          page.Contains("id=\"cat-expense\"") && page.Contains("id=\"cat-owner_draw\"") && page.Contains("id=\"cat-income\"")
+          && page.Contains("class=\"combo\""));
+}
+
+// طلب جديد / إضافة بند: the lens box offers the most-used descriptions, most-used first.
+using (var lensScope = factory.Services.CreateScope())
+{
+    var lensDb = lensScope.ServiceProvider.GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
+    var openOrder = await lensDb.Orders.AsNoTracking()
+        .Where(o => o.Status == HanyOptics.Domain.Enums.OrderStatus.Sold).Select(o => o.OrderId).FirstOrDefaultAsync();
+    var topLens = (await lensDb.Database.SqlQueryRaw<string>(
+        "SELECT TOP 1 lens_description AS Value FROM order_items WHERE lens_description IS NOT NULL AND lens_description <> '' GROUP BY lens_description ORDER BY COUNT(*) DESC, lens_description")
+        .ToListAsync()).FirstOrDefault();
+
+    var addItem = await expAdmin.GetStringAsync($"/Orders/AddItem?id={openOrder}");
+    Check("the lens box is a drop-down tied to the suggestions list",
+          System.Text.RegularExpressions.Regex.IsMatch(addItem, "name=\"LensDescription\"[^>]*class=\"combo\"[^>]*list=\"lens-suggestions\"")
+          || System.Text.RegularExpressions.Regex.IsMatch(addItem, "class=\"combo\"[^>]*list=\"lens-suggestions\"[^>]*name=\"LensDescription\""));
+    var listStart = addItem.IndexOf("id=\"lens-suggestions\"", StringComparison.Ordinal);
+    var firstOption = listStart < 0 ? null
+        : System.Text.RegularExpressions.Regex.Match(addItem[listStart..], "<option value=\"([^\"]*)\"").Groups[1].Value;
+    Check("…listing the most-used description first",
+          topLens is not null && System.Net.WebUtility.HtmlDecode(firstOption ?? "") == topLens, $"{firstOption} vs {topLens}");
+}
+
+var suppliersPage = await expAdmin.GetStringAsync("/Suppliers");
+Check("الموردون: invoice, return and payment are three separate choices",
+      suppliersPage.Contains("supplier-actions") && suppliersPage.Contains("data-modal-open=\"invoiceModal\"")
+      && suppliersPage.Contains("data-modal-open=\"returnModal\""));
+Check("…each opening its own form, posting to its own action",
+      suppliersPage.Contains("id=\"invoiceModal\"") && suppliersPage.Contains("/Suppliers/AddInvoice")
+      && suppliersPage.Contains("id=\"returnModal\"") && suppliersPage.Contains("/Suppliers/AddReturn")
+      && !suppliersPage.Contains("two-col"));
 
 var someCustomer = await expAdmin.GetStringAsync("/Customers?customerId=2");
 Check("a selected customer shows editable name and phone",
@@ -546,6 +590,52 @@ using (var scope = factory.Services.CreateScope())
         });
         Check("a draw larger than the drawer is refused with the procedure's message",
               !tooMuch.Succeeded && (tooMuch.ErrorMessage ?? "").Contains("الدرج"), tooMuch.ErrorMessage);
+
+        // The hidden-radio bug: an owner's draw posted with "from outside" (left over from the
+        // expense card) must still be taken from the drawer - so an amount over the balance
+        // is refused rather than quietly recorded as outside money.
+        var hiddenOutside = await expenses.AddAsync(new HanyOptics.BusinessLogic.Models.ExpenseRequest
+        {
+            EntryType = "owner_draw", Amount = afterEdit + 1000, FundingSource = "outside", PaymentMethod = "visa", Description = tag
+        });
+        Check("a draw posted as «من خارج الدرج» is still checked against the drawer",
+              !hiddenOutside.Succeeded && (hiddenOutside.ErrorMessage ?? "").Contains("الدرج"), hiddenOutside.ErrorMessage);
+
+        var smallDraw = await expenses.AddAsync(new HanyOptics.BusinessLogic.Models.ExpenseRequest
+        {
+            EntryType = "owner_draw", Amount = 50, FundingSource = "outside", PaymentMethod = "visa", Description = tag
+        });
+        var drawRow = (await db.Database.SqlQueryRaw<string>(
+            "SELECT TOP 1 funding_source + '/' + payment_method AS Value FROM expenses WHERE description = {0} AND entry_type = 'owner_draw' ORDER BY expense_id DESC", tag)
+            .ToListAsync()).FirstOrDefault();
+        Check("…and a draw that fits is stored as drawer/cash", smallDraw.Succeeded && drawRow == "drawer/cash", smallDraw.ErrorMessage ?? drawRow);
+        Check("…and comes off the drawer", (await expenses.GetDrawerAsync()).Balance == afterEdit - 50);
+        var drawId = (await db.Database.SqlQueryRaw<int>(
+            "SELECT TOP 1 expense_id AS Value FROM expenses WHERE description = {0} AND entry_type = 'owner_draw' ORDER BY expense_id DESC", tag).ToListAsync())[0];
+        await expenses.CancelAsync(drawId, "smoke test", todayOnly: true);
+
+        // Sunday's card repair entered as cash, corrected on Monday: the edit must be able to
+        // switch it to card on its own day, and the drawer of that day must drop by the amount.
+        var yesterday = DateTime.Now.AddDays(-1).Date.AddHours(14);
+        var sunday = await expenses.AddAsync(new HanyOptics.BusinessLogic.Models.ExpenseRequest
+        {
+            EntryType = "income", Amount = 300, FundingSource = "drawer", PaymentMethod = "cash", Description = tag, PaidAt = yesterday
+        });
+        var sundayId = (await db.Database.SqlQueryRaw<int>(
+            "SELECT TOP 1 expense_id AS Value FROM expenses WHERE description = {0} AND amount = 300 ORDER BY expense_id DESC", tag).ToListAsync())[0];
+        decimal DayBalance() => db.Database.SqlQueryRaw<decimal>(
+            "SELECT dbo.fn_drawer_balance(dbo.fn_business_date({0})) AS Value", yesterday).AsEnumerable().First();
+        var sundayBefore = DayBalance();
+        var toCard = await expenses.UpdateAsync(new HanyOptics.BusinessLogic.Models.UpdateExpenseRequest
+        {
+            ExpenseId = sundayId, EntryType = "income", Amount = 300, FundingSource = "drawer", PaymentMethod = "visa",
+            Description = tag, Reason = "smoke test"
+        });
+        var sundayAfter = DayBalance();
+        var stillSunday = (await expenses.GetEntryAsync(sundayId))?.PaidAt.Date == yesterday.Date;
+        Check("a past cash income can be corrected to card", sunday.Succeeded && toCard.Succeeded, sunday.ErrorMessage ?? toCard.ErrorMessage);
+        Check("…the drawer of that day drops by 300", sundayAfter == sundayBefore - 300, $"{sundayBefore} → {sundayAfter}");
+        Check("…and the entry stays on its own day", stillSunday);
 
         var cancel = await expenses.CancelAsync(id, "smoke test", todayOnly: true);
         Check("today's entry can be cancelled from the drawer screen", cancel.Succeeded, cancel.ErrorMessage);

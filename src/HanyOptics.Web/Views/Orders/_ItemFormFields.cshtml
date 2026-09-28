@@ -67,7 +67,8 @@
         <div class="section-divider"><span>👁️ العدسات</span></div>
         <div class="form-group">
             <label>وصف العدسات *</label>
-            <input asp-for="LensDescription" data-role="lensDescInput" placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" />
+            <input asp-for="LensDescription" data-role="lensDescInput" class="combo" list="lens-suggestions" autocomplete="off"
+                   placeholder="اختر من الأكثر استخدامًا أو اكتب" />
             <span asp-validation-for="LensDescription" class="field-error"></span>
         </div>
         <div class="form-group">

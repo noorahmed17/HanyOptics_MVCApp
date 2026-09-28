@@ -318,6 +318,7 @@ public class OrdersController : Controller
         ViewBag.Draft = draft;
         ViewData["OrderInProgress"] = true;
         await PopulateDoctorsAsync(draft.DoctorId);
+        ViewBag.LensSuggestions = await _newOrderService.GetLensSuggestionsAsync();
     }
 
     private void PreparePaymentStep(OrderDraft draft)
@@ -472,6 +473,7 @@ public class OrdersController : Controller
             return NotFound();
 
         ViewBag.Order = order;
+        ViewBag.LensSuggestions = await _newOrderService.GetLensSuggestionsAsync();
         return View(new NewOrderItemRequest { DoctorId = order.DoctorId, CustomerNameOnInvoice = order.CustomerName });
     }
 
@@ -501,6 +503,7 @@ public class OrdersController : Controller
             return NotFound();
 
         ViewBag.Order = order;
+        ViewBag.LensSuggestions = await _newOrderService.GetLensSuggestionsAsync();
         return View(model);
     }
 
