@@ -1,0 +1,54 @@
+@model HanyOptics.BusinessLogic.Models.DaySummary
+@using HanyOptics.Web.Models
+@*
+    مصادر الإيرادات: cash, visa and total for each source, refunds subtracted. The last row is
+    vw_daily_summary's own income_cash / income_visa / income_total, so it always equals the
+    figures in the cards above.
+    ViewData["TodayHint"]: the wording under the first row (a day and a month say it differently).
+*@
+@{
+    var todayHint = ViewData["TodayHint"] as string ?? "عربون أو سداد كامل لفواتير صدرت في اليوم نفسه";
+    string Cell(decimal v, bool neg = false) => v == 0 ? "—" : (neg ? "− " : "") + ExpenseDisplay.Number(v);
+    string Css(decimal v) => v == 0 ? "z" : "";
+}
+<div class="table-scroll" style="max-height:none">
+    <table class="rec">
+        <colgroup><col><col class="cash"><col><col></colgroup>
+        <thead><tr><th>البند</th><th>نقدي</th><th>فيزا</th><th>الإجمالي</th></tr></thead>
+        <tbody>
+            <tr>
+                <td>المحصَّل من فواتير اليوم<small>@todayHint</small></td>
+                <td class="@Css(Model.TodayInvoicesCash)">@Cell(Model.TodayInvoicesCash)</td>
+                <td class="@Css(Model.TodayInvoicesVisa)">@Cell(Model.TodayInvoicesVisa)</td>
+                <td class="@Css(Model.TodayInvoicesCash + Model.TodayInvoicesVisa)">@Cell(Model.TodayInvoicesCash + Model.TodayInvoicesVisa)</td>
+            </tr>
+            <tr>
+                <td>المحصَّل من التسليمات والفواتير السابقة<small>المتبقي على فواتير أيام سابقة</small></td>
+                <td class="@Css(Model.OldInvoicesCash)">@Cell(Model.OldInvoicesCash)</td>
+                <td class="@Css(Model.OldInvoicesVisa)">@Cell(Model.OldInvoicesVisa)</td>
+                <td class="@Css(Model.OldInvoicesCash + Model.OldInvoicesVisa)">@Cell(Model.OldInvoicesCash + Model.OldInvoicesVisa)</td>
+            </tr>
+            @if (Model.RefundsTotal != 0)
+            {
+                <tr class="minus">
+                    <td>مرتجعات العملاء</td>
+                    <td class="@Css(Model.RefundsCash)">@Cell(Model.RefundsCash, true)</td>
+                    <td class="@Css(Model.RefundsVisa)">@Cell(Model.RefundsVisa, true)</td>
+                    <td>@Cell(Model.RefundsTotal, true)</td>
+                </tr>
+            }
+            <tr>
+                <td>إيرادات أخرى<small>إصلاحات وإكسسوارات بدون فاتورة</small></td>
+                <td class="@Css(Model.OtherIncomeCash)">@Cell(Model.OtherIncomeCash)</td>
+                <td class="@Css(Model.OtherIncomeCard)">@Cell(Model.OtherIncomeCard)</td>
+                <td class="@Css(Model.OtherIncomeTotal)">@Cell(Model.OtherIncomeTotal)</td>
+            </tr>
+            <tr class="total">
+                <td>إجمالي الإيرادات</td>
+                <td>@ExpenseDisplay.Number(Model.IncomeCash)</td>
+                <td>@ExpenseDisplay.Number(Model.IncomeVisa)</td>
+                <td>@ExpenseDisplay.Number(Model.IncomeTotal)</td>
+            </tr>
+        </tbody>
+    </table>
+</div>

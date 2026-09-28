@@ -104,6 +104,18 @@ public class ExpenseService : IExpenseService
             (await QueryAsync(connection, EntrySelect + " WHERE e.expense_id = @id;", MapEntry,
                 new SqlParameter("@id", expenseId))).FirstOrDefault());
 
+    public Task<IReadOnlyList<ExpenseEntry>> GetEntriesBetweenAsync(DateOnly from, DateOnly to) =>
+        WithConnectionAsync<IReadOnlyList<ExpenseEntry>>(_dbContext, async connection =>
+            await QueryAsync(connection,
+                EntrySelect + """
+                 WHERE e.cancelled_at IS NULL
+                   AND dbo.fn_business_date(e.paid_at) BETWEEN @from AND @to
+                 ORDER BY e.paid_at, e.expense_id;
+                """,
+                MapEntry,
+                new SqlParameter("@from", SqlDbType.Date) { Value = from.ToDateTime(TimeOnly.MinValue) },
+                new SqlParameter("@to", SqlDbType.Date) { Value = to.ToDateTime(TimeOnly.MinValue) }));
+
     public Task<ExpenseMonthReport> GetMonthReportAsync(int year, int month) =>
         WithConnectionAsync(_dbContext, async connection => new ExpenseMonthReport
         {

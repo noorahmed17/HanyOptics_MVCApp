@@ -492,3 +492,110 @@ input.combo {
     background-repeat: no-repeat; background-position: left 12px center; padding-left: 32px; cursor: pointer;
 }
 input.combo::-webkit-calendar-picker-indicator { display: none !important; }
+
+/* ─── FINANCIAL REPORTS (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) ─── */
+.rep-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 8px; }
+.rep-head h3 { font-size: 17px; font-weight: 700; }
+.rep-head p { font-size: 13px; color: #6b7280; margin-top: 2px; }
+.rep-picker { display: flex; align-items: center; gap: 8px; }
+.rep-picker label { margin: 0; font-size: 12.5px; color: #64748b; white-space: nowrap; }
+.rep-picker select { width: auto; min-width: 190px; }
+.rep-window { font-size: 12.5px; color: #64748b; margin-bottom: 16px; }
+.rep-window b { color: #1a202c; }
+
+/* The one figure each tab exists to answer, with the sum that produces it. */
+.rep-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px 28px; align-items: center; background: linear-gradient(135deg, #1e2a3a, #28405c); color: #fff; border-radius: 12px; padding: 22px 24px; margin-bottom: 18px; }
+.rep-hero.neg { background: linear-gradient(135deg, #7f1d1d, #991b1b); }
+.rep-hero .lbl { font-size: 13px; color: #a9bcd4; font-weight: 600; }
+.rep-hero.neg .lbl { color: #fecaca; }
+.rep-hero .amt { font-size: 38px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.rep-hero .formula { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: #cbd5e1; margin-top: 4px; }
+.rep-hero .formula b { color: #fff; }
+.rep-side { display: flex; flex-direction: column; gap: 8px; min-width: 250px; border-right: 1px solid rgba(255, 255, 255, .15); padding-right: 24px; }
+.rep-side .row { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: #cbd5e1; }
+.rep-side .row b { color: #fff; font-variant-numeric: tabular-nums; }
+.rep-side .row.total { border-top: 1px solid rgba(255, 255, 255, .15); padding-top: 8px; font-weight: 700; color: #fff; }
+.rep-side .row.total b { font-size: 17px; }
+.rep-side .row b.owner { color: #c4b5fd; }
+
+.rep-flows { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.rep-flow-title { font-size: 12.5px; font-weight: 700; color: #64748b; margin-bottom: 8px; }
+.rep-flow-title .in { color: #057a55; }
+.rep-flow-title .out { color: #dc2626; }
+.rep-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rep-kpis.wide { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 18px; }
+.rep-kpis .stat-card { padding: 13px 14px; }
+.rep-kpis .stat-value { font-size: 19px; white-space: nowrap; }
+.rep-kpis .stat-card.main { background: #f8fafc; }
+.stat-label .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; }
+
+.rep-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+/* Where the money came from: cash, visa, total per source; refunds subtract. */
+table.rec td, table.rec th { text-align: left; font-variant-numeric: tabular-nums; }
+table.rec td:first-child, table.rec th:first-child { text-align: right; }
+table.rec td:first-child small { display: block; color: #94a3b8; font-size: 11.5px; }
+table.rec td.z { color: #cbd5e1; }
+table.rec col.cash { background: #f0fdf4; }
+table.rec tr.minus td:not(:first-child):not(.z) { color: #dc2626; }
+table.rec tr.total td { font-weight: 700; border-top: 2px solid #cbd5e1; }
+
+/* The cash sum that must land on the drawer figure. */
+table.ledger td { padding: 8px 4px; border-bottom: 1px dashed #eef2f7; }
+table.ledger td.op { width: 20px; text-align: center; font-weight: 800; color: #94a3b8; }
+table.ledger td:last-child { text-align: left; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.ledger tr.minus td:last-child { color: #dc2626; }
+table.ledger tr.owner td:nth-child(2) { color: #6d28d9; font-weight: 600; }
+table.ledger tr.sum td { border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700; padding-top: 10px; }
+table.ledger tr.sum td:last-child { font-size: 18px; color: #1a56db; }
+
+.rep-jump { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.rep-jump a { font-size: 12.5px; font-weight: 600; color: #374151; background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 5px 12px; text-decoration: none; }
+.rep-jump a:hover { border-color: #1a56db; color: #1a56db; }
+.rep-jump a b { color: #94a3b8; margin-right: 4px; }
+
+/* Expense categories: one bar per category, split by where the money came from. */
+.rep-legend { display: flex; gap: 14px; font-size: 11.5px; color: #64748b; }
+.rep-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-left: 5px; }
+.seg-d { background: #057a55; }
+.seg-o { background: #d97706; }
+.rep-bars { display: flex; flex-direction: column; gap: 10px; }
+.rep-bar { display: grid; grid-template-columns: minmax(90px, 130px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.rep-bar .name { font-weight: 600; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-bar .track { display: flex; gap: 2px; height: 10px; }
+.rep-bar .track span { display: block; height: 100%; border-radius: 3px; }
+.rep-bar .val { font-weight: 700; min-width: 90px; text-align: left; font-variant-numeric: tabular-nums; }
+
+.mk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mk::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.mk-drawer { color: #047857; } .mk-outside { color: #b45309; } .mk-owner { color: #6d28d9; }
+.mk-income { color: #15803d; } .mk-info { color: #1d4ed8; } .mk-muted { color: #94a3b8; } .mk-bad { color: #dc2626; }
+td .sub { display: block; font-size: 11.5px; color: #94a3b8; }
+tr.row-link { cursor: pointer; }
+tr.row-link:hover td { background: #f8fafc; }
+tr.row-hl td { background: #eff6ff; }
+.delta-up { color: #dc2626; font-weight: 700; font-size: 12px; }
+.delta-down { color: #057a55; font-weight: 700; font-size: 12px; }
+.share { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.share .track { flex: 1; height: 7px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.share .track span { display: block; height: 100%; background: #d97706; }
+
+/* Net per day: bars above the line are good days, below it losing ones. */
+.rep-chart { position: relative; }
+.rep-chart svg { display: block; width: 100%; height: auto; }
+.rep-chart text { font-size: 11px; fill: #94a3b8; font-family: inherit; }
+.rep-chart .gl { stroke: #f1f5f9; }
+.rep-chart .zero { stroke: #cbd5e1; stroke-width: 1.5; }
+.rep-chart .hit { fill: transparent; cursor: pointer; }
+.rep-chart.hovering .bar { opacity: .4; }
+.rep-chart.hovering .bar.on { opacity: 1; }
+.rep-tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .25); padding: 9px 12px; font-size: 12px; min-width: 190px; z-index: 5; }
+.rep-tip b { display: block; margin-bottom: 4px; }
+.rep-tip .r { display: flex; justify-content: space-between; gap: 14px; }
+
+@media (max-width: 900px) {
+    .rep-flows, .rep-grid2 { grid-template-columns: 1fr; }
+    .rep-hero { grid-template-columns: 1fr; }
+    .rep-side { border-right: none; padding-right: 0; border-top: 1px solid rgba(255, 255, 255, .15); padding-top: 12px; min-width: 0; }
+}
+@media (max-width: 560px) { .rep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

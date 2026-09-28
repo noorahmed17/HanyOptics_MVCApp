@@ -24,6 +24,30 @@ public static class ExpenseDisplay
     public static string MonthName(int year, int month) =>
         new DateTime(year, month, 1).ToString("MMMM yyyy", ArEg);
 
+    public static string DayLabel(DateOnly day) => day.ToString("dddd d MMMM", ArEg);
+
+    public static string DayMonth(DateOnly day) => day.ToString("d MMMM", ArEg);
+
+    // A figure that may go negative (a net, a loss), with the minus spelled out.
+    public static string Signed(decimal value) => (value < 0 ? "− " : "") + Money(Math.Abs(value));
+
+    // A figure without the currency: whole when it is whole, piasters when it has any - the
+    // same rule as Money, so a table row and its total never disagree by a rounding.
+    public static string Number(decimal value) => value.ToString(value % 1 == 0 ? "N0" : "N2", ArEg);
+
+    public static string Percent(decimal value) => Math.Round(value).ToString("N0", ArEg) + "٪";
+
+    // vw_daily_close_orders lists an order's item types as "frame_lenses,frame_only".
+    public static string ItemTypes(string? types) => string.IsNullOrWhiteSpace(types)
+        ? "—"
+        : string.Join("، ", types.Split(',').Select(t => t.Trim() switch
+        {
+            "frame_lenses" => "إطار وعدسات",
+            "frame_only" => "إطار فقط",
+            "lenses_replace" => "عدسات على إطار العميل",
+            var other => other
+        }));
+
     public static (string Css, string Label) Type(string entryType) => entryType switch
     {
         ExpenseEntryTypes.Expense => ("badge-exp", "مصروف"),

@@ -1,0 +1,155 @@
+@model HanyOptics.BusinessLogic.Models.MonthReport
+@using HanyOptics.Web.Models
+@{
+    ViewData["Title"] = "التقرير الشهري";
+    var s = Model.Summary;
+    string M(decimal v) => ExpenseDisplay.Money(v);
+    string N(decimal v) => ExpenseDisplay.Number(v);
+    var visaShare = s.IncomeTotal > 0 ? s.IncomeVisa / s.IncomeTotal * 100 : 0;
+
+    // One slot per day of the window, like a calendar: a day with no activity is a gap in
+    // the chart rather than being squeezed out, so the bars keep their place in the month.
+    var byDay = Model.Days.ToDictionary(d => d.BusinessDate);
+    var chartDays = Enumerable.Range(0, Model.To.DayNumber - Model.From.DayNumber + 1)
+        .Select(i => Model.From.AddDays(i))
+        .Select(date => byDay.TryGetValue(date, out var d) ? d : HanyOptics.BusinessLogic.Models.DaySummary.Empty(date))
+        .Select(d => new
+        {
+            date = d.BusinessDate.ToString("yyyy-MM-dd"),
+            day = d.BusinessDate.Day,
+            label = ExpenseDisplay.DayLabel(d.BusinessDate),
+            rev = d.IncomeTotal,
+            exp = d.ExpenseTotal,
+            net = d.Net
+        });
+}
+
+<partial name="_Tabs" />
+
+<div class="rep-head">
+    <div>
+        <h3>التقرير الشهري</h3>
+        <p>صافي الشهر: جميع الإيرادات المحصَّلة مطروحًا منها جميع المصروفات.</p>
+    </div>
+    <form method="get" class="rep-picker">
+        <label for="month">الشهر</label>
+        <select id="month" name="month" onchange="this.form.submit()">
+            @foreach (var m in Model.AvailableMonths)
+            {
+                <option value="@($"{m.Year:D4}-{m.Month:D2}")" selected="@(m == Model.Month)">@ExpenseDisplay.MonthName(m.Year, m.Month)</option>
+            }
+        </select>
+        <noscript><button type="submit" class="btn btn-outline btn-sm">عرض</button></noscript>
+    </form>
+</div>
+<div class="rep-window">
+    📅 من <b>@ExpenseDisplay.DayMonth(Model.From)</b> حتى <b>@ExpenseDisplay.DayMonth(Model.To)</b>.
+    @if (Model.IsCurrentMonth) { <text>الشهر لم ينتهِ بعد.</text> }
+</div>
+
+<div class="rep-hero @(s.Net < 0 ? "neg" : "")">
+    <div>
+        <div class="lbl">صافي الشهر</div>
+        <div class="amt">@ExpenseDisplay.Signed(s.Net)</div>
+        <div class="formula">
+            <span>إجمالي الإيرادات <b>@M(s.IncomeTotal)</b></span>
+            <span>− جميع المصروفات <b>@M(s.ExpenseTotal)</b></span>
+        </div>
+    </div>
+    <div class="rep-side">
+        <div class="row"><span>النقدية المستلمة من إغلاق اليوميات</span><b>@ExpenseDisplay.Signed(s.DrawerCash)</b></div>
+        <div class="row"><span>مسحوبات المالك خلال الأيام</span><b class="owner">@M(s.OwnerDraw)</b></div>
+        <div class="row"><span>إيرادات الفيزا (في الحساب البنكي)</span><b>@M(s.IncomeVisa)</b></div>
+    </div>
+</div>
+
+<div class="rep-flows">
+    <div>
+        <div class="rep-flow-title"><span class="in">⬇</span> الإيرادات</div>
+        <div class="rep-kpis">
+            <div class="stat-card main"><div class="stat-label">إجمالي الإيرادات</div><div class="stat-value">@M(s.IncomeTotal)</div><div class="stat-sub">نقدي وفيزا بعد خصم المرتجعات</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#057a55"></span>إيرادات نقدية</div><div class="stat-value">@M(s.IncomeCash)</div><div class="stat-sub">بعد خصم مرتجعات @M(s.RefundsCash)</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#1d4ed8"></span>إيرادات الفيزا</div><div class="stat-value">@M(s.IncomeVisa)</div><div class="stat-sub">@ExpenseDisplay.Percent(visaShare) من الإيرادات</div></div>
+        </div>
+    </div>
+    <div>
+        <div class="rep-flow-title"><span class="out">⬆</span> المصروفات والمسحوبات</div>
+        <div class="rep-kpis">
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#057a55"></span>مصروفات من الإيرادات</div><div class="stat-value">@M(s.ExpenseFromDrawer)</div><div class="stat-sub">دُفعت من نقدية الدرج</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#d97706"></span>مصروفات من خارج الإيرادات</div><div class="stat-value">@M(s.ExpenseFromOutside)</div><div class="stat-sub">إيجار ورواتب وتحويلات</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#6d28d9"></span>مسحوبات المالك</div><div class="stat-value">@M(s.OwnerDraw)</div><div class="stat-sub">ليست مصروفًا، ولا تُخصم من الصافي</div></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-title">صافي كل يوم</span><span class="text-muted text-sm">اضغط على اليوم لعرض إغلاقه</span></div>
+    <div class="card-pad">
+        @if (Model.Days.Count == 0)
+        {
+            <div class="empty-state" style="padding:20px">لا توجد أيام عمل في هذا الشهر.</div>
+        }
+        else
+        {
+            <div class="rep-chart" id="netChart" data-day-url="@Url.Action("Day")"></div>
+            <script type="application/json" id="netChartData">@Json.Serialize(chartDays)</script>
+        }
+    </div>
+</div>
+
+<div class="rep-grid2">
+    <div class="card">
+        <div class="card-header"><span class="card-title">مصادر الإيرادات</span><span class="text-muted text-sm">بعد خصم المرتجعات</span></div>
+        <div class="card-pad"><partial name="_RevenueSources" model="s" view-data="@(new ViewDataDictionary(ViewData) { ["TodayHint"] = "عربون أو سداد كامل لفواتير صدرت في يوم الدفع نفسه" })" /></div>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">أكبر المصروفات</span>
+            <div class="rep-legend"><span><i class="seg-d"></i>من الإيرادات</span><span><i class="seg-o"></i>من خارج الإيرادات</span></div>
+        </div>
+        <div class="card-pad">
+            <partial name="_CategoryBars" model="Model.Categories" view-data="@(new ViewDataDictionary(ViewData) { ["Limit"] = 6 })" />
+            <div class="mt-3"><a class="btn btn-outline btn-sm" asp-action="Expenses" asp-route-month="@($"{Model.Month.Year:D4}-{Model.Month.Month:D2}")">عرض جميع المصروفات</a></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-title">تفاصيل الأيام</span><span class="text-muted text-sm">اضغط على اليوم لعرض إغلاقه</span></div>
+    <div class="card-body table-scroll">
+        @if (Model.Days.Count == 0)
+        {
+            <div class="empty-state">لا توجد أيام عمل في هذا الشهر.</div>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>اليوم</th><th class="num">الإيرادات</th><th class="num">نقدي</th><th class="num">فيزا</th><th class="num">مصروفات من الإيرادات</th><th class="num">من خارجها</th><th class="num">مسحوبات المالك</th><th class="num">صافي اليوم</th><th class="num">النقدية في الدرج</th></tr></thead>
+                <tbody>
+                @foreach (var d in Model.Days)
+                {
+                    var url = Url.Action("Day", new { date = d.BusinessDate.ToString("yyyy-MM-dd") });
+                    <tr class="row-link" data-href="@url" tabindex="0">
+                        <td><a href="@url" style="color:inherit;text-decoration:none"><b>@ExpenseDisplay.DayLabel(d.BusinessDate)</b></a></td>
+                        <td class="num">@N(d.IncomeTotal)</td>
+                        <td class="num">@N(d.IncomeCash)</td>
+                        <td class="num">@N(d.IncomeVisa)</td>
+                        <td class="num">@N(d.ExpenseFromDrawer)</td>
+                        <td class="num">@(d.ExpenseFromOutside != 0 ? N(d.ExpenseFromOutside) : "—")</td>
+                        <td class="num c-purple">@(d.OwnerDraw != 0 ? N(d.OwnerDraw) : "—")</td>
+                        <td class="num fw-bold @(d.Net < 0 ? "c-red" : "")">@(d.Net < 0 ? "− " : "")@N(Math.Abs(d.Net))</td>
+                        <td class="num">@N(d.DrawerCash)</td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr><td>الشهر</td><td class="num">@N(s.IncomeTotal)</td><td class="num">@N(s.IncomeCash)</td><td class="num">@N(s.IncomeVisa)</td><td class="num">@N(s.ExpenseFromDrawer)</td><td class="num">@N(s.ExpenseFromOutside)</td><td class="num">@N(s.OwnerDraw)</td><td class="num">@ExpenseDisplay.Signed(s.Net).Replace(" ج", "")</td><td class="num">@N(s.DrawerCash)</td></tr>
+                </tfoot>
+            </table>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/reports.js" asp-append-version="true"></script>
+}

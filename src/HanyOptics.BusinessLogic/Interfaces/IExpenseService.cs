@@ -15,6 +15,10 @@ public interface IExpenseService
 
     Task<ExpenseEntry?> GetEntryAsync(int expenseId);
 
+    // Every live (not cancelled) entry whose business day falls in [from, to], oldest first -
+    // what the reports list under a day or a month.
+    Task<IReadOnlyList<ExpenseEntry>> GetEntriesBetweenAsync(DateOnly from, DateOnly to);
+
     Task<ExpenseMonthReport> GetMonthReportAsync(int year, int month);
 
     // Categories already in use for this entry type, plus a few sensible starters, for the
