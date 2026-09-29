@@ -24,11 +24,13 @@
         });
 }
 
-<partial name="_Tabs" />
+<div class="page-header">
+    <h2>📅 التقرير الشهري</h2>
+    <a class="btn btn-outline" asp-action="Index">→ كل التقارير</a>
+</div>
 
 <div class="rep-head">
     <div>
-        <h3>التقرير الشهري</h3>
         <p>صافي الشهر: جميع الإيرادات المحصَّلة مطروحًا منها جميع المصروفات.</p>
     </div>
     <form method="get" class="rep-picker">
@@ -91,7 +93,7 @@
         }
         else
         {
-            <div class="rep-chart" id="netChart" data-day-url="@Url.Action("Day")"></div>
+            <div class="rep-chart" id="netChart" data-day-url="@Url.Action("Index", "DailyClose")"></div>
             <script type="application/json" id="netChartData">@Json.Serialize(chartDays)</script>
         }
     </div>
@@ -128,7 +130,7 @@
                 <tbody>
                 @foreach (var d in Model.Days)
                 {
-                    var url = Url.Action("Day", new { date = d.BusinessDate.ToString("yyyy-MM-dd") });
+                    var url = Url.Action("Index", "DailyClose", new { date = d.BusinessDate.ToString("yyyy-MM-dd") });
                     <tr class="row-link" data-href="@url" tabindex="0">
                         <td><a href="@url" style="color:inherit;text-decoration:none"><b>@ExpenseDisplay.DayLabel(d.BusinessDate)</b></a></td>
                         <td class="num">@N(d.IncomeTotal)</td>
@@ -151,5 +153,5 @@
 </div>
 
 @section Scripts {
-    <script src="~/js/reports.js" asp-append-version="true"></script>
+    <script src="~/js/daily-close.js" asp-append-version="true"></script>
 }

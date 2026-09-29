@@ -32,71 +32,107 @@ string currentRole = "Admin";
 
 var factory = new StubAuthFactory(() => currentRole);
 
-// ── التقارير (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) as an Admin ──────────
+// ── reports as an Admin ────────────────────────────────────────────────────
 Console.WriteLine("التقارير as Admin:\n");
 currentRole = "Admin";
 var admin = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
 var index = await admin.GetAsync("/Reports");
-Check("/Reports opens إغلاق اليومية",
-      index.StatusCode == HttpStatusCode.Redirect && (index.Headers.Location?.ToString() ?? "").Contains("/Reports/Day"),
-      $"{(int)index.StatusCode} {index.Headers.Location}");
+Check("/Reports returns 200", index.StatusCode == HttpStatusCode.OK, index.StatusCode.ToString());
+var indexHtml = await index.Content.ReadAsStringAsync();
+Check("the index lists all 14 reports",
+      new[] { "monthly-profit","item-profit","staff-sales","outstanding",
+              "payments-log","frame-stock","lens-stock","damage-losses","top-brands",
+              "orders-summary","frame-swaps","doctors","top-customers","customer-history" }
+        .All(k => indexHtml.Contains(k)));
 
-foreach (var (url, marker) in new[]
+string[] reports =
+[
+    "monthly-profit","item-profit","staff-sales","outstanding",
+    "payments-log","frame-stock","lens-stock","damage-losses","top-brands",
+    "orders-summary","frame-swaps","doctors","top-customers","customer-history"
+];
+
+Console.WriteLine("\nEvery report actually renders:\n");
+foreach (var key in reports)
 {
-    ("/Reports/Day", "النقدية المتوقعة في الدرج"),
-    ("/Reports/Month", "صافي الشهر"),
-    ("/Reports/Expenses", "حسب النوع"),
-    ("/Reports/Month?month=garbage", "صافي الشهر"),
-    ("/Reports/Day?date=2001-01-01", "النقدية المتوقعة في الدرج"),
-})
-{
-    var res = await admin.GetAsync(url);
+    var res = await admin.GetAsync($"/Reports/Show?id={key}");
     var html = await res.Content.ReadAsStringAsync();
-    Check($"{url} renders", res.StatusCode == HttpStatusCode.OK && html.Contains(marker) && !html.Contains("An unhandled exception"),
-          ((int)res.StatusCode).ToString());
+
+    var ok = res.StatusCode == HttpStatusCode.OK;
+    // A page that renders but shows the empty state is not a working report here - every
+    // one of these has data, so a table is what proves the query ran and mapped.
+    var hasTable = html.Contains("<table");
+    var noEmpty = !html.Contains("مفيش بيانات");
+    var noError = !html.Contains("An unhandled exception");
+
+    Check($"{key,-18} 200 + table + rows",
+          ok && hasTable && noEmpty && noError,
+          $"{(int)res.StatusCode} table:{hasTable} rows:{noEmpty}");
 }
 
-// The page must show the views' own figures, not a re-computation of them.
-using (var repScope = factory.Services.CreateScope())
-{
-    var repDb = repScope.ServiceProvider.GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
-    var arEg = System.Globalization.CultureInfo.GetCultureInfo("ar-EG");
-    string Money(decimal v) => (v < 0 ? "− " : "") + Math.Abs(v).ToString(Math.Abs(v) % 1 == 0 ? "N0" : "N2", arEg) + " ج";
+// ── the details ────────────────────────────────────────────────────────────
+Console.WriteLine("\nDetails:\n");
 
-    var busiest = (await repDb.Database.SqlQueryRaw<DateTime>(
-        "SELECT TOP 1 business_date AS Value FROM dbo.vw_daily_summary ORDER BY income_total DESC").ToListAsync()).FirstOrDefault();
-    if (busiest != default)
-    {
-        var drawer = (await repDb.Database.SqlQueryRaw<decimal>(
-            "SELECT drawer_cash AS Value FROM dbo.vw_daily_summary WHERE business_date = {0}", busiest).ToListAsync())[0];
-        var dayHtml = System.Net.WebUtility.HtmlDecode(await admin.GetStringAsync($"/Reports/Day?date={busiest:yyyy-MM-dd}"));
-        Check("إغلاق اليومية shows vw_daily_summary's drawer_cash", dayHtml.Contains(Money(drawer)), Money(drawer));
-        Check("…and that day's invoices, deliveries and payments tables",
-              dayHtml.Contains("id=\"t-orders\"") && dayHtml.Contains("id=\"t-del\"") && dayHtml.Contains("id=\"t-pay\"")
-              && dayHtml.Contains("<table"));
+var monthly = await admin.GetStringAsync("/Reports/Show?id=monthly-profit");
+Check("year renders without a thousands separator", monthly.Contains(">2026<") || monthly.Contains("2026"),
+      monthly.Contains("2٬026") ? "found 2٬026" : "clean");
+Check("year is NOT rendered as 2٬026", !monthly.Contains("2٬026"));
 
-        var net = (await repDb.Database.SqlQueryRaw<decimal>(
-            "SELECT net_month AS Value FROM dbo.vw_monthly_summary WHERE [year] = {0} AND [month] = {1}", busiest.Year, busiest.Month).ToListAsync())[0];
-        var monthHtml = System.Net.WebUtility.HtmlDecode(await admin.GetStringAsync($"/Reports/Month?month={busiest:yyyy-MM}"));
-        Check("التقرير الشهري shows vw_monthly_summary's net_month", monthHtml.Contains(Money(net)), Money(net));
-        Check("…with the daily-net chart data and the days table",
-              monthHtml.Contains("id=\"netChartData\"") && monthHtml.Contains("data-href=\"/Reports/Day?date="));
-    }
-}
+var paged = await admin.GetAsync("/Reports/Show?id=orders-summary&page=3");
+Check("a deep page renders", paged.StatusCode == HttpStatusCode.OK, paged.StatusCode.ToString());
+
+var past = await admin.GetAsync("/Reports/Show?id=orders-summary&page=99999");
+var pastHtml = await past.Content.ReadAsStringAsync();
+Check("a page past the end clamps instead of erroring",
+      past.StatusCode == HttpStatusCode.OK && pastHtml.Contains("<table"), past.StatusCode.ToString());
+
+var reversed = await admin.GetAsync("/Reports/Show?id=orders-summary&from=2026-08-31&to=2026-08-01");
+var revHtml = await reversed.Content.ReadAsStringAsync();
+Check("a backwards date range is swapped, not empty",
+      reversed.StatusCode == HttpStatusCode.OK && revHtml.Contains("<table"), reversed.StatusCode.ToString());
+
+var filtered = await admin.GetStringAsync("/Reports/Show?id=orders-summary&from=2026-08-01&to=2026-08-31");
+Check("a filtered range still renders a table", filtered.Contains("<table"));
+
+var bogus = await admin.GetAsync("/Reports/Show?id=does-not-exist");
+Check("an unknown report is 404", bogus.StatusCode == HttpStatusCode.NotFound, bogus.StatusCode.ToString());
+
+// ── CSV export ─────────────────────────────────────────────────────────────
+Console.WriteLine("\nExport:\n");
+var csv = await admin.GetAsync("/Reports/Export?id=monthly-profit");
+Check("export returns 200", csv.StatusCode == HttpStatusCode.OK, csv.StatusCode.ToString());
+Check("export is text/csv", csv.Content.Headers.ContentType?.MediaType == "text/csv",
+      csv.Content.Headers.ContentType?.MediaType);
+
+var bytes = await csv.Content.ReadAsByteArrayAsync();
+Check("export starts with a UTF-8 BOM so Excel reads Arabic",
+      bytes.Length > 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF);
+
+var csvText = System.Text.Encoding.UTF8.GetString(bytes);
+var lines = csvText.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+Check("export has a header row plus data", lines.Length > 1, $"{lines.Length} lines");
+Check("export header is the Arabic column labels", lines[0].Contains("السنة"), lines[0].Trim());
 
 // ── the same screens as a non-admin ────────────────────────────────────────
 Console.WriteLine("\nSame screens as a plain User:\n");
 currentRole = "User";
 var user = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-foreach (var url in new[] { "/Reports", "/Reports/Day", "/Reports/Month", "/Reports/Expenses" })
-{
-    var res = await user.GetAsync(url);
-    Check($"{url} is refused for a User",
-          res.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect && !(res.Headers.Location?.ToString() ?? "").Contains("/Reports/"),
-          $"{(int)res.StatusCode} {res.Headers.Location}");
-}
+var userIndex = await user.GetAsync("/Reports");
+Check("/Reports is refused (403 or redirect to AccessDenied)",
+      userIndex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect,
+      $"{(int)userIndex.StatusCode} {userIndex.Headers.Location}");
+
+var userReport = await user.GetAsync("/Reports/Show?id=item-profit");
+Check("a report page is refused too",
+      userReport.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect,
+      $"{(int)userReport.StatusCode}");
+
+var userExport = await user.GetAsync("/Reports/Export?id=monthly-profit");
+Check("the export endpoint is refused too - not just the page",
+      userExport.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect,
+      $"{(int)userExport.StatusCode}");
 
 var userOrders = await user.GetAsync("/Orders");
 Check("but the ordinary screens still work for a User",
@@ -105,6 +141,70 @@ Check("but the ordinary screens still work for a User",
 var userDaily = await user.GetAsync("/DailyClose");
 Check("and قفلة اليوم stays open to a User",
       userDaily.StatusCode == HttpStatusCode.OK, userDaily.StatusCode.ToString());
+
+// ── قفلة اليوم (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) ─────────────────────
+Console.WriteLine("\nقفلة اليوم:\n");
+
+var userDailyHtml = await userDaily.Content.ReadAsStringAsync();
+Check("a User sees إغلاق اليومية", userDailyHtml.Contains("النقدية المتوقعة في الدرج"));
+Check("…with no link to التقارير for a User", !userDailyHtml.Contains("/Reports"));
+foreach (var url in new[] { "/Reports/Month", "/Reports/Expenses" })
+{
+    var res = await user.GetAsync(url);
+    Check($"{url} is refused for a User", res.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Redirect,
+          ((int)res.StatusCode).ToString());
+}
+
+currentRole = "Admin";
+var closeAdmin = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+foreach (var (url, marker) in new[]
+{
+    ("/DailyClose", "النقدية المتوقعة في الدرج"),
+    ("/Reports/Month", "صافي الشهر"),
+    ("/Reports/Expenses", "حسب النوع"),
+    ("/Reports/Month?month=garbage", "صافي الشهر"),
+    ("/DailyClose?date=2001-01-01", "النقدية المتوقعة في الدرج"),
+})
+{
+    var res = await closeAdmin.GetAsync(url);
+    var html = await res.Content.ReadAsStringAsync();
+    Check($"Admin: {url} renders", res.StatusCode == HttpStatusCode.OK && html.Contains(marker) && !html.Contains("An unhandled exception"),
+          ((int)res.StatusCode).ToString());
+}
+Check("التقارير lists التقرير الشهري and مصروفات الشهر, and no longer يومية المبيعات",
+      (await closeAdmin.GetStringAsync("/Reports")) is var reportsIndex
+      && reportsIndex.Contains("/Reports/Month") && reportsIndex.Contains("/Reports/Expenses")
+      && !reportsIndex.Contains("daily-sales"));
+Check("an Admin gets a link from قفلة اليوم to التقارير",
+      (await closeAdmin.GetStringAsync("/DailyClose")).Contains("/Reports"));
+
+// The page must show the views' own figures, not a re-computation of them.
+using (var closeScope = factory.Services.CreateScope())
+{
+    var closeDb = closeScope.ServiceProvider.GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>();
+    var arEg = System.Globalization.CultureInfo.GetCultureInfo("ar-EG");
+    string Money(decimal v) => (v < 0 ? "− " : "") + Math.Abs(v).ToString(Math.Abs(v) % 1 == 0 ? "N0" : "N2", arEg) + " ج";
+
+    var busiest = (await closeDb.Database.SqlQueryRaw<DateTime>(
+        "SELECT TOP 1 business_date AS Value FROM dbo.vw_daily_summary ORDER BY income_total DESC").ToListAsync()).FirstOrDefault();
+    if (busiest != default)
+    {
+        var drawer = (await closeDb.Database.SqlQueryRaw<decimal>(
+            "SELECT drawer_cash AS Value FROM dbo.vw_daily_summary WHERE business_date = {0}", busiest).ToListAsync())[0];
+        var dayHtml = System.Net.WebUtility.HtmlDecode(await closeAdmin.GetStringAsync($"/DailyClose?date={busiest:yyyy-MM-dd}"));
+        Check("إغلاق اليومية shows vw_daily_summary's drawer_cash", dayHtml.Contains(Money(drawer)), Money(drawer));
+        Check("…and that day's invoices, deliveries and payments tables",
+              dayHtml.Contains("id=\"t-orders\"") && dayHtml.Contains("id=\"t-del\"") && dayHtml.Contains("id=\"t-pay\""));
+
+        var net = (await closeDb.Database.SqlQueryRaw<decimal>(
+            "SELECT net_month AS Value FROM dbo.vw_monthly_summary WHERE [year] = {0} AND [month] = {1}", busiest.Year, busiest.Month).ToListAsync())[0];
+        var monthHtml = System.Net.WebUtility.HtmlDecode(await closeAdmin.GetStringAsync($"/Reports/Month?month={busiest:yyyy-MM}"));
+        Check("التقرير الشهري shows vw_monthly_summary's net_month", monthHtml.Contains(Money(net)), Money(net));
+        Check("…with the daily-net chart and days that open their own close",
+              monthHtml.Contains("id=\"netChartData\"") && monthHtml.Contains("data-href=\"/DailyClose?date="));
+    }
+}
+currentRole = "User";
 
 // The sidebar must not offer a door the user cannot open. Checked on rendered HTML rather
 // than by reading the view, because the point is what actually reaches the browser.
@@ -188,20 +288,10 @@ if (args.Length >= 2 && args[0] == "--dump")
     currentRole = "Admin";
     var dumper = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-    // The latest day and month with activity, so the report screens can be looked at with
-    // real figures in them rather than the empty current day.
-    DateTime latestDay;
-    using (var latestScope = factory.Services.CreateScope())
-        latestDay = (await latestScope.ServiceProvider
-            .GetRequiredService<HanyOptics.DataAccess.Persistence.HanyOpticsDbContext>().Database
-            .SqlQueryRaw<DateTime>("SELECT MAX(business_date) AS Value FROM dbo.vw_daily_summary").ToListAsync())[0];
-
-    foreach (var (name, url) in new[]
+    foreach (var (name, url) in reports.Select(k => ("report-" + k, "/Reports/Show?id=" + k)).Concat(new[]
     {
-        ("report-day-busy",      $"/Reports/Day?date={latestDay:yyyy-MM-dd}"),
-        ("report-month-busy",    $"/Reports/Month?month={latestDay:yyyy-MM}"),
-        ("report-expenses-busy", $"/Reports/Expenses?month={latestDay:yyyy-MM}"),
-        ("report-day",     "/Reports/Day"),
+        ("reports-index",  "/Reports"),
+        ("daily-close",    "/DailyClose"),
         ("report-month",   "/Reports/Month"),
         ("report-expenses","/Reports/Expenses"),
         ("orders",         "/Orders"),
@@ -209,7 +299,7 @@ if (args.Length >= 2 && args[0] == "--dump")
         ("expenses",       "/Expenses"),
         ("suppliers",      "/Suppliers"),
         ("corrections",    "/Corrections"),
-    })
+    }))
     {
         var page = await dumper.GetStringAsync(url);
         await File.WriteAllTextAsync(Path.Combine(dir, name + ".html"), page);

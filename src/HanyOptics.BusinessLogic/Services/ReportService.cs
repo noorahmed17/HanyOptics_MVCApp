@@ -1,238 +1,258 @@
 using System.Data;
+using System.Globalization;
+using System.Text;
 using HanyOptics.BusinessLogic.Interfaces;
 using HanyOptics.BusinessLogic.Models;
 using HanyOptics.DataAccess.Persistence;
 using Microsoft.Data.SqlClient;
-using static HanyOptics.BusinessLogic.Services.SqlReader;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HanyOptics.BusinessLogic.Services;
 
 public class ReportService : IReportService
 {
     private readonly HanyOpticsDbContext _dbContext;
-    private readonly IDailyCloseService _dailyClose;
-    private readonly IExpenseService _expenses;
+    private readonly ILogger<ReportService> _logger;
 
-    public ReportService(HanyOpticsDbContext dbContext, IDailyCloseService dailyClose, IExpenseService expenses)
+    public ReportService(HanyOpticsDbContext dbContext, ILogger<ReportService> logger)
     {
         _dbContext = dbContext;
-        _dailyClose = dailyClose;
-        _expenses = expenses;
+        _logger = logger;
     }
 
-    public async Task<DayReport> GetDayAsync(DateOnly? day)
+    public IReadOnlyList<ReportDefinition> Catalog => ReportCatalog.All;
+
+    public ReportDefinition? Find(string? key) => ReportCatalog.Find(key);
+
+    public Task<ReportResult> RunAsync(ReportDefinition definition, DateOnly? from, DateOnly? to)
+        => RunAsync(definition, from, to, page: 1, pageSize: null);
+
+    public async Task<ReportResult> RunAsync(
+        ReportDefinition definition, DateOnly? from, DateOnly? to, int? page, int? pageSize)
     {
-        var current = await _dailyClose.GetCurrentBusinessDateAsync();
-        var date = day ?? current;
+        if (string.IsNullOrWhiteSpace(definition.Sql))
+            throw new InvalidOperationException($"Report '{definition.Key}' has no query.");
 
-        // The invoice / delivery / payment lists are the daily close's own (vw_daily_close_*),
-        // so this screen and anything else built on them always agree on what happened.
-        var close = await _dailyClose.GetAsync(date);
-        var entries = await _expenses.GetEntriesBetweenAsync(date, date);
+        (from, to) = NormaliseRange(definition, from, to);
 
-        var (summary, categories, days) = await WithConnectionAsync(_dbContext, async connection =>
+        var size = Math.Clamp(pageSize ?? ReportPaging.DefaultPageSize, 1, ReportPaging.MaxPageSize);
+        var requestedPage = Math.Max(page ?? 1, 1);
+
+        var connection = (SqlConnection)_dbContext.Database.GetDbConnection();
+        var opened = false;
+
+        try
         {
-            var summary = (await QueryAsync(connection,
-                "SELECT * FROM dbo.vw_daily_summary WHERE business_date = @day;",
-                r => MapDay(r), DateParam("@day", date))).FirstOrDefault();
-
-            var categories = await ReadCategoriesAsync(connection, date, date);
-
-            // Newest first, and today always offered even before anything happened in it.
-            var days = await QueryAsync(connection,
-                "SELECT TOP (120) business_date FROM dbo.vw_daily_summary ORDER BY business_date DESC;",
-                r => DateOnly.FromDateTime(r.GetDateTime(0)));
-
-            return (summary, categories, days);
-        });
-
-        var available = days.Append(current).Append(date).Distinct().OrderByDescending(d => d).ToList();
-
-        return new DayReport
-        {
-            BusinessDate = date,
-            CurrentBusinessDate = current,
-            Summary = summary ?? DaySummary.Empty(date),
-            Orders = close.Orders,
-            Deliveries = close.Deliveries,
-            Payments = close.Payments,
-            Entries = entries,
-            Categories = categories,
-            AvailableDays = available
-        };
-    }
-
-    public async Task<MonthReport> GetMonthAsync(ReportMonth? month)
-    {
-        var current = await _dailyClose.GetCurrentBusinessDateAsync();
-        var (m, from, to, isCurrent) = Window(month, current);
-
-        return await WithConnectionAsync(_dbContext, async connection =>
-        {
-            var summary = (await QueryAsync(connection,
-                "SELECT * FROM dbo.vw_monthly_summary WHERE [year] = @y AND [month] = @m;",
-                MapMonth, new SqlParameter("@y", m.Year), new SqlParameter("@m", m.Month))).FirstOrDefault();
-
-            var days = await QueryAsync(connection,
-                "SELECT * FROM dbo.vw_daily_summary WHERE business_date BETWEEN @from AND @to ORDER BY business_date DESC;",
-                r => MapDay(r), DateParam("@from", from), DateParam("@to", to));
-
-            return new MonthReport
+            if (connection.State != ConnectionState.Open)
             {
-                Month = m,
+                await connection.OpenAsync();
+                opened = true;
+            }
+
+            // The totals come first, in one aggregate over the whole range. They are what
+            // the KPI cards show, so they must not depend on which page is being viewed.
+            var (totalRows, kpis) = await ReadTotalsAsync(connection, definition, from, to);
+
+            var lastPage = totalRows == 0 ? 1 : (int)Math.Ceiling(totalRows / (double)size);
+            var currentPage = Math.Min(requestedPage, lastPage);
+
+            var rows = await ReadRowsAsync(
+                connection, definition, from, to, (currentPage - 1) * size, size);
+
+            _logger.LogInformation(
+                "Report {ReportKey} {From}..{To}: page {Page}/{Pages} of {Total} rows.",
+                definition.Key, from, to, currentPage, lastPage, totalRows);
+
+            return new ReportResult
+            {
+                Definition = definition,
                 From = from,
                 To = to,
-                IsCurrentMonth = isCurrent,
-                Summary = summary ?? new MonthSummary { Year = m.Year, Month = m.Month },
-                Days = days,
-                Categories = await ReadCategoriesAsync(connection, from, to),
-                AvailableMonths = await ReadMonthsAsync(connection, current)
+                Rows = rows,
+                Kpis = kpis,
+                TotalRows = totalRows,
+                Page = currentPage,
+                PageSize = size
             };
+        }
+        finally
+        {
+            if (opened)
+                await connection.CloseAsync();
+        }
+    }
+
+    public async Task<string> ExportCsvAsync(ReportDefinition definition, DateOnly? from, DateOnly? to)
+    {
+        if (string.IsNullOrWhiteSpace(definition.Sql))
+            throw new InvalidOperationException($"Report '{definition.Key}' has no query.");
+
+        (from, to) = NormaliseRange(definition, from, to);
+
+        var connection = (SqlConnection)_dbContext.Database.GetDbConnection();
+        var opened = false;
+
+        try
+        {
+            if (connection.State != ConnectionState.Open)
+            {
+                await connection.OpenAsync();
+                opened = true;
+            }
+
+            // The export is not paged - a spreadsheet of one page would be useless - but it
+            // is still capped, so a single click cannot try to materialise every row the
+            // shop has ever produced.
+            var rows = await ReadRowsAsync(connection, definition, from, to, 0, ReportPaging.ExportRowLimit);
+
+            var csv = new StringBuilder();
+            csv.AppendLine(string.Join(',', definition.Columns.Select(c => EscapeCsv(c.Label))));
+
+            foreach (var row in rows)
+                csv.AppendLine(string.Join(',', row.Select(FormatForCsv).Select(EscapeCsv)));
+
+            _logger.LogInformation("Report {ReportKey} exported: {Rows} rows.", definition.Key, rows.Count);
+            return csv.ToString();
+        }
+        finally
+        {
+            if (opened)
+                await connection.CloseAsync();
+        }
+    }
+
+    // A report that describes right now - stock on hand, money currently owed - has no
+    // period to filter by, so any dates the URL carried are dropped rather than silently
+    // narrowing an answer that is supposed to be complete. A reversed range is swapped
+    // rather than returning nothing: it is a slip, and an empty table would read as
+    // "no sales that week" instead of "you typed it backwards".
+    private static (DateOnly? From, DateOnly? To) NormaliseRange(
+        ReportDefinition definition, DateOnly? from, DateOnly? to)
+    {
+        if (!definition.SupportsDateRange)
+            return (null, null);
+
+        if (from.HasValue && to.HasValue && from > to)
+            return (to, from);
+
+        return (from, to);
+    }
+
+    private static void AddRangeParameters(SqlCommand command, DateOnly? from, DateOnly? to)
+    {
+        command.Parameters.Add(new SqlParameter("@from", SqlDbType.DateTime2)
+        {
+            Value = from.HasValue ? from.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value
+        });
+        command.Parameters.Add(new SqlParameter("@to", SqlDbType.DateTime2)
+        {
+            Value = to.HasValue ? to.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value
         });
     }
 
-    public async Task<MonthExpensesReport> GetMonthExpensesAsync(ReportMonth? month)
+    // Wraps the report body as a subquery and aggregates it - which is why the definition
+    // keeps its ORDER BY separately: an ORDER BY is not legal inside a derived table.
+    private static async Task<(int TotalRows, List<ReportKpi> Kpis)> ReadTotalsAsync(
+        SqlConnection connection, ReportDefinition definition, DateOnly? from, DateOnly? to)
     {
-        var current = await _dailyClose.GetCurrentBusinessDateAsync();
-        var (m, from, to, isCurrent) = Window(month, current);
+        var selects = new List<string> { "COUNT(*) AS total_rows" };
 
-        // The same stretch of days at the start of the month before, capped at its end.
-        var prevFirst = from.AddMonths(-1);
-        var prevLast = new DateOnly(prevFirst.Year, prevFirst.Month, DateTime.DaysInMonth(prevFirst.Year, prevFirst.Month));
-        var compareTo = prevFirst.AddDays(to.DayNumber - from.DayNumber);
-        if (compareTo > prevLast) compareTo = prevLast;
-
-        var entries = (await _expenses.GetEntriesBetweenAsync(from, to))
-            .Where(e => e.EntryType == ExpenseEntryTypes.Expense)
-            .OrderByDescending(e => e.PaidAt)
-            .ToList();
-
-        return await WithConnectionAsync(_dbContext, async connection =>
+        for (var i = 0; i < definition.Kpis.Count; i++)
         {
-            var categories = await ReadCategoriesAsync(connection, from, to);
-            var previous = (await ReadCategoriesAsync(connection, prevFirst, compareTo))
-                .ToDictionary(c => c.Category, c => c.Total);
-            foreach (var c in categories)
-                c.PreviousTotal = previous.TryGetValue(c.Category, out var p) ? p : null;
+            var kpi = definition.Kpis[i];
 
-            var suppliers = await QueryAsync(connection,
-                "SELECT * FROM dbo.fn_supplier_payments(@from, @to) ORDER BY paid_total DESC;",
-                r => new SupplierPaymentRow
+            selects.Add(kpi.Column is null
+                ? $"COUNT(*) AS kpi_{i}"
+                : kpi.Aggregate switch
                 {
-                    SupplierId = r.GetInt32(r.GetOrdinal("supplier_id")),
-                    Name = r.GetString(r.GetOrdinal("name")),
-                    PaymentsCount = r.GetInt32(r.GetOrdinal("payments_count")),
-                    PaidTotal = r.Decimal("paid_total"),
-                    LastPaidAt = r.NullableDateTime("last_paid_at"),
-                    BalanceDue = r.Decimal("balance_due")
-                },
-                DateParam("@from", from), DateParam("@to", to));
+                    ReportAggregate.Count => $"COUNT({Bracket(kpi.Column)}) AS kpi_{i}",
+                    ReportAggregate.Average => $"AVG(CAST({Bracket(kpi.Column)} AS DECIMAL(19,4))) AS kpi_{i}",
+                    _ => $"SUM(CAST({Bracket(kpi.Column)} AS DECIMAL(19,4))) AS kpi_{i}"
+                });
+        }
 
-            return new MonthExpensesReport
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT {string.Join(", ", selects)} FROM (\n{definition.Sql}\n) AS report_body;";
+        command.CommandTimeout = 60;
+        AddRangeParameters(command, from, to);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        var kpis = new List<ReportKpi>(definition.Kpis.Count);
+
+        if (!await reader.ReadAsync())
+            return (0, kpis);
+
+        var totalRows = reader.GetInt32(reader.GetOrdinal("total_rows"));
+
+        for (var i = 0; i < definition.Kpis.Count; i++)
+        {
+            var ordinal = reader.GetOrdinal($"kpi_{i}");
+
+            // SUM and AVG over no rows are NULL, not zero - and an average over nothing is
+            // undefined rather than 0 ج, which would read as a real figure.
+            var value = reader.IsDBNull(ordinal) ? 0m : Convert.ToDecimal(reader.GetValue(ordinal));
+
+            kpis.Add(new ReportKpi
             {
-                Month = m,
-                From = from,
-                To = to,
-                IsCurrentMonth = isCurrent,
-                CompareFrom = prevFirst,
-                CompareTo = compareTo,
-                Categories = categories,
-                Suppliers = suppliers,
-                Entries = entries,
-                AvailableMonths = await ReadMonthsAsync(connection, current)
-            };
-        });
+                Label = definition.Kpis[i].Label,
+                Value = decimal.Round(value, 2),
+                Format = definition.Kpis[i].Format
+            });
+        }
+
+        return (totalRows, kpis);
     }
 
-    // A month runs from its 1st to its last day - or to today, while it is still going.
-    private static (ReportMonth Month, DateOnly From, DateOnly To, bool IsCurrent) Window(ReportMonth? month, DateOnly current)
+    private static async Task<List<object?[]>> ReadRowsAsync(
+        SqlConnection connection, ReportDefinition definition, DateOnly? from, DateOnly? to,
+        int skip, int take)
     {
-        var m = month ?? new ReportMonth(current.Year, current.Month);
-        var from = new DateOnly(m.Year, m.Month, 1);
-        var last = new DateOnly(m.Year, m.Month, DateTime.DaysInMonth(m.Year, m.Month));
-        var isCurrent = m.Year == current.Year && m.Month == current.Month;
-        return (m, from, isCurrent ? current : last, isCurrent);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"{definition.Sql}\nORDER BY {definition.OrderBy}\n" +
+            "OFFSET @skip ROWS FETCH NEXT @take ROWS ONLY;";
+        command.CommandTimeout = 120;
+        AddRangeParameters(command, from, to);
+        command.Parameters.Add(new SqlParameter("@skip", SqlDbType.Int) { Value = skip });
+        command.Parameters.Add(new SqlParameter("@take", SqlDbType.Int) { Value = take });
+
+        var rows = new List<object?[]>();
+        await using var reader = await command.ExecuteReaderAsync();
+
+        // Resolved once rather than per row. A column the query stopped returning is a bug
+        // in the catalogue, so this throws rather than rendering silent blanks.
+        var ordinals = definition.Columns.Select(c => reader.GetOrdinal(c.Key)).ToArray();
+
+        while (await reader.ReadAsync())
+        {
+            var row = new object?[ordinals.Length];
+            for (var i = 0; i < ordinals.Length; i++)
+                row[i] = reader.IsDBNull(ordinals[i]) ? null : reader.GetValue(ordinals[i]);
+
+            rows.Add(row);
+        }
+
+        return rows;
     }
 
-    private static async Task<List<CategorySplit>> ReadCategoriesAsync(SqlConnection connection, DateOnly from, DateOnly to) =>
-        await QueryAsync(connection,
-            "SELECT * FROM dbo.fn_expenses_by_category(@from, @to) ORDER BY total_amount DESC;",
-            r => new CategorySplit
-            {
-                Category = r.GetString(r.GetOrdinal("category")),
-                Count = r.GetInt32(r.GetOrdinal("entries_count")),
-                FromDrawer = r.Decimal("from_drawer"),
-                FromOutside = r.Decimal("from_outside"),
-                Total = r.Decimal("total_amount"),
-                SupplierPaid = r.Decimal("supplier_paid"),
-                LastPaidAt = r.NullableDateTime("last_paid_at")
-            },
-            DateParam("@from", from), DateParam("@to", to));
+    // Column names come from the catalogue, never from user input, but bracketing them
+    // keeps the generated SQL valid for any name and makes injection impossible by shape.
+    private static string Bracket(string column) => $"[{column.Replace("]", "]]")}]";
 
-    // Every month with activity, newest first, plus the current one.
-    private static async Task<IReadOnlyList<ReportMonth>> ReadMonthsAsync(SqlConnection connection, DateOnly current)
+    private static string FormatForCsv(object? value) => value switch
     {
-        var months = await QueryAsync(connection,
-            "SELECT [year], [month] FROM dbo.vw_monthly_summary;",
-            r => new ReportMonth(r.GetInt32(0), r.GetInt32(1)));
-        return months.Append(new ReportMonth(current.Year, current.Month))
-            .Distinct()
-            .OrderByDescending(x => x.Year).ThenByDescending(x => x.Month)
-            .ToList();
-    }
-
-    private static SqlParameter DateParam(string name, DateOnly value) =>
-        new(name, SqlDbType.Date) { Value = value.ToDateTime(TimeOnly.MinValue) };
-
-    private static DaySummary MapDay(SqlDataReader r) => new()
-    {
-        BusinessDate = DateOnly.FromDateTime(r.GetDateTime(r.GetOrdinal("business_date"))),
-        DayStartAt = r.GetDateTime(r.GetOrdinal("day_start_at")),
-        DayEndAt = r.GetDateTime(r.GetOrdinal("day_end_at")),
-        TodayInvoicesCash = r.Decimal("today_invoices_cash"),
-        TodayInvoicesVisa = r.Decimal("today_invoices_visa"),
-        OldInvoicesCash = r.Decimal("old_invoices_cash"),
-        OldInvoicesVisa = r.Decimal("old_invoices_visa"),
-        RefundsCash = r.Decimal("refunds_cash"),
-        RefundsVisa = r.Decimal("refunds_visa"),
-        OtherIncomeCash = r.Decimal("other_income_cash"),
-        OtherIncomeCard = r.Decimal("other_income_card"),
-        IncomeCash = r.Decimal("income_cash"),
-        IncomeVisa = r.Decimal("income_visa"),
-        IncomeTotal = r.Decimal("income_total"),
-        ExpenseFromDrawer = r.Decimal("expense_from_drawer"),
-        ExpenseFromOutside = r.Decimal("expense_from_outside"),
-        ExpenseTotal = r.Decimal("expense_total"),
-        SupplierPaid = r.Decimal("supplier_paid"),
-        OwnerDraw = r.Decimal("owner_draw"),
-        DrawerCash = r.Decimal("drawer_cash"),
-        Net = r.Decimal("net_day")
+        null => string.Empty,
+        DateTime dt => dt.TimeOfDay == TimeSpan.Zero
+            ? dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : dt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+        DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        decimal m => m.ToString("0.##", CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? string.Empty
     };
 
-    private static MonthSummary MapMonth(SqlDataReader r) => new()
-    {
-        Year = r.GetInt32(r.GetOrdinal("year")),
-        Month = r.GetInt32(r.GetOrdinal("month")),
-        FirstDay = DateOnly.FromDateTime(r.GetDateTime(r.GetOrdinal("first_day"))),
-        LastDay = DateOnly.FromDateTime(r.GetDateTime(r.GetOrdinal("last_day"))),
-        ActiveDays = r.GetInt32(r.GetOrdinal("active_days")),
-        TodayInvoicesCash = r.Decimal("today_invoices_cash"),
-        TodayInvoicesVisa = r.Decimal("today_invoices_visa"),
-        OldInvoicesCash = r.Decimal("old_invoices_cash"),
-        OldInvoicesVisa = r.Decimal("old_invoices_visa"),
-        RefundsCash = r.Decimal("refunds_cash"),
-        RefundsVisa = r.Decimal("refunds_visa"),
-        OtherIncomeCash = r.Decimal("other_income_cash"),
-        OtherIncomeCard = r.Decimal("other_income_card"),
-        IncomeCash = r.Decimal("income_cash"),
-        IncomeVisa = r.Decimal("income_visa"),
-        IncomeTotal = r.Decimal("income_total"),
-        ExpenseFromDrawer = r.Decimal("expense_from_drawer"),
-        ExpenseFromOutside = r.Decimal("expense_from_outside"),
-        ExpenseTotal = r.Decimal("expense_total"),
-        SupplierPaid = r.Decimal("supplier_paid"),
-        OwnerDraw = r.Decimal("owner_draw"),
-        DrawerCash = r.Decimal("drawer_cash_taken"),
-        Net = r.Decimal("net_month")
-    };
+    private static string EscapeCsv(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? $"\"{value.Replace("\"", "\"\"")}\""
+            : value;
 }

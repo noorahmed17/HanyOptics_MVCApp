@@ -1,421 +1,282 @@
-@model HanyOptics.BusinessLogic.Models.DailyCloseReport
-@using System.Globalization
+@model HanyOptics.BusinessLogic.Models.DayReport
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
 @{
     ViewData["Title"] = "قفلة اليوم";
-
-    var arEg = CultureInfo.GetCultureInfo("ar-EG");
     var s = Model.Summary;
+    string M(decimal v) => ExpenseDisplay.Money(v);
+    string N(decimal v) => ExpenseDisplay.Number(v);
+    string T(DateTime t) => ExpenseDisplay.Time(t);
 
-    string Money(decimal v) => v.ToString("N0", arEg) + " ج";
-    string Num(decimal v) => v.ToString("N0", arEg);
-    string Time(DateTime t) => t.ToString("h:mm tt", arEg);
-    string Day(DateTime t) => t.ToString("dddd d MMMM", arEg);
-
-    // The item-type badges, coloured the way the rest of the app colours a kind of thing.
-    (string Css, string Label) ItemBadge(string type) => type switch
-    {
-        "frame_lenses" => ("badge-fl", "إطار + عدسات"),
-        "frame_only" => ("badge-fo", "إطار فقط"),
-        "lenses_replace" => ("badge-lr", "عدسات على إطار الزبون"),
-        _ => ("badge-user", type)
-    };
-
-    (string Css, string Label) StatusBadge(string status) => status switch
-    {
-        "sold" => ("badge-sold", "مباع"),
-        "ready" => ("badge-ready", "جاهز"),
-        "delivered" => ("badge-delivered", "تم التسليم"),
-        "cancelled" => ("badge-cancelled", "ملغي"),
-        _ => ("badge-user", status)
-    };
-
-    // The totals row sums only the live orders, because vw_daily_close's orders_total does
-    // the same - a cancelled invoice still shows in the list so you can see it was voided,
-    // but counting its money would make the footer disagree with the card above it.
     var liveOrders = Model.Orders.Where(o => o.Status != "cancelled").ToList();
-    var cancelledCount = Model.Orders.Count - liveOrders.Count;
+    var payNet = Model.Payments.Sum(p => p.SignedAmount);
 
-    string PaymentTypeLabel(string t) => t switch
+    (string Css, string Label) EntryType(string t) => t switch
     {
-        "deposit" => "عربون",
-        "final" => "باقي",
-        "full" => "كامل",
-        "refund" => "مردود",
-        _ => t
+        ExpenseEntryTypes.OwnerDraw => ("mk-owner", "مسحوبات المالك"),
+        ExpenseEntryTypes.Income => ("mk-income", "إيراد آخر"),
+        _ => ("mk-drawer", "مصروف")
     };
+    (string Css, string Label) Source(ExpenseEntry e) =>
+        e.IsIncome ? ("mk-income", "أُضيف إلى الدرج")
+        : e.FundingSource == FundingSources.Drawer && e.PaymentMethod == PaymentMethods.Cash ? ("mk-drawer", "من الإيرادات")
+        : ("mk-outside", "من خارج الإيرادات");
 }
 
 <div class="page-header">
     <h2>🌙 قفلة اليوم</h2>
-    <a class="btn btn-outline" asp-controller="Reports" asp-action="Index">→ كل التقارير</a>
+    @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+    {
+        <a class="btn btn-outline" asp-controller="Reports" asp-action="Index">→ كل التقارير</a>
+    }
 </div>
 
 <p class="text-muted mb-3" style="font-size:13px">
-    كل اللي حصل في يوم شغل واحد: بعت كام، سلّمت كام، ودخل الدرج كام كاش وكام فيزا.
+    ملخص الإيرادات والمصروفات في يوم العمل، والنقدية المتوقعة في الدرج عند الإغلاق.
 </p>
 
+@* The same day picker قفلة اليوم always had: any day can be typed or picked, not only the
+   days that already have activity. *@
 <form method="get" class="filter-bar">
     <div class="filter-field">
-        <label>يوم الشغل</label>
-        <input type="date" name="date" value="@Model.BusinessDate.ToString("yyyy-MM-dd")" />
+        <label for="date">يوم الشغل</label>
+        <input type="date" id="date" name="date" value="@Model.BusinessDate.ToString("yyyy-MM-dd")" />
     </div>
     <button type="submit" class="btn btn-primary">عرض</button>
-    @if (!Model.IsCurrentDay)
+    @if (!Model.IsToday)
     {
         <a class="btn btn-outline" asp-action="Index">اليوم الحالي</a>
     }
-
-    @* Spelling out the window matters here: someone looking at 1am needs to know the sale
-       they just rang up lands on tonight's sheet, not tomorrow's. *@
-    @if (s is not null)
-    {
-        <div class="daywindow">
-            🕕 اليوم المحاسبي: من <b>@Day(s.DayStartAt) @Time(s.DayStartAt)</b>
-            لحد <b>@Day(s.DayEndAt) @Time(s.DayEndAt.AddMinutes(-1))</b>
-            <br><span class="text-muted">أي بيعة أو دفعة بعد نص الليل بتفضل محسوبة على نفس يوم الشغل.</span>
-        </div>
-    }
 </form>
+<div class="rep-window">
+    🕕 يوم العمل من <b>@ExpenseDisplay.DayLabel(Model.BusinessDate)، @T(s.DayStartAt)</b>
+    حتى <b>@ExpenseDisplay.DayLabel(Model.BusinessDate.AddDays(1))، @T(s.DayEndAt.AddMinutes(-1))</b>.
+    العمليات المسجلة بعد منتصف الليل تُحسب على اليوم نفسه.
+</div>
 
-@if (s is null)
-{
-    <div class="card">
-        <div class="empty-state">
-            مفيش أي حركة في اليوم ده — لا أوردرات ولا دفعات ولا تسليمات.
-        </div>
-    </div>
-}
-else
-{
-    <div class="stats-grid">
-        <div class="stat-card hero">
-            <div class="stat-icon">💰</div>
-            <div class="stat-label">اللي دخل الدرج (صافي)</div>
-            <div class="stat-value num">@Money(s.NetTotal)</div>
-            <div class="stat-sub">كاش + فيزا، ناقص المردودات</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">💵</div>
-            <div class="stat-label">كاش في الدرج</div>
-            <div class="stat-value num c-green">@Money(s.CashNet)</div>
-            <div class="stat-sub">
-                @if (s.RefundsTotal > 0) { <text>بعد خصم @Money(s.RefundsTotal) مردودات</text> }
-                else { <text>مفيش مردودات</text> }
-            </div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">💳</div>
-            <div class="stat-label">فيزا (على الماكينة)</div>
-            <div class="stat-value num c-blue">@Money(s.VisaNet)</div>
-            <div class="stat-sub">@Num(s.PaymentsCount) حركة في اليوم</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">🧾</div>
-            <div class="stat-label">مبيعات اليوم</div>
-            <div class="stat-value num c-purple">@Money(s.OrdersTotal)</div>
-            <div class="stat-sub">@Num(s.OrdersCount) أوردر اتفتح</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-icon">📦</div>
-            <div class="stat-label">تسليمات اليوم</div>
-            <div class="stat-value num c-amber">@Num(s.DeliveriesCount)</div>
-            <div class="stat-sub">بقيمة @Money(s.DeliveriesTotal)</div>
-        </div>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">💰 الفلوس دخلت منين؟</div>
-            @if (s.LastActivityAt is not null)
+<div class="rep-hero @(s.DrawerCash < 0 ? "neg" : "")">
+    <div>
+        <div class="lbl">النقدية المتوقعة في الدرج</div>
+        <div class="amt">@ExpenseDisplay.Signed(s.DrawerCash)</div>
+        <div class="formula">
+            <span>إيرادات نقدية <b>@M(s.IncomeCash)</b></span>
+            <span>− مصروفات من الإيرادات <b>@M(s.ExpenseFromDrawer)</b></span>
+            @if (s.OwnerDrawFromDrawer != 0)
             {
-                <div class="card-note">آخر حركة: @Time(s.LastActivityAt.Value)</div>
+                <span>− مسحوبات المالك <b>@M(s.OwnerDrawFromDrawer)</b></span>
             }
         </div>
-        <div class="card-pad">
-            @if (s.NetTotal > 0)
-            {
-                <div class="splitbar">
-                    <div style="width:@(s.CashShare.ToString(CultureInfo.InvariantCulture))%;background:#057a55"></div>
-                    <div style="width:@(s.VisaShare.ToString(CultureInfo.InvariantCulture))%;background:#1a56db"></div>
-                </div>
-                <div class="legend mb-3">
-                    <span><i style="background:#057a55"></i>كاش @Money(s.CashNet) (@s.CashShare.ToString("0.#", arEg)%)</span>
-                    <span><i style="background:#1a56db"></i>فيزا @Money(s.VisaNet) (@s.VisaShare.ToString("0.#", arEg)%)</span>
-                </div>
-            }
+    </div>
+    <div class="rep-side">
+        <div class="row"><span>إجمالي الإيرادات</span><b>@M(s.IncomeTotal)</b></div>
+        <div class="row"><span>جميع المصروفات</span><b>@M(s.ExpenseTotal)</b></div>
+        <div class="row total"><span>صافي اليوم</span><b>@ExpenseDisplay.Signed(s.Net)</b></div>
+    </div>
+</div>
 
-            <table class="breakdown">
-                <tr>
-                    <td>دفعات على فواتير اتفتحت اليوم</td>
-                    <td class="num">@Money(s.FromTodayInvoices)</td>
-                </tr>
-                <tr>
-                    <td>باقي فواتير قديمة اتحصّل اليوم <span class="badge badge-old">عميل جه استلم</span></td>
-                    <td class="num">@Money(s.FromOldInvoices)</td>
-                </tr>
-                <tr>
-                    <td>مردودات طلعت من الدرج</td>
-                    <td class="num c-red"><bdi>@(s.RefundsTotal > 0 ? "−" + Money(s.RefundsTotal) : Money(0))</bdi></td>
-                </tr>
-                <tr>
-                    <td>صافي اللي في الدرج آخر اليوم</td>
-                    <td class="num">@Money(s.NetTotal)</td>
-                </tr>
-            </table>
+<div class="rep-flows">
+    <div>
+        <div class="rep-flow-title"><span class="in">⬇</span> الإيرادات</div>
+        <div class="rep-kpis">
+            <div class="stat-card main"><div class="stat-label">إجمالي الإيرادات</div><div class="stat-value">@M(s.IncomeTotal)</div><div class="stat-sub">نقدي وفيزا بعد خصم المرتجعات</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#057a55"></span>إيرادات نقدية</div><div class="stat-value">@M(s.IncomeCash)</div><div class="stat-sub">@(s.RefundsCash > 0 ? "بعد خصم مرتجعات " + M(s.RefundsCash) : "لا توجد مرتجعات")</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#1d4ed8"></span>إيرادات الفيزا</div><div class="stat-value">@M(s.IncomeVisa)</div><div class="stat-sub">على ماكينة الدفع، لا تدخل الدرج</div></div>
         </div>
     </div>
-
-    <div class="section-divider"><span>🧾 أوردرات اتعملت في اليوم</span></div>
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">
-                @Num(liveOrders.Count) أوردر · إجمالي @Money(s.OrdersTotal)
-                @if (cancelledCount > 0)
-                {
-                    <span class="badge badge-cancelled">+@Num(cancelledCount) ملغي</span>
-                }
-            </div>
-            <div class="card-note">🌙 = اتعمل بعد نص الليل، ومحسوب على نفس يوم الشغل</div>
+    <div>
+        <div class="rep-flow-title"><span class="out">⬆</span> المصروفات والمسحوبات</div>
+        <div class="rep-kpis">
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#057a55"></span>مصروفات من الإيرادات</div><div class="stat-value">@M(s.ExpenseFromDrawer)</div><div class="stat-sub">دُفعت من نقدية الدرج</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#d97706"></span>مصروفات من خارج الإيرادات</div><div class="stat-value">@M(s.ExpenseFromOutside)</div><div class="stat-sub">مبالغ من خارج الدرج</div></div>
+            <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#6d28d9"></span>مسحوبات المالك</div><div class="stat-value">@M(s.OwnerDraw)</div><div class="stat-sub">@(s.OwnerDraw > 0 ? "من الدرج، ولا يُعد مصروفًا" : "لا توجد مسحوبات")</div></div>
         </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-title">مصادر الإيرادات</span><span class="text-muted text-sm">بعد خصم المرتجعات</span></div>
+    <div class="card-pad"><partial name="_RevenueSources" model="s" /></div>
+</div>
+
+<nav class="rep-jump mt-3" aria-label="جداول اليوم">
+    <a href="#t-orders">فواتير اليوم <b>@N(liveOrders.Count)</b></a>
+    <a href="#t-del">التسليمات <b>@N(Model.Deliveries.Count)</b></a>
+    <a href="#t-pay">المدفوعات <b>@N(Model.Payments.Count)</b></a>
+    <a href="#t-exp">المصروفات والحركات الأخرى <b>@N(Model.Entries.Count)</b></a>
+</nav>
+
+<div class="card" id="t-orders">
+    <div class="card-header">
+        <span class="card-title">فواتير اليوم</span>
+        <span class="text-muted text-sm"><b>@N(liveOrders.Count)</b> فواتير · القيمة <b>@M(liveOrders.Sum(o => o.TotalAmount))</b></span>
+    </div>
+    <div class="card-body table-scroll">
         @if (Model.Orders.Count == 0)
         {
-            <div class="empty-state">مفيش أوردرات اتفتحت في اليوم ده.</div>
+            <div class="empty-state">لا توجد فواتير في هذا اليوم.</div>
         }
         else
         {
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                    <tr>
-                        <th>الوقت</th><th>الفاتورة</th><th>العميل</th><th>النوع</th>
-                        <th class="num">الإجمالي</th><th class="num">مدفوع</th><th class="num">باقي</th><th>الحالة</th>
+            <table>
+                <thead><tr><th>الوقت</th><th>رقم الفاتورة</th><th>العميل</th><th>النوع</th><th>التسليم</th><th class="num">الإجمالي</th><th class="num">المدفوع</th><th class="num">المتبقي</th><th>الحالة</th></tr></thead>
+                <tbody>
+                @foreach (var o in Model.Orders)
+                {
+                    var (stCss, stLabel) = ExpenseDisplay.OrderStatus(o.Status);
+                    <tr class="@(o.IsAfterMidnight ? "row-night" : "") @(o.Status == "cancelled" ? "row-cancelled" : "")">
+                        <td class="num">@T(o.OrderDate)@if (o.IsAfterMidnight) { <span class="sub">بعد منتصف الليل</span> }</td>
+                        <td><bdi>@o.InvoiceNumber</bdi></td>
+                        <td><b>@(o.CustomerName ?? "—")</b></td>
+                        <td>@ExpenseDisplay.ItemTypes(o.ItemTypes)</td>
+                        <td>@if (o.DeliveryType == "immediate") { <span class="mk mk-info">فوري</span> } else { <span class="mk mk-muted">عادي</span> }</td>
+                        <td class="num amount">@N(o.TotalAmount)</td>
+                        <td class="num c-green">@N(o.PaidAmount)</td>
+                        <td class="num @(o.RemainingAmount > 0 ? "" : "text-muted")">@(o.RemainingAmount > 0 ? N(o.RemainingAmount) : "—")</td>
+                        <td><span class="badge @stCss">@stLabel</span></td>
                     </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var o in Model.Orders)
-                    {
-                        var st = StatusBadge(o.Status);
-                        <tr class="@(o.IsAfterMidnight ? "row-night" : "")">
-                            <td class="num">
-                                @Time(o.OrderDate)
-                                @if (o.IsAfterMidnight) { <span class="badge badge-night">🌙</span> }
-                            </td>
-                            <td>@o.InvoiceNumber</td>
-                            <td>@o.CustomerName</td>
-                            <td>
-                                @foreach (var t in (o.ItemTypes ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
-                                {
-                                    var b = ItemBadge(t.Trim());
-                                    <span class="badge @b.Css">@b.Label</span>
-                                }
-                            </td>
-                            <td class="num">@Num(o.TotalAmount)</td>
-                            <td class="num c-green">@Num(o.PaidAmount)</td>
-                            @* A negative balance means the customer paid more than the order
-                               came to. Showing it as "—" would read as settled and hide money
-                               that is owed back, so it is called out as a credit instead. *@
-                            <td class="num @(o.RemainingAmount > 0 ? "c-amber" : o.RemainingAmount < 0 ? "c-red" : "")">
-                                @if (o.RemainingAmount > 0)
-                                {
-                                    @Num(o.RemainingAmount)
-                                }
-                                else if (o.RemainingAmount < 0)
-                                {
-                                    <text>@Num(Math.Abs(o.RemainingAmount))<span class="sub"><span class="badge badge-cancelled">زيادة</span></span></text>
-                                }
-                                else
-                                {
-                                    <text>—</text>
-                                }
-                            </td>
-                            <td><span class="badge @st.Css">@st.Label</span></td>
-                        </tr>
-                    }
-                    </tbody>
-                    <tfoot>
-                    <tr>
-                        <td colspan="4">الإجمالي @(cancelledCount > 0 ? "(من غير الملغي)" : "")</td>
-                        <td class="num">@Num(liveOrders.Sum(o => o.TotalAmount))</td>
-                        <td class="num">@Num(liveOrders.Sum(o => o.PaidAmount))</td>
-                        <td class="num c-amber">@Num(liveOrders.Sum(o => o.RemainingAmount))</td>
-                        <td></td>
-                    </tr>
-                    </tfoot>
-                </table>
-            </div>
+                }
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="5">الإجمالي (بدون الملغي)</td><td class="num">@N(liveOrders.Sum(o => o.TotalAmount))</td><td class="num">@N(liveOrders.Sum(o => o.PaidAmount))</td><td class="num">@N(liveOrders.Sum(o => o.RemainingAmount))</td><td></td></tr>
+                </tfoot>
+            </table>
         }
     </div>
+</div>
 
-    <div class="section-divider"><span>📦 اللي اتسلّم في اليوم</span></div>
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">@Num(Model.Deliveries.Count) تسليم · قيمتها @Money(s.DeliveriesTotal)</div>
-            <div class="card-note">فيهم فواتير قديمة العميل جه استلمها اليوم</div>
-        </div>
+<div class="card" id="t-del">
+    <div class="card-header">
+        <span class="card-title">التسليمات</span>
+        <span class="text-muted text-sm"><b>@N(Model.Deliveries.Count)</b> تسليمات · القيمة <b>@M(Model.Deliveries.Sum(d => d.TotalAmount))</b></span>
+    </div>
+    <div class="card-body table-scroll">
         @if (Model.Deliveries.Count == 0)
         {
-            <div class="empty-state">مفيش تسليمات في اليوم ده.</div>
+            <div class="empty-state">لا توجد تسليمات في هذا اليوم.</div>
         }
         else
         {
-            <div class="table-scroll">
-                <table>
-                    <thead>
+            <table>
+                <thead><tr><th>وقت التسليم</th><th>رقم الفاتورة</th><th>العميل</th><th>تاريخ الفاتورة</th><th class="num">قيمة الفاتورة</th><th class="num">المحصَّل عند التسليم</th></tr></thead>
+                <tbody>
+                @foreach (var d in Model.Deliveries)
+                {
                     <tr>
-                        <th>وقت التسليم</th><th>الفاتورة</th><th>العميل</th>
-                        <th class="num">قيمة الطلب</th><th class="num">اتحصّل عند الاستلام</th><th>الفاتورة من</th>
+                        <td class="num">@T(d.DeliveredAt)</td>
+                        <td><bdi>@d.InvoiceNumber</bdi></td>
+                        <td><b>@(d.CustomerName ?? "—")</b></td>
+                        <td>@ExpenseDisplay.DayLabel(DateOnly.FromDateTime(d.OrderDate))</td>
+                        <td class="num">@N(d.TotalAmount)</td>
+                        <td class="num @(d.CollectedToday != 0 ? "c-green" : "text-muted")">@(d.CollectedToday != 0 ? N(d.CollectedToday) : "مسددة مسبقًا")</td>
                     </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var d in Model.Deliveries)
-                    {
-                        <tr class="@(d.IsAfterMidnight ? "row-night" : "")">
-                            <td class="num">
-                                @Time(d.DeliveredAt)
-                                @if (d.IsAfterMidnight) { <span class="badge badge-night">🌙</span> }
-                            </td>
-                            <td>@d.InvoiceNumber</td>
-                            <td>@d.CustomerName</td>
-                            <td class="num">@Num(d.TotalAmount)</td>
-                            <td class="num @(d.CollectedToday > 0 ? "c-green" : "")">
-                                @(d.CollectedToday > 0 ? Num(d.CollectedToday) : "—")
-                            </td>
-                            <td>
-                                @if (d.IsSameDay)
-                                {
-                                    <span class="badge badge-sold">نفس اليوم</span>
-                                }
-                                else
-                                {
-                                    <span class="badge badge-old">@d.OrderDate.ToString("d MMMM", arEg)</span>
-                                }
-                            </td>
-                        </tr>
-                    }
-                    </tbody>
-                    <tfoot>
-                    <tr>
-                        <td colspan="3">الإجمالي</td>
-                        <td class="num">@Num(Model.Deliveries.Sum(d => d.TotalAmount))</td>
-                        <td class="num">@Num(Model.Deliveries.Sum(d => d.CollectedToday))</td>
-                        <td></td>
-                    </tr>
-                    </tfoot>
-                </table>
-            </div>
+                }
+                </tbody>
+                <tfoot><tr><td colspan="4">الإجمالي</td><td class="num">@N(Model.Deliveries.Sum(d => d.TotalAmount))</td><td class="num">@N(Model.Deliveries.Sum(d => d.CollectedToday))</td></tr></tfoot>
+            </table>
         }
     </div>
-
-    <div class="section-divider"><span>💵 كل حركة فلوس في اليوم</span></div>
-    <div class="card">
-        <div class="card-header">
-            <div class="card-title">@Num(Model.Payments.Count) حركة · صافي @Money(s.NetTotal)</div>
-            <div class="card-note">المردود بينزل بالسالب من الدرج</div>
+    <div class="card-pad" style="padding-top:0">
+        <div class="alert alert-info mt-3" style="margin-bottom:0;font-size:12px">
+            ℹ️ الطلبات الفورية المسددة بالكامل لا تظهر هنا لأنها محسوبة في فواتير اليوم. أما الطلب الفوري الذي عليه مبلغ متبقٍ فيظهر في التسليمات.
         </div>
+    </div>
+</div>
+
+<div class="card" id="t-pay">
+    <div class="card-header">
+        <span class="card-title">المدفوعات</span>
+        <span class="text-muted text-sm"><b>@N(Model.Payments.Count)</b> عمليات · الصافي <b>@ExpenseDisplay.Signed(payNet)</b></span>
+    </div>
+    <div class="card-body table-scroll">
         @if (Model.Payments.Count == 0)
         {
-            <div class="empty-state">مفيش حركة فلوس في اليوم ده.</div>
+            <div class="empty-state">لا توجد مدفوعات في هذا اليوم.</div>
         }
         else
         {
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                    <tr>
-                        <th>الوقت</th><th>الفاتورة</th><th>العميل</th>
-                        <th>نوع الدفعة</th><th>الطريقة</th><th class="num">المبلغ</th><th>استلمها</th>
+            <table>
+                <thead><tr><th>الوقت</th><th>رقم الفاتورة</th><th>العميل</th><th>نوع الدفعة</th><th>الفاتورة</th><th>الطريقة</th><th class="num">المبلغ</th><th>المستلم</th></tr></thead>
+                <tbody>
+                @foreach (var p in Model.Payments)
+                {
+                    var refund = p.PaymentType == "refund";
+                    <tr class="@(p.IsAfterMidnight ? "row-night" : "")">
+                        <td class="num">@T(p.PaidAt)</td>
+                        <td><bdi>@p.InvoiceNumber</bdi></td>
+                        <td><b>@(p.CustomerName ?? "—")</b></td>
+                        <td>@if (refund) { <span class="mk mk-bad">مرتجع</span> } else { @ExpenseDisplay.PaymentType(p.PaymentType) }</td>
+                        <td>@if (refund) { <span class="text-muted">—</span> } else if (p.IsOldInvoice) { <span class="mk mk-info">فاتورة سابقة</span> } else { <text>فاتورة اليوم</text> }</td>
+                        <td><span class="badge @(p.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@(p.PaymentMethod == PaymentMethods.Visa ? "فيزا" : "نقدي")</span></td>
+                        <td class="num fw-bold @(refund ? "c-red" : "")">@(refund ? "− " : "")@N(p.Amount)</td>
+                        <td>@(p.ReceivedBy ?? "—")</td>
                     </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var p in Model.Payments)
-                    {
-                        var refund = p.PaymentType == "refund";
-                        <tr class="@(refund ? "row-refund" : p.IsAfterMidnight ? "row-night" : "")">
-                            <td class="num">
-                                @Time(p.PaidAt)
-                                @if (p.IsAfterMidnight) { <span class="badge badge-night">🌙</span> }
-                            </td>
-                            <td>@p.InvoiceNumber</td>
-                            <td>@p.CustomerName</td>
-                            <td>
-                                @if (refund)
-                                {
-                                    <span class="badge badge-cancelled">مردود</span>
-                                }
-                                else
-                                {
-                                    @PaymentTypeLabel(p.PaymentType)
-                                    @if (p.IsOldInvoice) { <span class="badge badge-old">فاتورة قديمة</span> }
-                                }
-                            </td>
-                            <td>
-                                <span class="badge @(p.PaymentMethod == "visa" ? "badge-visa" : "badge-cash")">
-                                    @(p.PaymentMethod == "visa" ? "فيزا" : "كاش")
-                                </span>
-                            </td>
-                            <td class="num @(refund ? "c-red" : "c-green")">
-                                    <bdi>@(refund ? "−" + Num(p.Amount) : Num(p.Amount))</bdi>  
-                            </td>
-                            <td>@p.ReceivedBy</td>
-                        </tr>
-                    }
-                    </tbody>
-                    <tfoot>
-                    <tr>
-                        <td colspan="5">صافي الدرج (كاش @Num(s.CashNet) + فيزا @Num(s.VisaNet))</td>
-                        <td class="num">@Num(Model.Payments.Sum(p => p.SignedAmount))</td>
-                        <td></td>
-                    </tr>
-                    </tfoot>
-                </table>
-            </div>
+                }
+                </tbody>
+                <tfoot><tr><td colspan="6">الصافي — نقدي @N(s.SalesCash - s.RefundsCash) · فيزا @N(s.SalesVisa - s.RefundsVisa)</td><td class="num">@ExpenseDisplay.Signed(payNet)</td><td></td></tr></tfoot>
+            </table>
         }
     </div>
+</div>
 
-    @* Only worth a section when there is actually something to act on. *@
-    @if (s.OrdersRemaining > 0 || s.RefundsCount > 0 || Model.Orders.Any(o => o.Status == "ready"))
-    {
-        <div class="section-divider"><span>⚠️ محتاج انتباهك</span></div>
-        <div class="alerts">
-            @if (s.OrdersRemaining > 0)
-            {
-                var owing = Model.Orders.Where(o => o.RemainingAmount > 0).ToList();
-                <div class="alert-box warn">
-                    <div class="alert-title">⏳ أوردرات اليوم لسه عليها باقي</div>
-                    <div class="alert-value num c-amber">@Money(s.OrdersRemaining)</div>
-                    <div class="alert-desc">
-                        @Num(owing.Count) أوردر: @string.Join(" · ", owing.Select(o => o.InvoiceNumber))
-                    </div>
+<div class="card" id="t-exp">
+    <div class="card-pad">
+        <div class="rep-grid2">
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <span class="card-title">المصروفات حسب النوع</span>
+                    <div class="rep-legend"><span><i class="seg-d"></i>من الإيرادات</span><span><i class="seg-o"></i>من خارج الإيرادات</span></div>
                 </div>
-            }
-
-            @if (s.RefundsCount > 0)
-            {
-                var refunds = Model.Payments.Where(p => p.PaymentType == "refund").ToList();
-                <div class="alert-box">
-                    <div class="alert-title">↩️ مردودات اليوم</div>
-                    <div class="alert-value num c-red">@Money(s.RefundsTotal)</div>
-                    <div class="alert-desc">
-                        @Num(s.RefundsCount) حركة — @string.Join(" · ", refunds.Select(p => p.InvoiceNumber))
-                    </div>
-                </div>
-            }
-
-            @{ var ready = Model.Orders.Where(o => o.Status == "ready").ToList(); }
-            @if (ready.Count > 0)
-            {
-                <div class="alert-box info">
-                    <div class="alert-title">✅ جاهز ومستني الاستلام</div>
-                    <div class="alert-value num">@Num(ready.Count)</div>
-                    <div class="alert-desc">
-                        @string.Join(" · ", ready.Select(o => o.InvoiceNumber + " — " + o.CustomerName))
-                    </div>
-                </div>
-            }
+                <partial name="_CategoryBars" model="Model.Categories" />
+            </div>
+            <div>
+                <div class="card-title mb-3">ملخص الحركات</div>
+                <table class="ledger">
+                    <tr><td class="op"></td><td>مصروفات من الإيرادات</td><td>@M(s.ExpenseFromDrawer)</td></tr>
+                    <tr><td class="op"></td><td>مصروفات من خارج الإيرادات</td><td>@M(s.ExpenseFromOutside)</td></tr>
+                    <tr class="owner"><td class="op"></td><td>مسحوبات المالك</td><td>@M(s.OwnerDraw)</td></tr>
+                    <tr><td class="op"></td><td>إيرادات أخرى (أُضيفت)</td><td class="c-green">@M(s.OtherIncomeTotal)</td></tr>
+                </table>
+            </div>
         </div>
-    }
-}
+    </div>
+    <div class="card-header" style="border-top:1px solid #f1f5f9">
+        <span class="card-title">المصروفات والحركات الأخرى</span>
+        <span class="text-muted text-sm"><b>@N(Model.Entries.Count)</b> حركات</span>
+    </div>
+    <div class="card-body table-scroll">
+        @if (Model.Entries.Count == 0)
+        {
+            <div class="empty-state">لا توجد حركات.</div>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>المصدر</th><th>الطريقة</th><th class="num">المبلغ</th><th>سجّلها</th></tr></thead>
+                <tbody>
+                @foreach (var e in Model.Entries)
+                {
+                    var (tCss, tLabel) = EntryType(e.EntryType);
+                    var (sCss, sLabel) = Source(e);
+                    <tr>
+                        <td class="num">@T(e.PaidAt)</td>
+                        <td><span class="mk @tCss">@tLabel</span></td>
+                        <td>
+                            @if (e.EntryType == ExpenseEntryTypes.OwnerDraw) { <b class="c-purple">مسحوبات المالك</b> } else { <b>@(e.Category ?? "—")</b> }
+                            @if (e.SupplierName is not null) { <text> · @e.SupplierName</text> }
+                            @if (!string.IsNullOrWhiteSpace(e.Description) && e.Description != e.Category) { <span class="sub">@e.Description</span> }
+                        </td>
+                        <td><span class="mk @sCss">@sLabel</span></td>
+                        <td><span class="badge @(e.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@(e.PaymentMethod == PaymentMethods.Visa ? "فيزا" : "نقدي")</span></td>
+                        <td class="num fw-bold @(e.IsIncome ? "c-green" : "")">@(e.IsIncome ? "+ " : "− ")@N(e.Amount)</td>
+                        <td>@(e.CreatedBy ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
 
-<p class="text-muted mt-3" style="font-size:12px">
-    كل الأرقام بتتقرا من الداتا مباشرة — الصفحة دي بتعرض بس، مش بتكتب أو بتعدّل أي حاجة.
-</p>
+@section Scripts {
+    <script src="~/js/daily-close.js" asp-append-version="true"></script>
+}

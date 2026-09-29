@@ -3,13 +3,6 @@
 @{
     ViewData["Title"] = "لوحة التحكم";
 
-    var totalOrders = Model.Count;
-    var readyCount = Model.Count(o => o.Status == OrderStatus.Ready);
-    var soldCount = Model.Count(o => o.Status == OrderStatus.Sold);
-    var pendingCount = readyCount + soldCount;
-    var totalSales = Model.Sum(o => o.TotalAmount);
-    var totalRemaining = Model.Where(o => o.Status != OrderStatus.Cancelled).Sum(o => o.RemainingAmount);
-
     var recent = Model.OrderByDescending(o => o.OrderDate).Take(6).ToList();
 
     static string StatusBadgeClass(OrderStatus s) => s switch
@@ -32,39 +25,6 @@
 
     static string Money(decimal n) => n.ToString("N0") + " ج";
 }
-
-<div class="stats-grid">
-    <div class="stat-card">
-        <div class="stat-icon">📋</div>
-        <div class="stat-label">إجمالي الطلبات</div>
-        <div class="stat-value">@totalOrders</div>
-        <div class="stat-sub">@pendingCount قيد التنفيذ</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">✅</div>
-        <div class="stat-label">جاهز للتسليم</div>
-        <div class="stat-value c-green">@readyCount</div>
-        <div class="stat-sub">ينتظر الزبون</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">🧾</div>
-        <div class="stat-label">تحت التجهيز</div>
-        <div class="stat-value c-blue">@soldCount</div>
-        <div class="stat-sub">لسه العدسات بتتقطع</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">💰</div>
-        <div class="stat-label">إجمالي المبيعات</div>
-        <div class="stat-value c-blue">@Money(totalSales)</div>
-        <div class="stat-sub">كل الطلبات</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">⚠️</div>
-        <div class="stat-label">متبقي على الزبائن</div>
-        <div class="stat-value c-amber">@Money(totalRemaining)</div>
-        <div class="stat-sub">لم يُحصَّل بعد</div>
-    </div>
-</div>
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
     <div class="card">

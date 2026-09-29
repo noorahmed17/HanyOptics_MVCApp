@@ -105,9 +105,6 @@ public class DayReport
     // Expenses, draws and other income of the day (cancelled ones left out).
     public IReadOnlyList<ExpenseEntry> Entries { get; init; } = [];
     public IReadOnlyList<CategorySplit> Categories { get; init; } = [];
-
-    // The days that can be picked: every day with activity, newest first, plus today.
-    public IReadOnlyList<DateOnly> AvailableDays { get; init; } = [];
 }
 
 // التقرير الشهري

@@ -493,7 +493,15 @@ input.combo {
 }
 input.combo::-webkit-calendar-picker-indicator { display: none !important; }
 
-/* ─── FINANCIAL REPORTS (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) ─── */
+/* Report KPI cards: totals run to millions (14,451,273.26 ج), which the general card - 180px
+   wide, 26px figures - cannot hold, so the ج wrapped onto a line of its own. Wider cards,
+   a figure sized to fit, and a smaller ج that never leaves the number's line. */
+.report-kpis { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.report-kpis .stat-card { min-width: 0; }
+.kpi-value { font-size: 21px; white-space: nowrap; display: flex; align-items: baseline; gap: 5px; }
+.kpi-unit { font-size: 14px; font-weight: 600; color: #64748b; }
+
+/* ─── DAILY CLOSE (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) ─── */
 .rep-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 8px; }
 .rep-head h3 { font-size: 17px; font-weight: 700; }
 .rep-head p { font-size: 13px; color: #6b7280; margin-top: 2px; }
