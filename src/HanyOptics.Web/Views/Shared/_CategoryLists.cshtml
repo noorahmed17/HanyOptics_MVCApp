@@ -1,0 +1,15 @@
+@model IReadOnlyDictionary<string, IReadOnlyList<string>>
+@*
+    One suggestion list per entry type (cat-expense, cat-owner_draw, cat-income). A category
+    box marked data-category is pointed at the list for whichever type is chosen (see
+    expenses.js), so all three types offer the same drop-down with their own choices.
+*@
+@foreach (var (type, options) in Model)
+{
+    <datalist id="cat-@type">
+        @foreach (var option in options)
+        {
+            <option value="@option"></option>
+        }
+    </datalist>
+}

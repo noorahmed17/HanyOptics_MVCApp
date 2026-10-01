@@ -46,6 +46,20 @@ public class CustomersController : Controller
 
         return View((CustomerDetailViewModel?)null);
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Update(int customerId, string? name, string? phone, string? q, int? page)
+    {
+        var outcome = await _customerService.UpdateAsync(customerId, name, phone);
+
+        if (outcome.Succeeded)
+            TempData["CustomerMessage"] = "تم تعديل بيانات العميل.";
+        else
+            TempData["CustomerError"] = outcome.ErrorMessage;
+
+        return RedirectToAction(nameof(Index), new { customerId, q, page });
+    }
 }
 
 public record CustomerDetailViewModel(

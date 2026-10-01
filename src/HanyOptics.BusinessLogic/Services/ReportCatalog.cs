@@ -4,8 +4,8 @@ namespace HanyOptics.BusinessLogic.Services;
 
 // Every report the admin screen offers, declared in one place.
 //
-// Most of them sit on the reporting views the database already ships (vw_daily_sales,
-// vw_profit_monthly, ...), which is deliberate: those views already handle the awkward
+// Most of them sit on the reporting views the database already ships (vw_profit_monthly,
+// vw_pending_payments, ...), which is deliberate: those views already handle the awkward
 // parts - refunds counted negative, cancelled orders excluded, payment date and delivery
 // date being different days - and re-deriving that here would be a second version of the
 // same rules, free to drift from the first. The handful of reports with no view behind
@@ -21,39 +21,6 @@ internal static class ReportCatalog
     public static readonly IReadOnlyList<ReportDefinition> All =
     [
         // ─────────────────────────── فلوس ومبيعات ───────────────────────────
-        new ReportDefinition
-        {
-            Key = "daily-sales",
-            Title = "يومية المبيعات",
-            Description = "المحصّل كل يوم كاش وفيزا، وعدد الطلبات المسلّمة وقيمتها. المردودات متخصومة.",
-            Icon = "💵",
-            Group = ReportGroup.Money,
-            Sql = """
-                  SELECT sale_date, cash_collected, visa_collected, total_collected,
-                         deliveries_count, deliveries_total
-                  FROM vw_daily_sales
-                  WHERE (@from IS NULL OR sale_date >= @from)
-                    AND (@to   IS NULL OR sale_date <= @to)
-                  """,
-            OrderBy = "sale_date DESC",
-            Columns =
-            [
-                new() { Key = "sale_date",        Label = "التاريخ",           Type = ReportColumnType.Date },
-                new() { Key = "cash_collected",   Label = "كاش",               Type = ReportColumnType.Money, SignedMoney = true },
-                new() { Key = "visa_collected",   Label = "فيزا",              Type = ReportColumnType.Money, SignedMoney = true },
-                new() { Key = "total_collected",  Label = "إجمالي المحصّل",     Type = ReportColumnType.Money, SignedMoney = true },
-                new() { Key = "deliveries_count", Label = "عدد التسليمات",      Type = ReportColumnType.Number },
-                new() { Key = "deliveries_total", Label = "قيمة التسليمات",     Type = ReportColumnType.Money }
-            ],
-            Kpis =
-            [
-                new() { Label = "إجمالي المحصّل", Column = "total_collected" },
-                new() { Label = "كاش",           Column = "cash_collected" },
-                new() { Label = "فيزا",          Column = "visa_collected" },
-                new() { Label = "عدد التسليمات",  Column = "deliveries_count", Format = ReportColumnType.Number }
-            ]
-        },
-
         new ReportDefinition
         {
             Key = "monthly-profit",

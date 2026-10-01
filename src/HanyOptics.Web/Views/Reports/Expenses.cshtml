@@ -1,0 +1,185 @@
+@model HanyOptics.BusinessLogic.Models.MonthExpensesReport
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@using System.Globalization
+@{
+    ViewData["Title"] = "مصروفات الشهر";
+    string M(decimal v) => ExpenseDisplay.Money(v);
+    string N(decimal v) => ExpenseDisplay.Number(v);
+    string Pct(decimal part) => Model.Total > 0 ? ExpenseDisplay.Percent(part / Model.Total * 100) : "—";
+    var compareName = ExpenseDisplay.MonthName(Model.CompareFrom.Year, Model.CompareFrom.Month).Split(' ')[0];
+
+    // "من الإيرادات" means cash out of the drawer, exactly as fn_expenses_by_category splits it.
+    bool FromDrawer(ExpenseEntry e) => e.FundingSource == FundingSources.Drawer && e.PaymentMethod == PaymentMethods.Cash;
+}
+
+<div class="page-header">
+    <h2>🧾 مصروفات الشهر</h2>
+    <a class="btn btn-outline" asp-action="Index">→ كل التقارير</a>
+</div>
+
+<div class="rep-head">
+    <div>
+        <p>مصروفات المحل مصنفة حسب النوع ومصدر المبلغ. لا تشمل مسحوبات المالك.</p>
+    </div>
+    <form method="get" class="rep-picker">
+        <label for="month">الشهر</label>
+        <select id="month" name="month" onchange="this.form.submit()">
+            @foreach (var m in Model.AvailableMonths)
+            {
+                <option value="@($"{m.Year:D4}-{m.Month:D2}")" selected="@(m == Model.Month)">@ExpenseDisplay.MonthName(m.Year, m.Month)</option>
+            }
+        </select>
+        <noscript><button type="submit" class="btn btn-outline btn-sm">عرض</button></noscript>
+    </form>
+</div>
+<div class="rep-window">
+    📅 من <b>@ExpenseDisplay.DayMonth(Model.From)</b> حتى <b>@ExpenseDisplay.DayMonth(Model.To)</b>
+    (@N(Model.DaysCounted) يومًا)@if (Model.IsCurrentMonth) { <text> — الشهر لم ينتهِ بعد.</text> }
+</div>
+
+<div class="rep-kpis wide">
+    <div class="stat-card main"><div class="stat-label">إجمالي المصروفات</div><div class="stat-value">@M(Model.Total)</div><div class="stat-sub">@N(Model.Count) حركات خلال الشهر</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#057a55"></span>من الإيرادات</div><div class="stat-value">@M(Model.FromDrawer)</div><div class="stat-sub">@Pct(Model.FromDrawer) من المصروفات</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#d97706"></span>من خارج الإيرادات</div><div class="stat-value">@M(Model.FromOutside)</div><div class="stat-sub">@Pct(Model.FromOutside) من المصروفات</div></div>
+    <div class="stat-card"><div class="stat-label"><span class="dot" style="background:#1d4ed8"></span>المدفوع للموردين</div><div class="stat-value">@M(Model.SupplierPaid)</div><div class="stat-sub">إطارات وعدسات</div></div>
+    <div class="stat-card"><div class="stat-label">متوسط المصروف اليومي</div><div class="stat-value">@M(Model.DailyAverage)</div><div class="stat-sub">على @N(Model.DaysCounted) يومًا</div></div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <span class="card-title">حسب النوع</span>
+        <span class="text-muted text-sm">مقارنة بالفترة نفسها من @compareName (@ExpenseDisplay.DayMonth(Model.CompareFrom) – @ExpenseDisplay.DayMonth(Model.CompareTo))</span>
+    </div>
+    <div class="card-body table-scroll">
+        @if (Model.Categories.Count == 0)
+        {
+            <div class="empty-state">لا توجد مصروفات في هذا الشهر.</div>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>النوع</th><th class="num">عدد</th><th class="num">من الإيرادات</th><th class="num">من خارجها</th><th class="num">الإجمالي</th><th>من المصروفات</th><th>مقارنة بـ@(compareName)</th></tr></thead>
+                <tbody>
+                @foreach (var c in Model.Categories)
+                {
+                    var share = Model.Total > 0 ? c.Total / Model.Total * 100 : 0;
+                    <tr class="row-link" data-category="@c.Category" tabindex="0">
+                        <td><b>@c.Category</b></td>
+                        <td class="num">@N(c.Count)</td>
+                        <td class="num">@(c.FromDrawer != 0 ? N(c.FromDrawer) : "—")</td>
+                        <td class="num">@(c.FromOutside != 0 ? N(c.FromOutside) : "—")</td>
+                        <td class="num fw-bold">@M(c.Total)</td>
+                        <td>
+                            <div class="share">
+                                <div class="track"><span style="width:@(share.ToString("0.##", CultureInfo.InvariantCulture))%"></span></div>
+                                <span class="text-sm text-muted">@ExpenseDisplay.Percent(share)</span>
+                            </div>
+                        </td>
+                        <td>
+                            @if (c.PreviousTotal is not decimal prev || prev == 0)
+                            {
+                                <span class="badge badge-visa">جديد</span>
+                            }
+                            else
+                            {
+                                var pct = Math.Round((c.Total - prev) / prev * 100);
+                                if (Math.Abs(pct) < 1)
+                                {
+                                    <span class="text-muted text-sm">دون تغيير</span>
+                                }
+                                else
+                                {
+                                    <span class="@(pct > 0 ? "delta-up" : "delta-down")">@(pct > 0 ? "▲" : "▼") @ExpenseDisplay.Percent(Math.Abs(pct))</span>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                    <tr><td>الإجمالي</td><td class="num">@N(Model.Count)</td><td class="num">@N(Model.FromDrawer)</td><td class="num">@N(Model.FromOutside)</td><td class="num">@M(Model.Total)</td><td></td><td></td></tr>
+                </tfoot>
+            </table>
+        }
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><span class="card-title">المدفوعات للموردين</span><span class="text-muted text-sm">جزء من المصروفات أعلاه</span></div>
+    <div class="card-body table-scroll">
+        @if (Model.Suppliers.Count == 0)
+        {
+            <div class="empty-state">لم تُسجَّل مدفوعات لموردين في هذا الشهر.</div>
+        }
+        else
+        {
+            <table>
+                <thead><tr><th>المورد</th><th class="num">عدد الدفعات</th><th class="num">المدفوع هذا الشهر</th><th>آخر دفعة</th><th class="num">الرصيد المستحق للمورد</th></tr></thead>
+                <tbody>
+                @foreach (var sp in Model.Suppliers)
+                {
+                    <tr>
+                        <td><a asp-controller="Suppliers" asp-action="Index" asp-route-id="@sp.SupplierId"><b>@sp.Name</b></a></td>
+                        <td class="num">@N(sp.PaymentsCount)</td>
+                        <td class="num">@M(sp.PaidTotal)</td>
+                        <td>@(sp.LastPaidAt is DateTime last ? ExpenseDisplay.DayLabel(DateOnly.FromDateTime(last)) : "—")</td>
+                        <td class="num fw-bold @(sp.BalanceDue > 0 ? "c-red" : "c-green")">@(sp.BalanceDue > 0 ? M(sp.BalanceDue) : sp.BalanceDue < 0 ? "لك عند المورد " + M(-sp.BalanceDue) : "تم السداد")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<div class="card" id="expenseLog">
+    <div class="card-header"><span class="card-title">سجل المصروفات</span></div>
+    <div class="card-pad" style="padding-bottom:0">
+        <div class="flex gap-3 flex-wrap items-center">
+            <div class="seg" id="logSource">
+                <label><input type="radio" name="logSource" value="all" checked /><span>الكل</span></label>
+                <label><input type="radio" name="logSource" value="drawer" /><span>من الإيرادات</span></label>
+                <label><input type="radio" name="logSource" value="outside" /><span>من خارج الإيرادات</span></label>
+            </div>
+            <select id="logCategory" aria-label="النوع" style="width:auto;min-width:180px">
+                <option value="">جميع الأنواع</option>
+                @foreach (var c in Model.Categories)
+                {
+                    <option value="@c.Category">@c.Category</option>
+                }
+            </select>
+        </div>
+    </div>
+    <div class="card-body table-scroll mt-3">
+        <table id="logTable">
+            <thead><tr><th>اليوم</th><th>الوقت</th><th>النوع</th><th>التفاصيل</th><th>المصدر</th><th>الطريقة</th><th class="num">المبلغ</th><th>سجّلها</th></tr></thead>
+            <tbody>
+            @foreach (var e in Model.Entries)
+            {
+                var drawer = FromDrawer(e);
+                var category = string.IsNullOrWhiteSpace(e.Category) ? "(بدون تصنيف)" : e.Category.Trim();
+                <tr data-source="@(drawer ? "drawer" : "outside")" data-category="@category"
+                    data-amount="@e.Amount.ToString(CultureInfo.InvariantCulture)">
+                    <td>@ExpenseDisplay.DayLabel(e.BusinessDate)</td>
+                    <td class="num">@ExpenseDisplay.Time(e.PaidAt)</td>
+                    <td><b>@category</b></td>
+                    <td>@(e.Description ?? "")@(e.SupplierName is null ? "" : " · " + e.SupplierName)</td>
+                    <td>@if (drawer) { <span class="mk mk-drawer">من الإيرادات</span> } else { <span class="mk mk-outside">من خارج الإيرادات</span> }</td>
+                    <td><span class="badge @(e.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@(e.PaymentMethod == PaymentMethods.Visa ? "فيزا" : "نقدي")</span></td>
+                    <td class="num fw-bold">@N(e.Amount)</td>
+                    <td>@(e.CreatedBy ?? "—")</td>
+                </tr>
+            }
+            <tr id="logEmpty" hidden="@(Model.Entries.Count > 0)"><td colspan="8" class="empty-state">لا توجد حركات مطابقة.</td></tr>
+            </tbody>
+            <tfoot>
+                <tr><td colspan="6"><span id="logCount">@N(Model.Entries.Count)</span> حركات</td><td class="num" id="logTotal">@N(Model.Entries.Sum(e => e.Amount))</td><td></td></tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/daily-close.js" asp-append-version="true"></script>
+}

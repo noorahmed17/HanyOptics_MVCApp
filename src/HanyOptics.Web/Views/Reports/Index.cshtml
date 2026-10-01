@@ -31,6 +31,23 @@
     <p class="text-muted mb-2" style="font-size:12px">@hint</p>
 
     <div class="report-grid">
+        @if (group == ReportGroup.Money)
+        {
+            <a class="report-card" asp-action="Month">
+                <div class="report-card-icon">📅</div>
+                <div class="report-card-body">
+                    <div class="report-card-title">التقرير الشهري</div>
+                    <div class="report-card-desc">صافي الشهر: كل الإيرادات المحصّلة ناقص كل المصروفات، وصافي كل يوم، ومصادر الإيرادات وأكبر المصروفات.</div>
+                </div>
+            </a>
+            <a class="report-card" asp-action="Expenses">
+                <div class="report-card-icon">🧾</div>
+                <div class="report-card-body">
+                    <div class="report-card-title">مصروفات الشهر</div>
+                    <div class="report-card-desc">مصروفات المحل حسب النوع ومصدر المبلغ، مقارنة بالشهر اللي قبله، والمدفوع للموردين.</div>
+                </div>
+            </a>
+        }
         @foreach (var report in reports)
         {
             <a class="report-card" asp-action="Show" asp-route-id="@report.Key">

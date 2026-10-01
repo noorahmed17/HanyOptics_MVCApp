@@ -92,6 +92,17 @@ public class NewOrderService : INewOrderService
     public async Task<IReadOnlyList<Doctor>> GetDoctorsAsync() =>
         await _dbContext.Doctors.AsNoTracking().OrderBy(d => d.Name).ToListAsync();
 
+    public async Task<IReadOnlyList<string>> GetLensSuggestionsAsync() =>
+        await _dbContext.OrderItems
+            .AsNoTracking()
+            .Where(i => i.LensDescription != null && i.LensDescription != "")
+            .GroupBy(i => i.LensDescription!)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key)
+            .Take(30)
+            .Select(g => g.Key)
+            .ToListAsync();
+
     public Task<bool> IsInvoiceNumberTakenAsync(string invoiceNumber) =>
         _dbContext.Orders.AsNoTracking().AnyAsync(o => o.InvoiceNumber == invoiceNumber);
 

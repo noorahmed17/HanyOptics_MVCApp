@@ -17,7 +17,7 @@ public class HomeController : Controller
 
     public async Task<IActionResult> Index()
     {
-        var orders = await _orderService.GetAllAsync(20);
+        var orders = await _orderService.GetAllAsync(6);
         return View(orders);
     }
 

@@ -31,8 +31,8 @@
         }
     }
 
-    string KpiValue(ReportKpi kpi) => kpi.Format == ReportColumnType.Money
-        ? kpi.Value.ToString("N2", arEg) + " ج"
+    string KpiNumber(ReportKpi kpi) => kpi.Format == ReportColumnType.Money
+        ? kpi.Value.ToString("N2", arEg)
         : kpi.Value.ToString("N0", arEg);
 }
 
@@ -76,12 +76,16 @@
    whichever page is on screen. *@
 @if (Model.Kpis.Count > 0 && Model.TotalRows > 0)
 {
-    <div class="stats-grid mb-3">
+    @* The amount and its «ج» stay on one line: a report total runs to millions, and in the
+       general-purpose card the currency sign used to wrap under the number. *@
+    <div class="stats-grid report-kpis mb-3">
         @foreach (var kpi in Model.Kpis)
         {
             <div class="stat-card">
                 <div class="stat-label">@kpi.Label</div>
-                <div class="stat-value @(kpi.Value < 0 ? "money-negative" : "")">@KpiValue(kpi)</div>
+                <div class="stat-value kpi-value @(kpi.Value < 0 ? "money-negative" : "")">
+                    <span class="num">@KpiNumber(kpi)</span>@if (kpi.Format == ReportColumnType.Money) { <span class="kpi-unit">ج</span> }
+                </div>
             </div>
         }
     </div>

@@ -1,0 +1,96 @@
+@model HanyOptics.BusinessLogic.Models.ExpenseRequest
+@using HanyOptics.BusinessLogic.Models
+@*
+    The fields of an expense / draw / income entry, shared by the add form (المصروفات
+    والإيرادات) and the edit form (التصحيحات) so both follow the same rules. The form around
+    it carries class "js-expense-form"; expenses.js keeps the choices consistent as they are
+    clicked, and sp_add_expense / sp_update_expense decide in the end.
+
+    ViewData: "Suppliers" (IReadOnlyList<SupplierOption>), "DateHint" (string, optional).
+    The page renders the category lists once, with the _CategoryLists partial.
+*@
+@{
+    var suppliers = ViewData["Suppliers"] as IReadOnlyList<SupplierOption> ?? [];
+    var dateHint = ViewData["DateHint"] as string ?? "اتركه فارغًا لحركة اليوم، واستخدمه فقط لتسجيل حركة سابقة.";
+    bool IsType(string t) => Model.EntryType == t;
+    bool IsSource(string s) => (Model.FundingSource ?? FundingSources.Drawer) == s;
+    bool IsMethod(string m) => (Model.PaymentMethod ?? PaymentMethods.Cash) == m;
+}
+
+<div class="form-group">
+    <label>نوع الحركة</label>
+    <div class="seg">
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.Expense" checked="@IsType(ExpenseEntryTypes.Expense)" /><span>مصروف</span></label>
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.OwnerDraw" checked="@IsType(ExpenseEntryTypes.OwnerDraw)" /><span>مسحوبات المالك</span></label>
+        <label><input type="radio" name="EntryType" value="@ExpenseEntryTypes.Income" checked="@IsType(ExpenseEntryTypes.Income)" /><span>إيراد آخر</span></label>
+    </div>
+    <div class="form-hint" data-show-if="EntryType=expense">مبلغ يُدفع لتشغيل المحل، ويظهر في تقرير المصروفات.</div>
+    <div class="form-hint" data-show-if="EntryType=owner_draw">مبلغ شخصي للمالك، ولا يُحسب من مصروفات المحل.</div>
+    <div class="form-hint" data-show-if="EntryType=income">مبلغ يدخل المحل بدون فاتورة بيع، مثل التصليحات.</div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Amount">المبلغ (ج) *</label>
+        <input asp-for="Amount" type="number" min="0.01" step="0.01" placeholder="مثال: 1500" autocomplete="off" />
+        <div class="field-error" data-drawer-warn hidden></div>
+    </div>
+    <div class="form-group">
+        <label>مصدر المبلغ</label>
+        <div class="seg">
+            <label><input type="radio" name="FundingSource" value="@FundingSources.Drawer" checked="@IsSource(FundingSources.Drawer)" /><span>من الدرج</span></label>
+            <label><input type="radio" name="FundingSource" value="@FundingSources.Outside" checked="@IsSource(FundingSources.Outside)" /><span>من خارج الدرج</span></label>
+        </div>
+        <div class="form-hint" data-show-if="EntryType=income">الإيراد الآخر يُضاف إلى الدرج دائمًا.</div>
+        <div class="form-hint" data-show-if="EntryType=owner_draw">سحب المالك يكون من الدرج ونقدًا دائمًا.</div>
+        <div class="form-hint" data-show-if="EntryType=expense&FundingSource=drawer">يُخصم من رصيد الدرج ويظهر في إغلاق اليومية.</div>
+        <div class="form-hint" data-show-if="EntryType=expense&FundingSource=outside">مبلغ دُفع من مال محفوظ خارج الدرج، فلا يغيّر رصيد اليوم.</div>
+    </div>
+</div>
+
+@* Cash or card, offered only where it can differ: other income, or an expense paid from
+   outside the drawer. It matters most in التصحيحات - card income entered as cash makes
+   the drawer look 300 richer than it is, and this is the only place to put that right
+   for a past day. An owner's draw and anything paid from the drawer are always cash. *@
+<div class="form-row" data-show-if="EntryType=income|EntryType=expense&FundingSource=outside">
+    <div class="form-group">
+        <label>طريقة الدفع</label>
+        <div class="seg">
+            <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Cash" checked="@IsMethod(PaymentMethods.Cash)" /><span>نقدًا</span></label>
+            <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Visa" checked="@IsMethod(PaymentMethods.Visa)" /><span>بطاقة</span></label>
+        </div>
+        <div class="form-hint" data-show-if="EntryType=income&PaymentMethod=visa">المبلغ بالبطاقة لا يُضاف لنقدية الدرج.</div>
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Category">التصنيف</label>
+        <input asp-for="Category" maxlength="100" class="combo" data-category
+               placeholder="اختر من القائمة أو اكتب" autocomplete="off" />
+        <div class="form-hint">يُستخدم لتجميع المصروفات في التقرير الشهري.</div>
+    </div>
+    <div class="form-group" data-show-if="EntryType=expense">
+        <label for="SupplierId">المورد (عند الدفع لمورد)</label>
+        <select asp-for="SupplierId">
+            <option value="">بدون مورد</option>
+            @foreach (var s in suppliers)
+            {
+                <option value="@s.SupplierId" selected="@(Model.SupplierId == s.SupplierId)">@s.Name</option>
+            }
+        </select>
+        <div class="form-hint">اختر المورد ليُخصم المبلغ من المستحق له.</div>
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label for="Description">ملاحظات</label>
+        <input asp-for="Description" maxlength="500" placeholder="أي تفاصيل إضافية (اختياري)" autocomplete="off" />
+    </div>
+    <div class="form-group">
+        <label for="PaidAt">تاريخ الحركة (اختياري)</label>
+        <input name="PaidAt" id="PaidAt" type="datetime-local" value="@Model.PaidAt?.ToString("yyyy-MM-ddTHH:mm")" />
+        <div class="form-hint">@dateHint</div>
+    </div>
+</div>

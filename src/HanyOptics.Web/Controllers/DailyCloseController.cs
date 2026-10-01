@@ -4,20 +4,19 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace HanyOptics.Web.Controllers;
 
-// End of day. Open to any signed-in user, like the reports section - whoever is closing up
-// is the one who needs it, and that is not always the owner.
+// قفلة اليوم (إغلاق اليومية). Open to every signed-in user, as it always was: whoever is
+// closing up needs it, and that is not always the owner. The month and the expense
+// breakdown built on the same figures live under التقارير, which is admin-only.
 [Authorize]
 public class DailyCloseController : Controller
 {
-    private readonly IDailyCloseService _dailyClose;
+    private readonly IDailyCloseReportService _reports;
 
-    public DailyCloseController(IDailyCloseService dailyClose)
+    public DailyCloseController(IDailyCloseReportService reports)
     {
-        _dailyClose = dailyClose;
+        _reports = reports;
     }
 
-    // No date means the business day the shop is currently in - which at 2am is still
-    // yesterday's date, and is exactly what someone closing up wants to see.
-    public async Task<IActionResult> Index(DateOnly? date)
-        => View(await _dailyClose.GetAsync(date));
+    public async Task<IActionResult> Index(DateOnly? date) =>
+        View(await _reports.GetDayAsync(date));
 }

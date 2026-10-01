@@ -1,6 +1,7 @@
 using System.Text;
 using HanyOptics.BusinessLogic.Auth;
 using HanyOptics.BusinessLogic.Interfaces;
+using HanyOptics.BusinessLogic.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,13 +15,23 @@ namespace HanyOptics.Web.Controllers;
 public class ReportsController : Controller
 {
     private readonly IReportService _reports;
+    private readonly IDailyCloseReportService _closeReports;
 
-    public ReportsController(IReportService reports)
+    public ReportsController(IReportService reports, IDailyCloseReportService closeReports)
     {
         _reports = reports;
+        _closeReports = closeReports;
     }
 
     public IActionResult Index() => View(_reports.Catalog);
+
+    // التقرير الشهري and مصروفات الشهر: built on the v10 views (vw_monthly_summary,
+    // fn_expenses_by_category, fn_supplier_payments) rather than the catalog's queries.
+    public async Task<IActionResult> Month(string? month) =>
+        View(await _closeReports.GetMonthAsync(ParseMonth(month)));
+
+    public async Task<IActionResult> Expenses(string? month) =>
+        View(await _closeReports.GetMonthExpensesAsync(ParseMonth(month)));
 
     public async Task<IActionResult> Show(string id, DateOnly? from, DateOnly? to, int? page)
     {
@@ -47,4 +58,8 @@ public class ReportsController : Controller
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray();
         return File(bytes, "text/csv", $"{definition.Key}-{DateTime.Now:yyyy-MM-dd}.csv");
     }
+
+    // "2026-09" from the month picker; anything else means the current month.
+    private static ReportMonth? ParseMonth(string? month) =>
+        DateOnly.TryParseExact(month + "-01", "yyyy-MM-dd", out var d) ? new ReportMonth(d.Year, d.Month) : null;
 }
