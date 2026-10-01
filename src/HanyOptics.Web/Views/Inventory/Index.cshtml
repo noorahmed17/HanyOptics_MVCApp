@@ -12,6 +12,8 @@
     // What a frame costs - and so the stock-value cards built from it - is the owner's
     // figure. سعر البيع is not: staff quote it to customers, so everyone sees that column.
     var showMoney = User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin);
+    var isAdmin = showMoney;
+
     var arEg = new CultureInfo("ar-EG");
 
     string Money(decimal n) => n.ToString("N0", arEg) + " ج";
@@ -51,13 +53,16 @@
 <div class="page-header">
     <h2>📦 المخزون — الإطارات</h2>
     <div class="flex items-center gap-2">
-        @* Disabled until at least one bulk-tracked frame is checked - see updateRestockButton().
+        @if (isAdmin)
+        {
+            @* Disabled until at least one bulk-tracked frame is checked - see updateRestockButton().
            Only tracking_type='bulk' frames accept a restock (sp_restock_bulk_frame refuses an
            individual one outright), so only they get a selectable checkbox in the table below. *@
-        <button type="button" class="btn btn-outline" id="bulkRestockBtn" onclick="openRestockModal()" disabled>
-            ➕ زيادة الكمية (<span id="restockSelectedCount">0</span>)
-        </button>
-        <a class="btn btn-primary" asp-action="AddFrame">➕ إضافة إطار</a>
+            <button type="button" class="btn btn-outline" id="bulkRestockBtn" onclick="openRestockModal()" disabled>
+                ➕ زيادة الكمية (<span id="restockSelectedCount">0</span>)
+            </button>
+            <a class="btn btn-primary" asp-action="AddFrame">➕ إضافة إطار</a>
+        }
     </div>
 </div>
 
@@ -137,7 +142,10 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width:32px"><input type="checkbox" id="selectAllFramesCheckbox" onclick="toggleSelectAllFrames(this)" /></th>
+                        @if (isAdmin)
+                        {
+                            <th style="width:32px"><input type="checkbox" id="selectAllFramesCheckbox" onclick="toggleSelectAllFrames(this)" /></th>
+                        }
                         <th>الباركود</th>
                         <th>الماركة / الموديل</th>
                         <th>النوع</th>
@@ -155,16 +163,19 @@
                     @foreach (var f in Model.Items)
                     {
                         <tr>
-                            <td>
-                                @if (f.TrackingType == FrameTrackingType.Bulk)
-                                {
-                                    <input type="checkbox" class="frame-select-checkbox" value="@f.FrameId" data-barcode="@f.Barcode" onchange="onFrameCheckboxChange(this)" />
-                                }
-                                else
-                                {
-                                    <input type="checkbox" disabled title="التتبع بالقطعة — زيادة الكمية بالجملة غير متاحة له" />
-                                }
-                            </td>
+                            @if (isAdmin)
+                            {
+                                <td>
+                                    @if (f.TrackingType == FrameTrackingType.Bulk)
+                                    {
+                                        <input type="checkbox" class="frame-select-checkbox" value="@f.FrameId" data-barcode="@f.Barcode" onchange="onFrameCheckboxChange(this)" />
+                                    }
+                                    else
+                                    {
+                                        <input type="checkbox" disabled title="التتبع بالقطعة — زيادة الكمية بالجملة غير متاحة له" />
+                                    }
+                                </td>
+                            }
                             <td><b><bdi>@f.Barcode</bdi></b></td>
                             <td>
                                 @f.Brand @f.ModelName
@@ -199,65 +210,71 @@
     @await Html.PartialAsync("_Pager", HanyOptics.Web.Models.PagerInfo.From(Model))
 </div>
 
-<div class="overlay" id="restockModalOverlay" onclick="closeRestockModal()"></div>
-<div class="modal modal-sm" id="restockModal" onclick="event.stopPropagation()">
-    <div class="modal-header">
-        <span class="modal-title">➕ زيادة كمية المخزون</span>
-        <button type="button" class="modal-close" onclick="closeRestockModal()">✕</button>
-    </div>
-    <div class="modal-body">
-        <div class="text-sm text-muted mb-2">
-            سيتم إضافة نفس الكمية لكل إطار من الإطارات المحددة (<b id="restockModalCount">0</b>)
-        </div>
-        <div class="flex items-center gap-2 flex-wrap mb-2" id="restockSelectedChips"></div>
+@if (isAdmin)
+{
 
-        <form id="restockForm" asp-action="BulkRestock" method="post" onsubmit="submitBulkRestock(event)">
-            <input type="hidden" name="status" value="@statusFilter" />
-            <input type="hidden" name="category" value="@categoryFilter" />
-            <input type="hidden" name="tracking" value="@trackingFilter" />
-            <input type="hidden" name="q" value="@searchTerm" />
-            <div class="form-group">
-                <label>الكمية المُضافة لكل صنف *</label>
-                <input type="number" name="qtyToAdd" id="restockQtyInput" min="1" step="1" required />
+    <div class="overlay" id="restockModalOverlay" onclick="closeRestockModal()"></div>
+    <div class="modal modal-sm" id="restockModal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span class="modal-title">➕ زيادة كمية المخزون</span>
+            <button type="button" class="modal-close" onclick="closeRestockModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="text-sm text-muted mb-2">
+                سيتم إضافة نفس الكمية لكل إطار من الإطارات المحددة (<b id="restockModalCount">0</b>)
             </div>
-        </form>
+            <div class="flex items-center gap-2 flex-wrap mb-2" id="restockSelectedChips"></div>
+
+            <form id="restockForm" asp-action="BulkRestock" method="post" onsubmit="submitBulkRestock(event)">
+                <input type="hidden" name="status" value="@statusFilter" />
+                <input type="hidden" name="category" value="@categoryFilter" />
+                <input type="hidden" name="tracking" value="@trackingFilter" />
+                <input type="hidden" name="q" value="@searchTerm" />
+                <div class="form-group">
+                    <label>الكمية المُضافة لكل صنف *</label>
+                    <input type="number" name="qtyToAdd" id="restockQtyInput" min="1" step="1" required />
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline" onclick="closeRestockModal()">إلغاء</button>
+            <button type="submit" form="restockForm" class="btn btn-primary">تأكيد</button>
+        </div>
     </div>
-    <div class="modal-footer">
-        <button type="button" class="btn btn-outline" onclick="closeRestockModal()">إلغاء</button>
-        <button type="submit" form="restockForm" class="btn btn-primary">تأكيد</button>
-    </div>
-</div>
+}
 
 @section Scripts {
-    <script>
-        // Same reasoning as Orders/Index's selectedOrders map: kept outside the DOM so it
-        // survives what would otherwise lose it. This page's filters/search are ordinary
-        // links and a plain GET form (see inventoryFilterForm) - every one of them is a full
-        // page load, which sessionStorage (scoped to this tab) survives, unlike anything
-        // held only in memory or in checkbox state. Keyed by frame id -> barcode, so the
-        // modal can name what's selected without a second lookup.
-        const FRAME_BULK_SELECTION_KEY = 'hanyoptics.frameBulkSelection';
+@if (isAdmin)
+    {
+        <script>
+            // Same reasoning as Orders/Index's selectedOrders map: kept outside the DOM so it
+            // survives what would otherwise lose it. This page's filters/search are ordinary
+            // links and a plain GET form (see inventoryFilterForm) - every one of them is a full
+            // page load, which sessionStorage (scoped to this tab) survives, unlike anything
+            // held only in memory or in checkbox state. Keyed by frame id -> barcode, so the
+            // modal can name what's selected without a second lookup.
+            const FRAME_BULK_SELECTION_KEY = 'hanyoptics.frameBulkSelection';
 
-        function loadFrameSelection() {
+            function loadFrameSelection() {
             try {
-                return new Map(JSON.parse(sessionStorage.getItem(FRAME_BULK_SELECTION_KEY) || '[]'));
+            return new Map(JSON.parse(sessionStorage.getItem(FRAME_BULK_SELECTION_KEY) || '[]'));
             } catch {
-                return new Map();
+            return new Map();
             }
-        }
+            }
 
-        function saveFrameSelection() {
+            function saveFrameSelection() {
             try {
-                sessionStorage.setItem(FRAME_BULK_SELECTION_KEY, JSON.stringify(Array.from(selectedFrames)));
+            sessionStorage.setItem(FRAME_BULK_SELECTION_KEY, JSON.stringify(Array.from(selectedFrames)));
             } catch {
-                // Private-browsing quota errors must not break selecting; the selection just
-                // stops surviving navigation.
+            // Private-browsing quota errors must not break selecting; the selection just
+            // stops surviving navigation.
             }
-        }
+            }
 
-        const selectedFrames = loadFrameSelection();
+            const selectedFrames = loadFrameSelection();
 
-        function syncFrameCheckboxesWithSelection() {
+            function syncFrameCheckboxesWithSelection() {
             const checkboxes = document.querySelectorAll('.frame-select-checkbox');
             checkboxes.forEach(function (cb) { cb.checked = selectedFrames.has(cb.value); });
 
@@ -265,10 +282,10 @@
             if (selectAll) selectAll.checked = checkboxes.length > 0 && Array.from(checkboxes).every(function (cb) { return cb.checked; });
 
             updateRestockButton();
-        }
-        syncFrameCheckboxesWithSelection();
+            }
+            syncFrameCheckboxesWithSelection();
 
-        function onFrameCheckboxChange(checkbox) {
+            function onFrameCheckboxChange(checkbox) {
             if (checkbox.checked) selectedFrames.set(checkbox.value, checkbox.dataset.barcode || checkbox.value);
             else selectedFrames.delete(checkbox.value);
 
@@ -277,28 +294,28 @@
 
             saveFrameSelection();
             updateRestockButton();
-        }
+            }
 
-        // Only ever targets .frame-select-checkbox - the disabled checkboxes on
-        // individually-tracked frames carry no value and aren't in that class, so "select
-        // all" can never pick up a frame a restock would just be rejected for.
-        function toggleSelectAllFrames(checkbox) {
+            // Only ever targets .frame-select-checkbox - the disabled checkboxes on
+            // individually-tracked frames carry no value and aren't in that class, so "select
+            // all" can never pick up a frame a restock would just be rejected for.
+            function toggleSelectAllFrames(checkbox) {
             document.querySelectorAll('.frame-select-checkbox').forEach(function (cb) {
-                if (checkbox.checked) selectedFrames.set(cb.value, cb.dataset.barcode || cb.value);
-                else selectedFrames.delete(cb.value);
-                cb.checked = checkbox.checked;
+            if (checkbox.checked) selectedFrames.set(cb.value, cb.dataset.barcode || cb.value);
+            else selectedFrames.delete(cb.value);
+            cb.checked = checkbox.checked;
             });
             saveFrameSelection();
             updateRestockButton();
-        }
+            }
 
-        function updateRestockButton() {
+            function updateRestockButton() {
             const btn = document.getElementById('bulkRestockBtn');
             document.getElementById('restockSelectedCount').textContent = selectedFrames.size;
             btn.disabled = selectedFrames.size === 0;
-        }
+            }
 
-        function openRestockModal() {
+            function openRestockModal() {
             if (selectedFrames.size === 0) return;
 
             document.getElementById('restockModalCount').textContent = selectedFrames.size;
@@ -309,26 +326,26 @@
             const chips = document.getElementById('restockSelectedChips');
             chips.innerHTML = '';
             selectedFrames.forEach(function (barcode, id) {
-                const chip = document.createElement('span');
-                chip.className = 'info-chip';
-                chip.innerHTML = '<bdi></bdi> <b style="cursor:pointer;color:#dc2626">✕</b>';
-                chip.querySelector('bdi').textContent = barcode;
-                chip.querySelector('b').onclick = function () { deselectFrame(id); };
-                chips.appendChild(chip);
+            const chip = document.createElement('span');
+            chip.className = 'info-chip';
+            chip.innerHTML = '<bdi></bdi> <b style="cursor:pointer;color:#dc2626">✕</b>';
+            chip.querySelector('bdi').textContent = barcode;
+            chip.querySelector('b').onclick = function () { deselectFrame(id); };
+            chips.appendChild(chip);
             });
 
             document.getElementById('restockForm').reset();
             document.getElementById('restockModalOverlay').classList.add('show');
             document.getElementById('restockModal').classList.add('show');
             document.getElementById('restockQtyInput').focus();
-        }
+            }
 
-        function closeRestockModal() {
+            function closeRestockModal() {
             document.getElementById('restockModalOverlay').classList.remove('show');
             document.getElementById('restockModal').classList.remove('show');
-        }
+            }
 
-        function deselectFrame(id) {
+            function deselectFrame(id) {
             selectedFrames.delete(id);
             const cb = document.querySelector('.frame-select-checkbox[value="' + id + '"]');
             if (cb) cb.checked = false;
@@ -338,22 +355,22 @@
             updateRestockButton();
 
             if (selectedFrames.size === 0) {
-                closeRestockModal();
-                return;
+            closeRestockModal();
+            return;
             }
             // Keep the modal's own count/chips in step with the removal instead of leaving
             // a stale row visible.
             openRestockModal();
-        }
+            }
 
-        function submitBulkRestock(event) {
+            function submitBulkRestock(event) {
             event.preventDefault();
             if (selectedFrames.size === 0) return;
 
             const qty = parseInt(document.getElementById('restockQtyInput').value, 10);
             if (!qty || qty <= 0) {
-                alert('أدخل كمية صحيحة أكبر من صفر');
-                return;
+            alert('أدخل كمية صحيحة أكبر من صفر');
+            return;
             }
 
             // Same reason the chips use <bdi>: a barcode mixes digits and letters, so inside
@@ -366,18 +383,19 @@
             const form = document.getElementById('restockForm');
             form.querySelectorAll('.bulk-frame-id-input').forEach(function (el) { el.remove(); });
             selectedFrames.forEach(function (barcode, id) {
-                const hidden = document.createElement('input');
-                hidden.type = 'hidden';
-                hidden.name = 'frameIds';
-                hidden.className = 'bulk-frame-id-input';
-                hidden.value = id;
-                form.appendChild(hidden);
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'frameIds';
+            hidden.className = 'bulk-frame-id-input';
+            hidden.value = id;
+            form.appendChild(hidden);
             });
 
             // Cleared before submitting rather than after the redirect: the batch has left
             // the page, so keeping it selected would invite restocking the same frames twice.
             sessionStorage.removeItem(FRAME_BULK_SELECTION_KEY);
             form.submit();
-        }
-    </script>
+            }
+        </script>
+    }
 }

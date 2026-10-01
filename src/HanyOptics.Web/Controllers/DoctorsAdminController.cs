@@ -10,7 +10,7 @@ namespace HanyOptics.Web.Controllers;
 // AdminController: list what exists, and a form to add one more. Doctors are pure
 // reference data used by the new-order wizard's doctor dropdown - no login, no role - so
 // there's no dual-store dance here the way there is for staff accounts.
-[Authorize(Roles = Roles.Admin)]
+[Authorize]
 public class DoctorsAdminController : Controller
 {
     private readonly IDoctorAdminService _doctors;

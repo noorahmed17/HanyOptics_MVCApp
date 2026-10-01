@@ -102,6 +102,17 @@
             rxArrow.textContent = '▲';
         }
 
+         // Frame details come from what staff typed on Add frame, so they go in as text,
+        // never as HTML: a brand saved as "<img ...>" must show as those characters, not
+        // run as code in the browser of whoever looks the frame up.
+        function metaLine(label, value, bold) {
+            const line = document.createElement('span');
+            if (label) line.append(label);
+            const holder = bold ? line.appendChild(document.createElement('b')) : line;
+            holder.append(String(value ?? ''));
+            return line;
+        }
+
         function lookupFrame() {
             const barcode = barcodeInput.value.trim();
             const resultBox = pick('frameResult');
@@ -115,11 +126,12 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.found) {
-                        pick('frameMeta').innerHTML =
-                            '<span><b>' + (data.brand || '') + ' ' + (data.modelName || '') + '</b></span>' +
-                            '<span>' + (data.color || '') + ' — ' + (data.size || '') + '</span>' +
-                            '<span>السعر: <b>' + fmt(data.sellPrice) + '</b></span>' +
-                            '<span>المتاح: <b>' + data.qtyAvailable + '</b></span>';
+                       pick('frameMeta').replaceChildren(
+                            metaLine(null, (data.brand || '') + ' ' + (data.modelName || ''), true),
+                            metaLine(null, (data.color || '') + ' — ' + (data.size || '')),
+                            metaLine('السعر: ', fmt(data.sellPrice), true),
+                            metaLine('المتاح: ', data.qtyAvailable, true)
+                        );
                         resultBox.classList.add('show');
                         framePriceInput.value = data.sellPrice;
                         updateTotal();

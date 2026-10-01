@@ -595,12 +595,16 @@ var userDrawer = await expUser.GetAsync("/Drawer");
 var userDrawerHtml = await userDrawer.Content.ReadAsStringAsync();
 Check("User: حركة الدرج is open to staff", userDrawer.StatusCode == HttpStatusCode.OK);
 Check("User: the sidebar offers حركة الدرج only",
-      userDrawerHtml.Contains("حركة الدرج") && !userDrawerHtml.Contains("/Corrections") && !userDrawerHtml.Contains("/Suppliers"));
-foreach (var url in new[] { "/Expenses", "/Suppliers", "/Corrections" })
+      userDrawerHtml.Contains("حركة الدرج") && !userDrawerHtml.Contains("/Suppliers") && !userDrawerHtml.Contains("/Suppliers"));
+foreach (var url in new[] { "/Expenses", "/Suppliers" })
 {
     var res = await expUser.GetAsync(url);
     Check($"User: {url} is refused", res.StatusCode != HttpStatusCode.OK, res.StatusCode.ToString());
 }
+var userCorr = await expUser.GetAsync("/Corrections?tab=entries");
+var userCorrHtml = await userCorr.Content.ReadAsStringAsync();
+Check("User: التصحيحات opens on الطلبات only",
+      userCorr.StatusCode == HttpStatusCode.OK && !userCorrHtml.Contains("آخر تصحيحات المصروفات"));
 
 Console.WriteLine();
 Console.WriteLine("المصروفات writes (through the stored procedures, cleaned up afterwards):");

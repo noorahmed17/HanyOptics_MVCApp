@@ -35,7 +35,10 @@
 
 <div class="tabs">
     <a class="tab @(tab == "orders" ? "active" : "")" asp-action="Index" asp-route-tab="orders">الطلبات</a>
-    <a class="tab @(tab == "entries" ? "active" : "")" asp-action="Index" asp-route-tab="entries">المصروفات والإيرادات</a>
+    @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+    {
+        <a class="tab @(tab == "entries" ? "active" : "")" asp-action="Index" asp-route-tab="entries">المصروفات والإيرادات</a>
+    }
 </div>
 
 @if (tab == "orders")

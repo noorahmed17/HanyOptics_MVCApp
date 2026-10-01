@@ -7,7 +7,7 @@
     string NavClassFor(string controller, string action) =>
         currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) && currentAction.Equals(action, StringComparison.OrdinalIgnoreCase)
             ? "nav-item active" : "nav-item";
-    var inExpenses = new[] { "Drawer", "Expenses", "Suppliers", "Corrections" }
+    var inExpenses = new[] { "Drawer", "Expenses", "Suppliers" }
         .Contains(currentController, StringComparer.OrdinalIgnoreCase);
 }
 <!DOCTYPE html>
@@ -54,14 +54,16 @@
                 {
                     <a class="@NavClass("Expenses") nav-sub" asp-controller="Expenses" asp-action="Index">المصروفات والإيرادات</a>
                     <a class="@NavClass("Suppliers") nav-sub" asp-controller="Suppliers" asp-action="Index">الموردون</a>
-                    <a class="@NavClass("Corrections") nav-sub" asp-controller="Corrections" asp-action="Index">التصحيحات</a>
+                    @* <a class="@NavClass("Corrections") nav-sub" asp-controller="Corrections" asp-action="Index">التصحيحات</a> *@
                 }
             </details>
+            <a class="@NavClass("Corrections")" asp-controller="Corrections" asp-action="Index"><span class="nav-icon">✏️</span> التصحيحات</a>
+            <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a>
             @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
             {
                 <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
                 <a class="@NavClass("Admin")" asp-controller="Admin" asp-action="Index"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>
-                <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a>
+                @* <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a> *@
             }
         </nav>
         <div class="sb-footer">

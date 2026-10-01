@@ -137,7 +137,11 @@ public class OrdersController : Controller
         if (string.IsNullOrWhiteSpace(barcode))
             return Json(new FrameLookupResult { Found = false, Message = "أدخل باركود" });
 
-        return Json(await _newOrderService.LookupFrameByBarcodeAsync(barcode));
+        var result = await _newOrderService.LookupFrameByBarcodeAsync(barcode);
+        if (!User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+            result.CostPrice = 0;
+
+        return Json(result);
     }
 
     [HttpPost]

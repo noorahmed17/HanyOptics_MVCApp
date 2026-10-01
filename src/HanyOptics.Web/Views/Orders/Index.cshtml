@@ -125,6 +125,17 @@
         // selection in progress.
         const BULK_SELECTION_KEY = 'hanyoptics.bulkSelection';
 
+        // Frame details come from what staff typed on إضافة إطار, so they go in as text,
+        // never as HTML: a brand saved as "<img ...>" must show as those characters, not
+        // run as code in the browser of whoever looks the frame up.
+        function metaLine(label, value, bold) {
+            const line = document.createElement('span');
+            if (label) line.append(label);
+            const holder = bold ? line.appendChild(document.createElement('b')) : line;
+            holder.append(String(value ?? ''));
+            return line;
+        }
+
         function loadSelection() {
             try {
                 return new Map(JSON.parse(sessionStorage.getItem(BULK_SELECTION_KEY) || '[]'));
@@ -646,11 +657,12 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.found) {
-                        document.getElementById('swapFrameMeta').innerHTML =
-                            '<span><b>' + (data.brand || '') + ' ' + (data.modelName || '') + '</b></span>' +
-                            '<span>' + (data.color || '') + ' — ' + (data.size || '') + '</span>' +
-                            '<span>السعر: <b>' + Number(data.sellPrice || 0).toLocaleString('ar-EG') + ' ج</b></span>' +
-                            '<span>المتاح: <b>' + data.qtyAvailable + '</b></span>';
+                         document.getElementById('swapFrameMeta').replaceChildren(
+                            metaLine(null, (data.brand || '') + ' ' + (data.modelName || ''), true),
+                            metaLine(null, (data.color || '') + ' — ' + (data.size || '')),
+                            metaLine('السعر: ', Number(data.sellPrice || 0).toLocaleString('ar-EG') + ' ج', true),
+                            metaLine('المتاح: ', data.qtyAvailable, true)
+                        );
                         resultBox.classList.add('show');
                         document.getElementById('swapNewFrameId').value = data.frameId;
                         document.getElementById('swapPriceInput').value = data.sellPrice;

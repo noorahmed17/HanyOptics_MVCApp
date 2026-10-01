@@ -48,10 +48,12 @@ public class InventoryController : Controller
     // derives it from the sell price, and the label is printed afterwards. Nothing is
     // scanned here - there is no label on the frame yet.
     [HttpGet]
+    [Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
     public IActionResult AddFrame() => View(new AddFrameRequest());
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
     public async Task<IActionResult> AddFrame(AddFrameRequest model)
     {
         if (!ModelState.IsValid)
@@ -89,6 +91,7 @@ public class InventoryController : Controller
     // back on whatever view the selection was made from.
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
     public async Task<IActionResult> BulkRestock(int[] frameIds, int qtyToAdd, string? status, string? category, string? tracking, string? q)
     {
         if (frameIds is not { Length: > 0 })

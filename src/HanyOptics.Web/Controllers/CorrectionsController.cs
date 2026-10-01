@@ -8,7 +8,7 @@ namespace HanyOptics.Web.Controllers;
 // التصحيحات. Admin-only, and not only by hiding the link: the sp_admin_* procedures rewrite
 // money that has already been counted in a closed day, and the deploy script is explicit
 // that only the owner may reach them.
-[Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
+[Authorize]
 public class CorrectionsController : Controller
 {
     private const string OrdersTab = "orders";
@@ -27,6 +27,12 @@ public class CorrectionsController : Controller
 
     public async Task<IActionResult> Index(string? tab, string? invoice, int? edit, int? page)
     {
+        if (!User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+        {
+            tab = OrdersTab;
+            edit = null;
+        }
+
         UpdateExpenseRequest? editModel = null;
         if (edit.HasValue && await _expenses.GetEntryAsync(edit.Value) is { IsCancelled: false } entry)
         {
@@ -90,6 +96,7 @@ public class CorrectionsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
     public async Task<IActionResult> UpdateExpense(UpdateExpenseRequest model, int? page)
     {
         var outcome = await _expenses.UpdateAsync(model);
@@ -108,6 +115,7 @@ public class CorrectionsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    [Authorize(Roles = HanyOptics.BusinessLogic.Auth.Roles.Admin)]
     public async Task<IActionResult> CancelExpense(int expenseId, string? reason, int? page)
     {
         Report(await _expenses.CancelAsync(expenseId, reason, todayOnly: false), "تم إلغاء الحركة.");
