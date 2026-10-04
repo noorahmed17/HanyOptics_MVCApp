@@ -116,8 +116,8 @@ internal static class ReportCatalog
                       SELECT created_by, COUNT(*) AS orders_count, SUM(total_amount) AS orders_total
                       FROM orders
                       WHERE status <> 'cancelled'
-                        AND (@from IS NULL OR order_date >= @from)
-                        AND (@to   IS NULL OR order_date <  DATEADD(day, 1, @to))
+                        AND (@from IS NULL OR order_date >= dbo.fn_business_day_start(@from))
+                        AND (@to   IS NULL OR order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                       GROUP BY created_by
                   ) o ON o.created_by = u.user_id
                   LEFT JOIN (
@@ -125,8 +125,8 @@ internal static class ReportCatalog
                              COUNT(*) AS payments_count,
                              SUM(CASE WHEN payment_type = 'refund' THEN -amount ELSE amount END) AS payments_net
                       FROM payments
-                      WHERE (@from IS NULL OR paid_at >= @from)
-                        AND (@to   IS NULL OR paid_at <  DATEADD(day, 1, @to))
+                      WHERE  (@from IS NULL OR paid_at >= dbo.fn_business_day_start(@from))
+                            AND (@to   IS NULL OR paid_at <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                       GROUP BY received_by
                   ) p ON p.received_by = u.user_id
                   WHERE u.is_active = 1
@@ -203,8 +203,8 @@ internal static class ReportCatalog
                   FROM payments p
                   JOIN orders o ON o.order_id = p.order_id
                   LEFT JOIN users u ON u.user_id = p.received_by
-                  WHERE (@from IS NULL OR p.paid_at >= @from)
-                    AND (@to   IS NULL OR p.paid_at <  DATEADD(day, 1, @to))
+                  WHERE (@from IS NULL OR p.paid_at >= dbo.fn_business_day_start(@from))
+                    AND (@to   IS NULL OR p.paid_at <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   """,
             OrderBy = "p.paid_at DESC, p.payment_id",
             Columns =
@@ -360,8 +360,8 @@ internal static class ReportCatalog
                   JOIN orders o ON o.order_id = oi.order_id
                   WHERE oi.status = 'active'
                     AND o.status <> 'cancelled'
-                    AND (@from IS NULL OR o.order_date >= @from)
-                    AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
+                    AND (@from IS NULL OR o.order_date >= dbo.fn_business_day_start(@from))
+                    AND (@to   IS NULL OR o.order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   GROUP BY f.brand
                   """,
             OrderBy = "SUM(oi.frame_agreed_price) DESC, f.brand",
@@ -394,8 +394,8 @@ internal static class ReportCatalog
                          delivery_type, total_amount, paid_amount, remaining_amount,
                          delivered_at, created_by
                   FROM vw_order_summary
-                  WHERE (@from IS NULL OR order_date >= @from)
-                    AND (@to   IS NULL OR order_date <  DATEADD(day, 1, @to))
+                  WHERE (@from IS NULL OR order_date >= dbo.fn_business_day_start(@from))
+                    AND (@to   IS NULL OR order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   """,
             OrderBy = "order_date DESC, order_id",
             Columns =
@@ -476,8 +476,8 @@ internal static class ReportCatalog
                   LEFT JOIN orders o
                          ON o.doctor_id = d.doctor_id
                         AND o.status <> 'cancelled'
-                        AND (@from IS NULL OR o.order_date >= @from)
-                        AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
+                        AND (@from IS NULL OR o.order_date >= dbo.fn_business_day_start(@from))
+                        AND (@to   IS NULL OR o.order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   GROUP BY d.name, d.clinic, d.phone
                   """,
             OrderBy = "COUNT(o.order_id) DESC, ISNULL(SUM(o.total_amount), 0) DESC, d.name",
@@ -515,8 +515,8 @@ internal static class ReportCatalog
                   JOIN orders o
                     ON o.customer_id = c.customer_id
                    AND o.status <> 'cancelled'
-                   AND (@from IS NULL OR o.order_date >= @from)
-                   AND (@to   IS NULL OR o.order_date <  DATEADD(day, 1, @to))
+                   AND (@from IS NULL OR o.order_date >= dbo.fn_business_day_start(@from))
+                   AND (@to   IS NULL OR o.order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   GROUP BY c.name, c.phone
                   """,
             OrderBy = "SUM(o.total_amount) DESC, c.name",
@@ -549,8 +549,8 @@ internal static class ReportCatalog
                          item_type, frame_brand, frame_model, frame_barcode,
                          lens_description, doctor_name, total_amount, remaining_amount
                   FROM vw_customer_history
-                  WHERE (@from IS NULL OR order_date >= @from)
-                    AND (@to   IS NULL OR order_date <  DATEADD(day, 1, @to))
+                  WHERE (@from IS NULL OR order_date >= dbo.fn_business_day_start(@from))
+                    AND (@to   IS NULL OR order_date <  dbo.fn_business_day_start(DATEADD(day, 1, @to)))
                   """,
             OrderBy = "order_date DESC, order_id",
             Columns =
