@@ -17,5 +17,9 @@ public interface ICorrectionService
 
     Task<OperationResult> RevertOrderStatusAsync(int orderId, string? reason);
 
+    Task<OperationResult> ReturnDeliveredFrameAsync(ReturnFrameRequest request);
+
+    Task<OperationResult> ExchangeDeliveredFrameAsync(ExchangeFrameRequest request);
+
     Task<IReadOnlyList<CorrectionLogEntry>> GetRecentExpenseCorrectionsAsync(int take = 20);
 }

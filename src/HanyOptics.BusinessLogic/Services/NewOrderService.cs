@@ -40,9 +40,14 @@ public class NewOrderService : INewOrderService
 
     public async Task<CustomerLookupResult> LookupCustomerByPhoneAsync(string phone)
     {
+        // Looked up in the stored spelling, so "0101 234 5678" finds 01012345678.
+        var normalized = EgyptianMobile.Normalize(phone);
+        if (normalized is null)
+            return new CustomerLookupResult { Found = false };
+
         var customer = await _dbContext.Customers
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Phone == phone);
+            .FirstOrDefaultAsync(c => c.Phone == normalized);
 
         if (customer is null)
             return new CustomerLookupResult { Found = false };
@@ -486,7 +491,7 @@ public class NewOrderService : INewOrderService
             return (WalkInCustomer.Phone, WalkInCustomer.Name);
 
         return (
-            string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
+            EgyptianMobile.Normalize(phone),
             string.IsNullOrWhiteSpace(name) ? null : name.Trim());
     }
 

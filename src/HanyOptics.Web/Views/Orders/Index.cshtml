@@ -555,6 +555,7 @@
         // away entirely rather than sitting there asking for a number that has no meaning.
         // sp_swap_frame still wants the parameter, so 0 is sent on its behalf.
         function updateSwapSource() {
+            swapLookupSeq++;
             const external = document.getElementById('swapSource').value === 'external';
 
             document.getElementById('swapInventoryGroup').style.display = external ? 'none' : '';
@@ -642,7 +643,13 @@
             document.getElementById('cancelItemModal').classList.remove('show');
         }
 
+        // Every lookup gets a number, and only the latest one may fill the popup. Typing in
+        // the box or changing the frame source (which reopening the popup also does) moves
+        // the number on, so an answer still in flight from before is dropped.
+        let swapLookupSeq = 0;
+
         function searchSwapFrame() {
+            const seq = ++swapLookupSeq;
             const barcode = document.getElementById('swapBarcodeInput').value.trim();
             const resultBox = document.getElementById('swapFrameResult');
             const errorBox = document.getElementById('swapFrameError');
@@ -656,6 +663,10 @@
             fetch('@Url.Action("LookupFrame")?barcode=' + encodeURIComponent(barcode))
                 .then(r => r.json())
                 .then(data => {
+                    // The box was changed (or the popup reopened) while this lookup was in
+                    // flight - this answer is for a barcode that is no longer there.
+                    if (seq !== swapLookupSeq) return;
+                    if (document.getElementById('swapBarcodeInput').value.trim() !== barcode) return;
                     if (data.found) {
                          document.getElementById('swapFrameMeta').replaceChildren(
                             metaLine(null, (data.brand || '') + ' ' + (data.modelName || ''), true),
@@ -689,6 +700,21 @@
             e.preventDefault();
             searchSwapFrame();
         });
+
+        // Editing the barcode after a lookup leaves the old frame's id in the hidden field
+        // with confirm still enabled - confirming would stage the frame that was looked up,
+        // not the one now written in the box. So any edit drops the earlier result and
+        // locks confirm until the new barcode is looked up. Delegated for the same reason
+        // as the Enter handler above.
+        document.addEventListener('input', function (e) {
+            if (!e.target || e.target.id !== 'swapBarcodeInput') return;
+            swapLookupSeq++;
+            document.getElementById('swapNewFrameId').value = '';
+            document.getElementById('swapConfirmBtn').disabled = true;
+            document.getElementById('swapFrameResult').classList.remove('show');
+            document.getElementById('swapFrameError').classList.remove('show');
+        });
+
 
         (function () {
             // Runs on every load, including one arrived at by clicking a status tab: ticks

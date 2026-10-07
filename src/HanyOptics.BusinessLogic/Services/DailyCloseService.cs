@@ -191,7 +191,8 @@ public class DailyCloseService : IDailyCloseService
                 IsOldInvoice = reader.GetInt32(reader.GetOrdinal("is_old_invoice")) == 1,
                 IsAfterMidnight = reader.GetInt32(reader.GetOrdinal("is_after_midnight")) == 1,
                 ReceivedBy = GetNullableString(reader, "received_by"),
-                Notes = GetNullableString(reader, "notes")
+                Notes = GetNullableString(reader, "notes"),
+                OrderEvent = GetNullableString(reader, "order_event")
             });
         }
 

@@ -205,7 +205,7 @@
                         <td><bdi>@p.InvoiceNumber</bdi></td>
                         <td><b>@(p.CustomerName ?? "—")</b></td>
                         <td>@if (refund) { <span class="mk mk-bad">مرتجع</span> } else { @ExpenseDisplay.PaymentType(p.PaymentType) }</td>
-                        <td>@if (refund) { <span class="text-muted">—</span> } else if (p.IsOldInvoice) { <span class="mk mk-info">فاتورة سابقة</span> } else { <text>فاتورة اليوم</text> }</td>
+                        <td>@if (p.OrderEvent == "exchange_frame") { <span class="mk mk-info">استبدال</span> } else if (p.OrderEvent == "return_item") { <span class="mk mk-bad">مرتجع بعد التسليم</span> } else if (refund) { <span class="text-muted">—</span> } else if (p.IsOldInvoice) { <span class="mk mk-info">فاتورة سابقة</span> } else { <text>فاتورة اليوم</text> }</td>
                         <td><span class="badge @(p.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@(p.PaymentMethod == PaymentMethods.Visa ? "فيزا" : "نقدي")</span></td>
                         <td class="num fw-bold @(refund ? "c-red" : "")">@(refund ? "− " : "")@N(p.Amount)</td>
                         <td>@(p.ReceivedBy ?? "—")</td>

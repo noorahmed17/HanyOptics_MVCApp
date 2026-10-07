@@ -46,5 +46,44 @@ public class CorrectionOrder
     public string? RevertTarget { get; init; }
 
     public IReadOnlyList<CorrectionPayment> Payments { get; init; } = [];
+    public IReadOnlyList<CorrectionItem> ReturnableItems { get; init; } = [];
     public IReadOnlyList<CorrectionLogEntry> Log { get; init; } = [];
+}
+
+// A frame-only item on a delivered order - what the return and exchange buttons act on.
+public class CorrectionItem
+{
+    public int ItemId { get; init; }
+    public string Barcode { get; init; } = string.Empty;
+    public string? Brand { get; init; }
+    public string? ModelName { get; init; }
+    public decimal Price { get; init; }
+}
+
+// مرتجع بعد التسليم. RefundAmount is what was actually handed back to the customer - typed
+// by staff, never assumed - and nullable so an empty box and an explicit zero stay
+// distinguishable, the same reason ExpenseRequest.Amount is.
+public class ReturnFrameRequest
+{
+    public int ItemId { get; set; }
+    public decimal? RefundAmount { get; set; }
+    public string RefundMethod { get; set; } = PaymentMethods.Cash;
+    public string? Reason { get; set; }
+}
+
+// استبدال بعد التسليم. WithLenses is an explicit choice rather than "a lens price above
+// zero", so a frame-only exchange never has to fill in lens fields. Amount is what was
+// actually paid now (when the customer owes the difference) or handed back now (when the
+// customer is owed it); anything left stays on the invoice like any other balance.
+public class ExchangeFrameRequest
+{
+    public int ItemId { get; set; }
+    public string? NewBarcode { get; set; }
+    public decimal? NewFramePrice { get; set; }
+    public bool WithLenses { get; set; }
+    public decimal? LensPrice { get; set; }
+    public string? LensDescription { get; set; }
+    public decimal? Amount { get; set; }
+    public string PaymentMethod { get; set; } = PaymentMethods.Cash;
+    public string? Reason { get; set; }
 }

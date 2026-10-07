@@ -35,5 +35,8 @@ public class NewOrderCustomerRequest : IValidatableObject
     {
         if (!IsWalkIn && string.IsNullOrWhiteSpace(Phone) && string.IsNullOrWhiteSpace(CustomerName))
             yield return new ValidationResult(WalkInCustomer.MissingIdentityMessage, new[] { nameof(Phone) });
+
+        if (!IsWalkIn && !string.IsNullOrWhiteSpace(Phone) && EgyptianMobile.Normalize(Phone) is null)
+            yield return new ValidationResult(EgyptianMobile.InvalidMessage, new[] { nameof(Phone) });
     }
 }

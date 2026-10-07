@@ -5,6 +5,7 @@ using HanyOptics.Domain.Entities;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Data;
 using static HanyOptics.BusinessLogic.Services.SqlReader;
 
 namespace HanyOptics.BusinessLogic.Services;
@@ -27,6 +28,10 @@ public class CustomerService : ICustomerService
     // corrections_log. Orders keep the name printed on them - only the customer row changes.
     public async Task<OperationResult> UpdateAsync(int customerId, string? name, string? phone)
     {
+        // Same spelling and the same rule as the new- order wizard(see EgyptianMobile).
+        var normalizedPhone = EgyptianMobile.Normalize(phone);
+        if (!string.IsNullOrWhiteSpace(phone) && normalizedPhone is null)
+            return OperationResult.Failure(EgyptianMobile.InvalidMessage);
         try
         {
             await _dbContext.Database.ExecuteSqlRawAsync(
@@ -34,7 +39,7 @@ public class CustomerService : ICustomerService
                 new SqlParameter("@p_customer", customerId),
                 new SqlParameter("@p_user", _currentUser.RequireUserId()),
                 NVarChar("@p_name", Clean(name), 100),
-                NVarChar("@p_phone", Clean(phone), 20));
+                NVarChar("@p_phone", normalizedPhone, 20));
             return OperationResult.Success();
         }
         catch (SqlException ex)

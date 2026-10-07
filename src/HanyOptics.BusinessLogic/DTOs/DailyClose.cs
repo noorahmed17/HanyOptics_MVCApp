@@ -88,6 +88,10 @@ public class DailyClosePayment
     public bool IsAfterMidnight { get; set; }
     public string? ReceivedBy { get; set; }
     public string? Notes { get; set; }
+
+    // "return_item" or "exchange_frame" when the invoice had a return or an exchange on the
+    // same day as this payment; null otherwise.
+    public string? OrderEvent { get; set; }
 }
 
 public class DailyCloseDelivery

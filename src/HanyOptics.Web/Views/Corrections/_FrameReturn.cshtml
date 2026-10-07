@@ -1,0 +1,161 @@
+﻿@model HanyOptics.BusinessLogic.Models.CorrectionOrder
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@using System.Globalization
+@*
+    مرتجع أو استبدال بعد التسليم: the card and its two popups, kept together so the whole
+    feature lives in one file. Shown only for a delivered order that still has a frame-only
+    item. The popups open through expenses.js like every other popup on this screen; what
+    they do on top of that (scanner lookup, the lens choice, the live difference) is in
+    js/frame-return.js.
+*@
+@{
+    string Invariant(decimal v) => v.ToString(CultureInfo.InvariantCulture);
+}
+
+@if (Model.Status == "delivered" && Model.ReturnableItems.Count > 0)
+{
+    <div class="card">
+        <div class="card-header"><span class="card-title">مرتجع أو استبدال</span></div>
+        <div class="card-body table-scroll">
+            <table>
+                <thead><tr><th>الإطار</th><th class="num">السعر</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var it in Model.ReturnableItems)
+                {
+                    var frameLabel = $"{it.Barcode} {it.Brand} {it.ModelName}".Trim();
+                    // Never more than the item's price, and never more than was actually paid.
+                    var maxRefund = Math.Min(it.Price, Model.PaidAmount);
+                    <tr>
+                        <td><bdi>@it.Barcode</bdi> @it.Brand @it.ModelName</td>
+                        <td class="num">@ExpenseDisplay.Money(it.Price)</td>
+                        <td class="actions">
+                            <button type="button" class="btn btn-outline btn-sm" data-modal-open="returnModal"
+                                    data-fields='@Json.Serialize(new { itemId = it.ItemId, label = frameLabel, maxRefund = Invariant(maxRefund), maxRefundText = ExpenseDisplay.Money(maxRefund) })'>مرتجع</button>
+                            <button type="button" class="btn btn-outline btn-sm" data-modal-open="exchangeModal"
+                                    data-fields='@Json.Serialize(new { itemId = it.ItemId, label = frameLabel, oldPrice = Invariant(it.Price) })'>استبدال</button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="card-pad" style="padding-top:0">
+            <div class="form-hint mt-2">للطلبات المسلَّمة فقط، ولبند «إطار فقط». يعود الإطار إلى المخزن، ويُسجَّل المبلغ الذي دُفع أو رُدّ فعلًا في يوم العملية.</div>
+        </div>
+    </div>
+
+    <div class="modal modal-sm" id="returnModal" role="dialog" aria-modal="true" aria-labelledby="returnTitle">
+        <form asp-action="ReturnFrame" method="post" data-require-reason>
+            <div class="modal-header">
+                <span class="modal-title" id="returnTitle">مرتجع إطار</span>
+                <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3 text-sm">الإطار: <b data-text="label"></b></p>
+                <input type="hidden" name="itemId" />
+                <input type="hidden" name="invoice" value="@Model.InvoiceNumber" />
+                <div class="form-group">
+                    <label for="retAmount">المبلغ المرتجع للعميل (ج) *</label>
+                    <input id="retAmount" name="RefundAmount" data-clear type="number" min="0" step="0.01" required />
+                    <div class="form-hint">اكتب المبلغ الذي رُدّ إلى العميل فعلًا، و0 إذا لم يُرَد شيء. الحد الأقصى: <b data-text="maxRefundText"></b>.</div>
+                </div>
+                <div class="form-group">
+                    <label>طريقة رد المبلغ</label>
+                    <div class="seg">
+                        <label><input type="radio" name="RefundMethod" value="@PaymentMethods.Cash" checked /><span>نقدًا</span></label>
+                        <label><input type="radio" name="RefundMethod" value="@PaymentMethods.Visa" /><span>بطاقة</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="retReason">سبب المرتجع *</label>
+                    <input id="retReason" name="Reason" data-clear maxlength="500" placeholder="مثال: لم يعجب العميل" autocomplete="off" />
+                    <div class="field-error" data-reason-warn hidden>اكتب سبب المرتجع.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                <button type="submit" class="btn btn-danger">تسجيل المرتجع</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="modal modal-sm" id="exchangeModal" role="dialog" aria-modal="true" aria-labelledby="exchangeTitle"
+         data-lookup-url="@Url.Action("LookupFrame", "Orders")"
+         data-order-total="@Invariant(Model.TotalAmount)"
+         data-order-paid="@Invariant(Model.PaidAmount)">
+        <form asp-action="ExchangeFrame" method="post" data-require-reason>
+            <div class="modal-header">
+                <span class="modal-title" id="exchangeTitle">استبدال إطار</span>
+                <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3 text-sm">الإطار الحالي: <b data-text="label"></b></p>
+                <input type="hidden" name="itemId" />
+                <input type="hidden" name="invoice" value="@Model.InvoiceNumber" />
+
+                <div class="form-group">
+                    <label for="exBarcode">باركود الإطار الجديد *</label>
+                    <div class="input-group">
+                        <input type="text" id="exBarcode" name="NewBarcode" data-role="barcodeInput" data-clear maxlength="50" required autocomplete="off" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                        <button type="button" class="btn btn-primary" id="exSearchBtn">بحث</button>
+                    </div>
+                    <div class="frame-result" id="exFrameResult">
+                        <div class="frame-result-title">إطار موجود ومتاح</div>
+                        <div class="frame-meta" id="exFrameMeta"></div>
+                    </div>
+                    <div class="frame-error" id="exFrameError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="exPrice">سعر الإطار الجديد (ج) *</label>
+                    <input id="exPrice" name="NewFramePrice" data-clear type="number" min="0" step="0.01" required />
+                </div>
+
+                <div class="form-group">
+                    <label>نوع الاستبدال</label>
+                    <div class="seg">
+                        <label><input type="radio" name="WithLenses" value="false" checked /><span>إطار فقط</span></label>
+                        <label><input type="radio" name="WithLenses" value="true" /><span>إطار وعدسات</span></label>
+                    </div>
+                    <div class="form-hint" id="exKindHint"></div>
+                </div>
+                   <div id="exLensGroup" hidden>
+                    <div class="form-group">
+                        <label for="exLensDesc">وصف العدسات *</label>
+                        <input id="exLensDesc" name="LensDescription" data-clear maxlength="200" autocomplete="off"
+                               class="combo" list="lens-suggestions" placeholder="اختر من الأكثر استخدامًا أو اكتب" />
+                    </div>
+                    <div class="form-group">
+                        <label for="exLens">سعر العدسات (ج) *</label>
+                        <input id="exLens" name="LensPrice" data-clear type="number" min="0.01" step="0.01" />
+                    </div>
+                </div>
+
+                <div class="alert alert-info" id="exDiff" hidden></div>
+
+                <div class="form-group">
+                    <label for="exAmount" id="exAmountLabel">المبلغ (ج) *</label>
+                    <input id="exAmount" name="Amount" data-clear type="number" min="0" step="0.01" required />
+                </div>
+                <div class="form-group">
+                    <label>طريقة الدفع</label>
+                    <div class="seg">
+                        <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Cash" checked /><span>نقدًا</span></label>
+                        <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Visa" /><span>بطاقة</span></label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="exReason">سبب الاستبدال *</label>
+                    <input id="exReason" name="Reason" data-clear maxlength="500" placeholder="مثال: العميل اختار موديلًا آخر" autocomplete="off" />
+                    <div class="field-error" data-reason-warn hidden>اكتب سبب الاستبدال.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                <button type="submit" class="btn btn-primary" id="exConfirmBtn" disabled>تنفيذ الاستبدال</button>
+            </div>
+        </form>
+    </div>
+   <partial name="~/Views/Orders/_LensSuggestions.cshtml" />
+}

@@ -17,12 +17,15 @@ public class CorrectionsController : Controller
     private readonly ICorrectionService _corrections;
     private readonly IExpenseService _expenses;
     private readonly ISupplierService _suppliers;
+    private readonly INewOrderService _newOrders;
 
-    public CorrectionsController(ICorrectionService corrections, IExpenseService expenses, ISupplierService suppliers)
+    public CorrectionsController(ICorrectionService corrections, IExpenseService expenses, ISupplierService suppliers,
+                                 INewOrderService newOrders)
     {
         _corrections = corrections;
         _expenses = expenses;
         _suppliers = suppliers;
+        _newOrders = newOrders;
     }
 
     public async Task<IActionResult> Index(string? tab, string? invoice, int? edit, int? page)
@@ -92,6 +95,24 @@ public class CorrectionsController : Controller
         return BackToOrder(invoice);
     }
 
+    // مرتجع أو استبدال بعد التسليم - open to staff as well as the owner, like the status
+    // revert above. The amounts are whatever staff typed; nothing is assumed.
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ReturnFrame(ReturnFrameRequest model, string invoice)
+    {
+        Report(await _corrections.ReturnDeliveredFrameAsync(model), "تم تسجيل المرتجع، وعاد الإطار إلى المخزن.");
+        return BackToOrder(invoice);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExchangeFrame(ExchangeFrameRequest model, string invoice)
+    {
+        Report(await _corrections.ExchangeDeliveredFrameAsync(model), "تم الاستبدال.");
+        return BackToOrder(invoice);
+    }
+
     // ── Expenses & income ────────────────────────────────────────────────
 
     [HttpPost]
@@ -131,6 +152,10 @@ public class CorrectionsController : Controller
         if (tab == OrdersTab)
         {
             ViewBag.Order = string.IsNullOrWhiteSpace(invoice) ? null : await _corrections.FindOrderAsync(invoice);
+
+            // قايمة «وصف العدسات» في شاشة الاستبدال — نفس قايمة «طلب جديد» (الأكثر استخدامًا)
+            if (!string.IsNullOrWhiteSpace(invoice))
+                ViewBag.LensSuggestions = await _newOrders.GetLensSuggestionsAsync();
         }
         else
         {

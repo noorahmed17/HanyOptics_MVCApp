@@ -80,6 +80,26 @@ public class CorrectionService : ICorrectionService
                 },
                 new SqlParameter("@id", header.OrderId));
 
+            // Only a delivered order can have a frame returned or exchanged from this screen.
+            List<CorrectionItem> items = header.Status == "delivered"
+                ? await QueryAsync(connection,
+                    """
+                    SELECT oi.item_id, f.barcode, f.brand, f.model_name, oi.frame_agreed_price
+                    FROM dbo.order_items oi JOIN dbo.frames f ON f.frame_id = oi.frame_id
+                    WHERE oi.order_id = @id AND oi.status = N'active' AND oi.item_type = N'frame_only'
+                    ORDER BY oi.item_id;
+                    """,
+                    r => new CorrectionItem
+                    {
+                        ItemId = r.GetInt32(r.GetOrdinal("item_id")),
+                        Barcode = r.GetString(r.GetOrdinal("barcode")),
+                        Brand = r.NullableString("brand"),
+                        ModelName = r.NullableString("model_name"),
+                        Price = r.Decimal("frame_agreed_price")
+                    },
+                    new SqlParameter("@id", header.OrderId))
+                : new List<CorrectionItem>();
+
             var log = await QueryAsync(connection,
                 LogSelect + " WHERE cl.order_id = @id ORDER BY cl.correction_id DESC;",
                 MapLog,
@@ -99,6 +119,7 @@ public class CorrectionService : ICorrectionService
                 RemainingAmount = header.Remaining,
                 RevertTarget = RevertTarget(header.Status, header.PreDelivery),
                 Payments = payments,
+                ReturnableItems = items,
                 Log = log
             };
         });
@@ -156,6 +177,75 @@ public class CorrectionService : ICorrectionService
             NVarChar("@p_reason", Clean(reason), 500));
     }
 
+    // مرتجع بعد التسليم: sp_admin_return_delivered_frame cancels the item, puts the frame
+    // back on sale and records exactly the refund typed here.
+    public Task<OperationResult> ReturnDeliveredFrameAsync(ReturnFrameRequest request)
+    {
+        if (request.RefundAmount is null || request.RefundAmount < 0)
+            return Task.FromResult(OperationResult.Failure("اكتب المبلغ المرتجع للعميل، حتى لو صفر."));
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return Task.FromResult(OperationResult.Failure("اكتب سبب المرتجع."));
+
+        return RunAsync("returning delivered frame",
+            """
+            EXEC dbo.sp_admin_return_delivered_frame
+                @item_id       = @p_item,
+                @refund_amount = @p_amount,
+                @refund_method = @p_method,
+                @changed_by    = @p_user,
+                @reason        = @p_reason
+            """,
+            new SqlParameter("@p_item", request.ItemId),
+            Money("@p_amount", request.RefundAmount),
+            NVarChar("@p_method", Clean(request.RefundMethod) ?? PaymentMethods.Cash, 10),
+            new SqlParameter("@p_user", _currentUser.RequireUserId()),
+            NVarChar("@p_reason", Clean(request.Reason), 500));
+    }
+
+    // استبدال بعد التسليم: sp_admin_exchange_delivered_frame swaps the frame, and records
+    // exactly the amount typed here - paid or handed back, depending on which way the
+    // difference goes. Lens values are only sent for a frame-and-lenses exchange.
+    public Task<OperationResult> ExchangeDeliveredFrameAsync(ExchangeFrameRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewBarcode))
+            return Task.FromResult(OperationResult.Failure("اكتب باركود الإطار الجديد."));
+        if (request.NewFramePrice is null || request.NewFramePrice < 0)
+            return Task.FromResult(OperationResult.Failure("اكتب سعر الإطار الجديد."));
+        if (request.WithLenses && (request.LensPrice is null || request.LensPrice <= 0))
+            return Task.FromResult(OperationResult.Failure("اكتب سعر العدسات."));
+        if (request.WithLenses && string.IsNullOrWhiteSpace(request.LensDescription))
+            return Task.FromResult(OperationResult.Failure("اكتب وصف العدسات."));
+        if (request.Amount is null || request.Amount < 0)
+            return Task.FromResult(OperationResult.Failure("اكتب المبلغ، حتى لو صفر."));
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return Task.FromResult(OperationResult.Failure("اكتب سبب الاستبدال."));
+
+        return RunAsync("exchanging delivered frame",
+            """
+            EXEC dbo.sp_admin_exchange_delivered_frame
+                @item_id          = @p_item,
+                @new_barcode      = @p_barcode,
+                @new_frame_price  = @p_price,
+                @with_lenses      = @p_with_lenses,
+                @lens_price       = @p_lens_price,
+                @lens_description = @p_lens_desc,
+                @amount           = @p_amount,
+                @payment_method   = @p_method,
+                @changed_by       = @p_user,
+                @reason           = @p_reason
+            """,
+            new SqlParameter("@p_item", request.ItemId),
+            NVarChar("@p_barcode", Clean(request.NewBarcode), 50),
+            Money("@p_price", request.NewFramePrice),
+            new SqlParameter("@p_with_lenses", request.WithLenses),
+            Money("@p_lens_price", request.WithLenses ? request.LensPrice : null),
+            NVarChar("@p_lens_desc", request.WithLenses ? Clean(request.LensDescription) : null, 200),
+            Money("@p_amount", request.Amount),
+            NVarChar("@p_method", Clean(request.PaymentMethod) ?? PaymentMethods.Cash, 10),
+            new SqlParameter("@p_user", _currentUser.RequireUserId()),
+            NVarChar("@p_reason", Clean(request.Reason), 500));
+    }
+
     // Mirrors sp_admin_revert_order_status so the button can say where it will go before
     // it is pressed; the procedure still decides for itself when it runs.
     private static string? RevertTarget(string status, string? preDelivery) => status switch
@@ -209,6 +299,8 @@ public class CorrectionService : ICorrectionService
         ("payment", "delete") => "حذف دفعة",
         ("expense", "update") => "تعديل حركة",
         ("customer", "update") => "تعديل بيانات عميل",
+        ("order", "return_item") => "مرتجع بعد التسليم",
+        ("order", "exchange_frame") => "استبدال بعد التسليم",
         _ => action
     };
 
@@ -216,6 +308,7 @@ public class CorrectionService : ICorrectionService
     // columns in the stored JSON are left out - they mean nothing on this screen.
     private static readonly (string Key, string Label)[] ShownFields =
     [
+        ("barcode", "الإطار"),
         ("customer_name", "الاسم"),
         ("name", "الاسم"),
         ("phone", "الهاتف"),

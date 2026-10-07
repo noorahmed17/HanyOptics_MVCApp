@@ -103,23 +103,27 @@
                     <table>
                         <thead><tr><th>التاريخ</th><th>النوع</th><th>الطريقة</th><th class="num">المبلغ</th><th>استلمها</th><th></th></tr></thead>
                         <tbody>
-                        @foreach (var p in order.Payments)
-                        {
-                            var label = $"{ExpenseDisplay.PaymentType(p.PaymentType)} · {ExpenseDisplay.Method(p.PaymentMethod)} · {ExpenseDisplay.Money(p.Amount)}";
-                            <tr class="@(p.IsRefund ? "row-refund" : "")">
-                                <td class="num">@ExpenseDisplay.DateTimeShort(p.PaidAt)</td>
-                                <td>@ExpenseDisplay.PaymentType(p.PaymentType)</td>
-                                <td><span class="badge @(p.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@ExpenseDisplay.Method(p.PaymentMethod)</span></td>
-                                <td class="num fw-bold @(p.IsRefund ? "c-red" : "")">@(p.IsRefund ? "−" : "")@ExpenseDisplay.Money(p.Amount)</td>
-                                <td>@(p.ReceivedBy ?? "—")</td>
-                                <td class="actions">
-                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="paymentModal"
-                                            data-fields='@Json.Serialize(new { paymentId = p.PaymentId, newMethod = p.PaymentMethod, newAmount = Invariant(p.Amount), label })'>تعديل</button>
-                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="deletePaymentModal"
-                                            data-fields='@Json.Serialize(new { paymentId = p.PaymentId, label })'>حذف</button>
-                                </td>
-                            </tr>
-                        }
+                            @foreach (var p in order.Payments)
+                            {
+                                var label = $"{ExpenseDisplay.PaymentType(p.PaymentType)} · {ExpenseDisplay.Method(p.PaymentMethod)} · {ExpenseDisplay.Money(p.Amount)}";
+                                <tr class="@(p.IsRefund ? "row-refund" : "")">
+                                    <td class="num">@ExpenseDisplay.DateTimeShort(p.PaidAt)</td>
+                                    <td>@ExpenseDisplay.PaymentType(p.PaymentType)</td>
+                                    <td><span class="badge @(p.PaymentMethod == PaymentMethods.Visa ? "badge-visa" : "badge-cash")">@ExpenseDisplay.Method(p.PaymentMethod)</span></td>
+                                    <td class="num fw-bold @(p.IsRefund ? "c-red" : "")">@(p.IsRefund ? "−" : "")@ExpenseDisplay.Money(p.Amount)</td>
+                                    <td>@(p.ReceivedBy ?? "—")</td>
+                                    <td class="actions">
+                                        <button type="button" class="btn btn-outline btn-sm" data-modal-open="paymentModal"
+                                                data-fields='@Json.Serialize(new { paymentId = p.PaymentId, newMethod = p.PaymentMethod, newAmount = Invariant(p.Amount), label })'>
+                                            تعديل
+                                        </button>
+                                        <button type="button" class="btn btn-outline btn-sm" data-modal-open="deletePaymentModal"
+                                                data-fields='@Json.Serialize(new { paymentId = p.PaymentId, label })'>
+                                            حذف
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
                         </tbody>
                     </table>
                 }
@@ -146,10 +150,14 @@
             {
                 var (_, targetLabel) = ExpenseDisplay.OrderStatus(order.RevertTarget);
                 <button type="button" class="btn btn-outline" data-modal-open="revertModal"
-                        data-fields='@Json.Serialize(new { target = targetLabel })'>↩️ إرجاع إلى «@targetLabel»</button>
+                        data-fields='@Json.Serialize(new { target = targetLabel })'>
+                    ↩️ إرجاع إلى «@targetLabel»
+                </button>
                 <div class="form-hint mt-2">يرجع الطلب خطوة واحدة، وتعود إطاراته محجوزة. إذا سُجّلت دفعة الباقي بالخطأ عند التسليم، احذفها من دفعات الطلب.</div>
             }
         </div>
+
+        <partial name="_FrameReturn" model="order" />
 
         <div class="card">
             <div class="card-header"><span class="card-title">سجل التصحيحات</span></div>
@@ -289,31 +297,33 @@ else
                 <table>
                     <thead><tr><th>التاريخ</th><th>النوع</th><th>المصدر</th><th class="num">المبلغ</th><th>التصنيف</th><th>المورد</th><th></th></tr></thead>
                     <tbody>
-                    @foreach (var e in entries.Items)
-                    {
-                        var (typeCss, typeLabel) = ExpenseDisplay.Type(e.EntryType);
-                        var (srcCss, srcLabel) = ExpenseDisplay.Source(e);
-                        <tr class="@(e.IsCancelled ? "row-cancelled" : "")">
-                            <td class="num">@ExpenseDisplay.DateTimeShort(e.PaidAt)</td>
-                            <td><span class="badge @typeCss">@typeLabel</span></td>
-                            <td><span class="badge @srcCss">@srcLabel</span></td>
-                            <td class="num amount">@ExpenseDisplay.Money(e.Amount)</td>
-                            <td>@(e.Category ?? "—")</td>
-                            <td>@(e.SupplierName ?? "—")</td>
-                            <td class="actions">
-                                @if (e.IsCancelled)
-                                {
-                                    <span class="badge badge-user" title="@e.CancelReason">ملغاة</span>
-                                }
-                                else
-                                {
-                                    <a class="btn btn-outline btn-sm" asp-action="Index" asp-route-edit="@e.ExpenseId" asp-route-page="@entries.Page" asp-fragment="editEntry">تعديل</a>
-                                    <button type="button" class="btn btn-outline btn-sm" data-modal-open="cancelModal"
-                                            data-fields='@Json.Serialize(new { expenseId = e.ExpenseId, label = $"{typeLabel} — {ExpenseDisplay.Money(e.Amount)}" })'>إلغاء</button>
-                                }
-                            </td>
-                        </tr>
-                    }
+                        @foreach (var e in entries.Items)
+                        {
+                            var (typeCss, typeLabel) = ExpenseDisplay.Type(e.EntryType);
+                            var (srcCss, srcLabel) = ExpenseDisplay.Source(e);
+                            <tr class="@(e.IsCancelled ? "row-cancelled" : "")">
+                                <td class="num">@ExpenseDisplay.DateTimeShort(e.PaidAt)</td>
+                                <td><span class="badge @typeCss">@typeLabel</span></td>
+                                <td><span class="badge @srcCss">@srcLabel</span></td>
+                                <td class="num amount">@ExpenseDisplay.Money(e.Amount)</td>
+                                <td>@(e.Category ?? "—")</td>
+                                <td>@(e.SupplierName ?? "—")</td>
+                                <td class="actions">
+                                    @if (e.IsCancelled)
+                                    {
+                                        <span class="badge badge-user" title="@e.CancelReason">ملغاة</span>
+                                    }
+                                    else
+                                    {
+                                        <a class="btn btn-outline btn-sm" asp-action="Index" asp-route-edit="@e.ExpenseId" asp-route-page="@entries.Page" asp-fragment="editEntry">تعديل</a>
+                                        <button type="button" class="btn btn-outline btn-sm" data-modal-open="cancelModal"
+                                                data-fields='@Json.Serialize(new { expenseId = e.ExpenseId, label = $"{typeLabel} — {ExpenseDisplay.Money(e.Amount)}" })'>
+                                            إلغاء
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
                     </tbody>
                 </table>
             }
@@ -357,4 +367,6 @@ else
 
 @section Scripts {
     <script src="~/js/expenses.js" asp-append-version="true"></script>
+
+    <script src="~/js/frame-return.js" asp-append-version="true"></script>
 }
