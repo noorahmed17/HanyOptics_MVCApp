@@ -53,6 +53,11 @@ public class PendingOrderEdit
     public decimal? PaymentAmount { get; set; }
     public PaymentMethod? PaymentMethod { get; set; }
 
+
+    // Payment: true for the one تسليم + تحصيل stages by itself, so choosing a status again
+    // can find and drop it without going by its note, which staff can also type by hand.
+    public bool IsDeliveryCollection { get; set; }
+
     // PriceChange - correcting what the frame was charged, without changing what was sold.
     // Frame only: the lens price travels with LensChange below, so each number has exactly
     // one route to it.

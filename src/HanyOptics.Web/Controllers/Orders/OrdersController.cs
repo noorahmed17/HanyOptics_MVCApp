@@ -405,15 +405,27 @@ public class OrdersController : Controller
         int orderId, OrderStatus newStatus, string? notes,
         bool collectPayment = false, PaymentMethod paymentMethod = PaymentMethod.Cash)
     {
+        // Checked first, so a status that cannot be staged leaves whatever is already
+        // staged - including an earlier تسليم + تحصيل payment - exactly as it was.
+        var outcome = await SafeAsync(() => _orderService.BuildStatusChangeEditAsync(orderId, newStatus, notes), "تحديث حالة الطلب");
+        if (outcome is not { Succeeded: true })
+            return await RenderOrderDetailAsync(orderId, outcome?.ErrorMessage ?? "تعذر تحديث الحالة.");
+
+        // A new status choice replaces the payment an earlier تسليم + تحصيل staged: either it
+        // is collected again just below, or this time nothing is (تسليم without تحصيل, or
+        // another status altogether). Payments entered by hand stay, and count as collected.
+        var alreadyStaged = DropStagedCollection(orderId);
+
         if (newStatus == OrderStatus.Delivered && collectPayment)
         {
             var order = await _orderService.GetByIdAsync(orderId);
+            var toCollect = (order?.RemainingAmount ?? 0) - alreadyStaged;
 
-            if (order is not null && order.RemainingAmount > 0)
+            if (order is not null && toCollect > 0)
             {
                 var paymentOutcome = await SafeAsync(
                     () => _orderService.BuildPaymentEditAsync(
-                        orderId, order.RemainingAmount, paymentMethod, "تحصيل عند التسليم"),
+                        orderId, toCollect, paymentMethod, CollectOnDeliveryNote, alreadyStaged),
                     "تسجيل دفعة");
 
                 // If the money cannot be staged, the status change is not staged either -
@@ -422,15 +434,13 @@ public class OrdersController : Controller
                     return await RenderOrderDetailAsync(orderId,
                         paymentOutcome?.ErrorMessage ?? "تعذر تسجيل الدفعة.");
 
-                StageEdit(orderId, paymentOutcome.Edit!);
+                paymentOutcome.Edit!.IsDeliveryCollection = true;
+                StageEdit(orderId, paymentOutcome.Edit);
             }
         }
 
-        var outcome = await SafeAsync(() => _orderService.BuildStatusChangeEditAsync(orderId, newStatus, notes), "تحديث حالة الطلب");
-        if (outcome is { Succeeded: true })
-            StageEdit(orderId, outcome.Edit!);
-
-        return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تحديث الحالة.");
+        StageEdit(orderId, outcome.Edit!);
+        return await RenderOrderDetailAsync(orderId);
     }
 
     [HttpPost]
@@ -518,7 +528,8 @@ public class OrdersController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StagePayment(int orderId, decimal amount, PaymentMethod paymentMethod, string? notes)
     {
-        var outcome = await SafeAsync(() => _orderService.BuildPaymentEditAsync(orderId, amount, paymentMethod, notes), "تسجيل الدفعة");
+        var staged = StagedTotal(orderId, PendingEditKind.Payment);
+        var outcome = await SafeAsync(() => _orderService.BuildPaymentEditAsync(orderId, amount, paymentMethod, notes, staged), "تسجيل الدفعة");
         if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 
@@ -532,8 +543,8 @@ public class OrdersController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> StageRefund(int orderId, decimal amount, PaymentMethod paymentMethod, string? notes)
     {
-        var outcome = await SafeAsync(() => _orderService.BuildRefundEditAsync(orderId, amount, paymentMethod, notes), "تسجيل الاسترداد");
-        if (outcome is { Succeeded: true })
+        var staged = StagedTotal(orderId, PendingEditKind.Refund);
+        var outcome = await SafeAsync(() => _orderService.BuildRefundEditAsync(orderId, amount, paymentMethod, notes, staged), "تسجيل الاسترداد"); if (outcome is { Succeeded: true })
             StageEdit(orderId, outcome.Edit!);
 
         return await RenderOrderDetailAsync(orderId, outcome is { Succeeded: true } ? null : outcome?.ErrorMessage ?? "تعذر تسجيل الاسترداد.");
@@ -655,15 +666,47 @@ public class OrdersController : Controller
     // Staging a status change replaces any previously-staged status change (only one
     // final status makes sense at a time); staging a frame edit for an item replaces any
     // previously-staged edit for that same item, for the same reason.
+    //
+    // Payments and refunds are the exception. Part cash and part visa is two real
+    // movements of money, and letting the second replace the first would drop money that
+    // was actually taken (or handed back) from the books. Each one stays its own line, and
+    // sp_add_payment still refuses the lot at تأكيد if together they go past what is owed.
     private void StageEdit(int orderId, PendingOrderEdit edit)
     {
         var set = _pendingEdits.Get(orderId);
         if (set is null || set.OrderId != orderId)
             set = new PendingOrderEditSet { OrderId = orderId };
 
-        set.Edits.RemoveAll(e => e.Kind == edit.Kind && e.ItemId == edit.ItemId);
+        if (edit.Kind is not (PendingEditKind.Payment or PendingEditKind.Refund))
+            set.Edits.RemoveAll(e => e.Kind == edit.Kind && e.ItemId == edit.ItemId);
         set.Edits.Add(edit);
         _pendingEdits.Save(set);
+    }
+
+    private const string CollectOnDeliveryNote = "تحصيل عند التسليم";
+
+
+    // The total of the payments (or refunds) already waiting for تأكيد on this order.
+    private decimal StagedTotal(int orderId, PendingEditKind kind)
+    {
+        var set = _pendingEdits.Get(orderId);
+        if (set is null || set.OrderId != orderId)
+            return 0;
+
+        return set.Edits.Where(e => e.Kind == kind).Sum(e => e.PaymentAmount ?? 0);
+    }
+
+    // Drops the payment an earlier تسليم + تحصيل staged for this order, and returns the
+    // total of the payments still staged, so the new collection only covers the rest.
+    private decimal DropStagedCollection(int orderId)
+    {
+        var set = _pendingEdits.Get(orderId);
+        if (set is null || set.OrderId != orderId)
+            return 0;
+
+        set.Edits.RemoveAll(e => e.Kind == PendingEditKind.Payment && e.IsDeliveryCollection);
+        _pendingEdits.Save(set);
+        return set.Edits.Where(e => e.Kind == PendingEditKind.Payment).Sum(e => e.PaymentAmount ?? 0);
     }
 
     private async Task PopulateDoctorsAsync(int? selectedDoctorId)

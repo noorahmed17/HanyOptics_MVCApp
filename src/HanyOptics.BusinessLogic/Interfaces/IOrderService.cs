@@ -66,16 +66,18 @@ public interface IOrderService
     Task<StagedEditOutcome> BuildFrameCompensationEditAsync(int itemId, int newFrameId, decimal newFrameAgreedPrice, string? notes);
 
     // Records a payment against an order that already exists - the customer coming back to
+    // alreadyStaged is what other payments waiting in the same تأكيد already cover, so the
+    // check and the summary line are against what will really be left.
     // pay off the remainder. sp_add_payment writes the row and the T1 trigger re-sums
     // orders.paid_amount from it, which the computed remaining_amount follows.
-    Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
+    Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes, decimal alreadyStaged = 0);
 
     // Money going back to the customer - a cancelled order, or items cancelled out of one
     // that was already paid for. Recorded as a payment row with payment_type='refund',
     // which the T1 trigger subtracts from orders.paid_amount. It is the only kind of
     // payment sp_add_payment accepts against a cancelled order.
-    Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes);
-
+    // alreadyStaged works the same way, for refunds waiting in the same تأكيد.
+    Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes, decimal alreadyStaged = 0);
     // Replaces the lenses on an item that already has some, and what they are charged at.
     // Lenses hold no stock, so there is nothing to reserve or return.
     //

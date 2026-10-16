@@ -307,7 +307,7 @@ public class OrderService : IOrderService
         });
     }
 
-    public async Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes)
+    public async Task<StagedEditOutcome> BuildPaymentEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes, decimal alreadyStaged = 0)
     {
         var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);
         if (order is null)
@@ -324,20 +324,27 @@ public class OrderService : IOrderService
         if (order.RemainingAmount <= 0)
             return StagedEditOutcome.Failure("الطلب مدفوع بالكامل — لا يوجد مبلغ متبقٍ");
 
+        // What is still owed once the payments already waiting for تأكيد go through - the
+        // number this payment is checked against and the one its summary line shows.
+        var owed = order.RemainingAmount - alreadyStaged;
+        if (owed <= 0)
+            return StagedEditOutcome.Failure("الدفعات المضافة للتغييرات المعلقة تغطي المتبقي بالكامل");
+
         // sp_add_payment permits overpayment (it leaves correcting it to a refund), but at
         // this screen a number bigger than what's owed is almost always a typo, and the
         // app has no notion of customer credit to put the excess into.
-        if (amount > order.RemainingAmount)
-            return StagedEditOutcome.Failure($"المبلغ أكبر من المتبقي ({order.RemainingAmount:N0} ج)");
+        if (amount > owed)
+            return StagedEditOutcome.Failure($"المبلغ أكبر من المتبقي ({owed:N0} ج)");
 
         // Derived, not chosen - same rule as the wizard's opening payment. 'full' only fits
         // a payment that covers the whole order on its own; anything settling the rest of a
         // part-paid order is 'final', and anything short of that is another deposit.
-        var paymentType = amount == order.RemainingAmount
-            ? (order.PaidAmount == 0 ? PaymentType.Full : PaymentType.Final)
+        // (Only the label on the summary line: ExecAddPaymentAsync derives it again at تأكيد.)
+        var paymentType = amount == owed
+            ? (order.PaidAmount == 0 && alreadyStaged == 0 ? PaymentType.Full : PaymentType.Final)
             : PaymentType.Deposit;
 
-        var remainingAfter = order.RemainingAmount - amount;
+        var remainingAfter = owed - amount;
         var summary = $"تسجيل دفعة: {amount:N0} ج ({PaymentTypeLabel(paymentType)}، {(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
             + (remainingAfter > 0 ? $" — المتبقي بعدها {remainingAfter:N0} ج" : " — يكتمل السداد");
 
@@ -354,7 +361,7 @@ public class OrderService : IOrderService
         });
     }
 
-    public async Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes)
+    public async Task<StagedEditOutcome> BuildRefundEditAsync(int orderId, decimal amount, PaymentMethod method, string? notes, decimal alreadyStaged = 0)
     {
         var order = await _dbContext.Orders.AsNoTracking().FirstOrDefaultAsync(o => o.OrderId == orderId);
         if (order is null)
@@ -366,12 +373,17 @@ public class OrderService : IOrderService
         if (order.PaidAmount <= 0)
             return StagedEditOutcome.Failure("لا يوجد مبلغ مدفوع لاسترداده");
 
+        // What can still be handed back once the refunds already waiting for تأكيد go through.
+        var refundable = order.PaidAmount - alreadyStaged;
+        if (refundable <= 0)
+            return StagedEditOutcome.Failure("الاستردادات المضافة للتغييرات المعلقة تغطي المدفوع بالكامل");
+
         // Mirrors sp_add_payment's own guard - you can never hand back more than was
         // actually taken. Caught here so the figure is shown before تأكيد rather than after.
-        if (amount > order.PaidAmount)
-            return StagedEditOutcome.Failure($"قيمة الاسترداد أكبر من المدفوع ({order.PaidAmount:N0} ج)");
+        if (amount > refundable)
+            return StagedEditOutcome.Failure($"قيمة الاسترداد أكبر من المدفوع ({refundable:N0} ج)");
 
-        var remainingPaid = order.PaidAmount - amount;
+        var remainingPaid = refundable - amount;
         var summary = $"استرداد: {amount:N0} ج ({(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
             + (remainingPaid > 0 ? $" — يتبقى مدفوع {remainingPaid:N0} ج" : " — يُرد كامل المدفوع");
 
