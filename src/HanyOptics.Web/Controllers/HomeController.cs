@@ -1,0 +1,26 @@
+using HanyOptics.BusinessLogic.Auth;
+using HanyOptics.BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace HanyOptics.Web.Controllers;
+
+[Authorize]
+public class HomeController : Controller
+{
+    private readonly IOrderService _orderService;
+
+    public HomeController(IOrderService orderService)
+    {
+        _orderService = orderService;
+    }
+
+    public async Task<IActionResult> Index()
+    {
+        var orders = await _orderService.GetAllAsync(6);
+        return View(orders);
+    }
+
+    [AllowAnonymous]
+    public IActionResult Error() => View();
+}

@@ -1,0 +1,26 @@
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.CorrectionLogEntry>
+@using HanyOptics.Web.Models
+
+@if (Model.Count == 0)
+{
+    <div class="empty-state">لا توجد تصحيحات مسجّلة.</div>
+}
+else
+{
+    <table>
+        <thead><tr><th>التاريخ</th><th>التصحيح</th><th>قبل</th><th>بعد</th><th>السبب</th><th>المستخدم</th></tr></thead>
+        <tbody>
+        @foreach (var l in Model)
+        {
+            <tr>
+                <td class="num">@ExpenseDisplay.DateTimeShort(l.ChangedAt)</td>
+                <td>@l.ActionLabel</td>
+                <td class="text-sm">@(l.Before ?? "—")</td>
+                <td class="text-sm">@(l.After ?? "—")</td>
+                <td>@l.Reason</td>
+                <td>@(l.ChangedBy ?? "—")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

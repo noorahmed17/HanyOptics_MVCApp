@@ -1,0 +1,178 @@
+@model HanyOptics.BusinessLogic.Models.NewOrderCustomerRequest
+@using HanyOptics.Web.Controllers.Orders
+@{
+    ViewData["Title"] = "طلب جديد";
+    var doctors = (SelectListWithSelection)ViewBag.Doctors;
+}
+
+<div class="page-header">
+    <a class="page-header-title" asp-action="New">➕ طلب جديد</a>
+    @* Has to POST to Cancel, not just link away. A link leaves the draft sitting in the
+       session, so the invoice number and customer details come straight back the next
+       time this page is opened - which reads as إلغاء having done nothing. Steps 2 and 3
+       always did this properly; step 1 was the odd one out. *@
+    <form asp-action="Cancel" method="post" onsubmit="return confirm('سيتم إلغاء هذا الطلب. هل أنت متأكد؟');">
+        <button type="submit" class="btn btn-outline">إلغاء</button>
+    </form>
+</div>
+
+<div class="wizard-steps">
+    <div class="wizard-step active">
+        <div class="step-num">١</div>
+        <div class="step-label">العميل</div>
+    </div>
+    <div class="wizard-step">
+        <div class="step-num">٢</div>
+        <div class="step-label">البيانات والروشتة</div>
+    </div>
+    <div class="wizard-step">
+        <div class="step-num">٣</div>
+        <div class="step-label">الدفع والتأكيد</div>
+    </div>
+</div>
+
+<div class="wizard-content">
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="validation-summary">
+            <ul>
+                @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+                {
+                    <li>@error.ErrorMessage</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <form asp-action="New" method="post" id="step1Form">
+        <input type="hidden" asp-for="IsWalkIn" id="isWalkInInput" />
+
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="Phone">📱 رقم الهاتف</label>
+                <input type="tel" asp-for="Phone" id="phoneInput" placeholder="01XXXXXXXXX" maxlength="11" autocomplete="off" />
+                <span asp-validation-for="Phone" class="field-error"></span>
+                <div class="form-hint">يُملأ اسم الزبون تلقائياً إذا كان الرقم مسجلاً من قبل</div>
+            </div>
+            <div class="form-group">
+                <label asp-for="CustomerName">👤 اسم الزبون</label>
+                <input asp-for="CustomerName" id="customerNameInput" placeholder="اسم الزبون (اختياري)" />
+                <div class="form-hint">اختياري — يمكن تركه فارغاً</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <button type="button" class="btn btn-outline" id="walkInBtn">🚶 زبون عابر</button>
+            <div class="form-hint">لو الزبون مش سايب رقم ولا اسم — هيتسجل باسم "زبون عابر"</div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label asp-for="InvoiceNumber">📄 رقم الفاتورة *</label>
+                <input asp-for="InvoiceNumber" placeholder="مثال: 2026-150" required />
+                <span asp-validation-for="InvoiceNumber" class="field-error"></span>
+                <div class="form-hint">يُكتب يدوياً من دفتر الفواتير</div>
+            </div>
+            <div class="form-group">
+                <label asp-for="DeliveryType">🚚 نوع التسليم</label>
+                <select asp-for="DeliveryType">
+                    <option value="Normal">عادي (العدسات تحتاج وقت)</option>
+                    <option value="Immediate">فوري (شمسية / إطار فقط)</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label asp-for="DoctorId">🩺 الطبيب المُحوِّل (ينطبق على كل بنود الطلب)</label>
+            <select asp-for="DoctorId">
+                <option value="">— بدون طبيب —</option>
+                @foreach (var d in doctors.Doctors)
+                {
+                    <option value="@d.DoctorId">د. @d.Name@(string.IsNullOrEmpty(d.Clinic) ? "" : $" — {d.Clinic}")</option>
+                }
+            </select>
+            <div class="form-hint">يُحفظ على كل بند من بنود هذه الفاتورة</div>
+        </div>
+
+        <div class="wizard-footer">
+            <div></div>
+            <button type="submit" class="btn btn-primary btn-lg">التالي — بيانات الطلب ←</button>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            const phoneInput = document.getElementById('phoneInput');
+            const nameInput = document.getElementById('customerNameInput');
+            const walkInInput = document.getElementById('isWalkInInput');
+            const walkInBtn = document.getElementById('walkInBtn');
+            // Json.Serialize rather than a quoted Razor expression: Razor HTML-encodes by
+            // default, which would put "&#x632;..." into the field instead of Arabic text.
+            const WALK_IN_PHONE = @Json.Serialize(HanyOptics.BusinessLogic.Models.WalkInCustomer.Phone);
+            const WALK_IN_NAME = @Json.Serialize(HanyOptics.BusinessLogic.Models.WalkInCustomer.Name);
+            let debounceTimer;
+            let lastLookedUp = '';
+            // Tracks whatever we last set the name field to programmatically, so we
+            // never clobber text the user typed themselves.
+            let lastAutoFilled = nameInput.value;
+
+            function setWalkIn(on) {
+                walkInInput.value = on ? 'true' : 'false';
+                walkInBtn.classList.toggle('btn-primary', on);
+                walkInBtn.classList.toggle('btn-outline', !on);
+                walkInBtn.textContent = on ? '✅ زبون عابر' : '🚶 زبون عابر';
+
+                if (on) {
+                    // Cancel any in-flight lookup so it can't overwrite the placeholder.
+                    clearTimeout(debounceTimer);
+                    lastLookedUp = '';
+                    phoneInput.value = WALK_IN_PHONE;
+                    nameInput.value = WALK_IN_NAME;
+                    lastAutoFilled = WALK_IN_NAME;
+                } else {
+                    phoneInput.value = '';
+                    nameInput.value = '';
+                    lastAutoFilled = '';
+                }
+
+                // Readonly rather than disabled: disabled inputs aren't submitted, and the
+                // placeholder values should be visible in the POST like any other customer.
+                phoneInput.readOnly = on;
+                nameInput.readOnly = on;
+            }
+
+            walkInBtn.addEventListener('click', function () {
+                setWalkIn(walkInInput.value !== 'true');
+            });
+
+            // Restore the toggle's look after a validation round-trip re-renders the form.
+            if (walkInInput.value === 'true') setWalkIn(true);
+
+            phoneInput.addEventListener('input', function () {
+                const phone = phoneInput.value.trim();
+                clearTimeout(debounceTimer);
+
+                if (!phone) {
+                    lastLookedUp = '';
+                    return;
+                }
+
+                debounceTimer = setTimeout(function () {
+                    lastLookedUp = phone;
+                    fetch('@Url.Action("LookupCustomer")?phone=' + encodeURIComponent(phone))
+                        .then(r => r.json())
+                        .then(data => {
+                            if (phoneInput.value.trim() !== lastLookedUp) return; // stale response
+                            if (nameInput.value !== lastAutoFilled) return; // user already edited it, leave it alone
+
+                            const newValue = data.found ? (data.name || '') : '';
+                            nameInput.value = newValue;
+                            lastAutoFilled = newValue;
+                        });
+                }, 500);
+            });
+        })();
+    </script>
+}

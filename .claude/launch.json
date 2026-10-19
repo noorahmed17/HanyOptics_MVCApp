@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/HanyOptics.Web", "--urls", "http://localhost:56943"],
+      "port": 56943
+    },
+    {
+      "name": "englisphere-api",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "D:\\ITI\\GD\\src\\Englisphere.Api\\Englisphere.Api.csproj", "--urls", "http://localhost:58011"],
+      "port": 58011,
+      "url": "http://localhost:58011/"
+    }
+  ]
+}

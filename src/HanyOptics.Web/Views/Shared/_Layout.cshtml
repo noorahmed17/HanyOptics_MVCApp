@@ -1,0 +1,97 @@
+@using Microsoft.AspNetCore.Mvc.Rendering
+@{
+    var currentController = (string?)ViewContext.RouteData.Values["controller"] ?? "";
+    var currentAction = (string?)ViewContext.RouteData.Values["action"] ?? "";
+    var orderInProgress = ViewData["OrderInProgress"] as bool? ?? false;
+    string NavClass(string controller) => currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) ? "nav-item active" : "nav-item";
+    string NavClassFor(string controller, string action) =>
+        currentController.Equals(controller, StringComparison.OrdinalIgnoreCase) && currentAction.Equals(action, StringComparison.OrdinalIgnoreCase)
+            ? "nav-item active" : "nav-item";
+    var inExpenses = new[] { "Drawer", "Expenses", "Suppliers" }
+        .Contains(currentController, StringComparer.OrdinalIgnoreCase);
+}
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - هاني أوبتكس</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<div id="app">
+
+    <button type="button" id="menu-toggle" class="menu-toggle" aria-label="القائمة">☰</button>
+
+    <aside id="sidebar">
+        <div class="sb-logo">
+            <h1>👓 هاني أوبتكس</h1>
+            <p>نظام إدارة المحل</p>
+        </div>
+        <nav class="sb-nav">
+            <div class="sb-section">الرئيسية</div>
+            <a class="@NavClass("Home")" asp-controller="Home" asp-action="Index"><span class="nav-icon">📊</span> لوحة التحكم</a>
+            @if (orderInProgress)
+            {
+                <span class="nav-item disabled" title="أكمل الطلب الحالي أو ألغه أولاً لبدء طلب جديد"><span class="nav-icon">➕</span> طلب جديد</span>
+            }
+            else
+            {
+                <a class="@NavClassFor("Orders", "New")" asp-controller="Orders" asp-action="New"><span class="nav-icon">➕</span> طلب جديد</a>
+            }
+            <div class="sb-section">الإدارة</div>
+            <a class="@NavClassFor("Orders", "Index")" asp-controller="Orders" asp-action="Index"><span class="nav-icon">📋</span> الطلبات</a>
+            <a class="@NavClass("Customers")" asp-controller="Customers" asp-action="Index"><span class="nav-icon">👥</span> العملاء</a>
+            <a class="@NavClass("Inventory")" asp-controller="Inventory" asp-action="Index"><span class="nav-icon">📦</span> المخزون</a>
+            @* قفلة اليوم stays open to everyone: whoever is closing up needs it, and that is
+               not always the owner. التقارير is admin-only - it carries costs and margins. *@
+            <a class="@NavClass("DailyClose")" asp-controller="DailyClose" asp-action="Index"><span class="nav-icon">🌙</span> قفلة اليوم</a>
+            @* المصروفات opens into its own pages. حركة الدرج is for whoever is at the till; the
+               other three move the shop's money and are the admin's. Open while any of them
+               is the current page, so the user can see where they are. *@
+            <details class="nav-group" open="@(inExpenses ? "open" : null)">
+                <summary class="nav-item@(inExpenses ? " active" : "")"><span class="nav-icon">💸</span> المصروفات <span class="nav-caret">‹</span></summary>
+                <a class="@NavClass("Drawer") nav-sub" asp-controller="Drawer" asp-action="Index">حركة الدرج</a>
+                @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+                {
+                    <a class="@NavClass("Expenses") nav-sub" asp-controller="Expenses" asp-action="Index">المصروفات والإيرادات</a>
+                    <a class="@NavClass("Suppliers") nav-sub" asp-controller="Suppliers" asp-action="Index">الموردون</a>
+                    @* <a class="@NavClass("Corrections") nav-sub" asp-controller="Corrections" asp-action="Index">التصحيحات</a> *@
+                }
+            </details>
+            <a class="@NavClass("Corrections")" asp-controller="Corrections" asp-action="Index"><span class="nav-icon">✏️</span> التصحيحات</a>
+            <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a>
+            @if (User.IsInRole(HanyOptics.BusinessLogic.Auth.Roles.Admin))
+            {
+                <a class="@NavClass("Reports")" asp-controller="Reports" asp-action="Index"><span class="nav-icon">📊</span> التقارير</a>
+                <a class="@NavClass("Admin")" asp-controller="Admin" asp-action="Index"><span class="nav-icon">🛠️</span> لوحة الأدمن</a>
+                @* <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a> *@
+            }
+        </nav>
+        <div class="sb-footer">
+            مسجّل دخول: <span>@User.Identity?.Name</span>
+            <form asp-controller="Account" asp-action="Logout" method="post">
+                <button type="submit" class="sb-logout">تسجيل الخروج</button>
+            </form>
+        </div>
+    </aside>
+
+    @* No topbar: it only repeated the page title, which every page already prints in its
+       own page-header, and the browser tab still carries it from ViewData["Title"]. *@
+    <div id="content">
+        <div class="page">
+            @RenderBody()
+        </div>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+</div>
+@* Loaded on every page rather than per-screen: the scanner is a keyboard, so its input
+   can land wherever focus happens to be, and this is what routes it to the barcode box.
+   Harmless where no barcode field exists - it simply finds no target. *@
+<script src="~/js/site.js" asp-append-version="true"></script>
+<script src="~/js/scanner.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

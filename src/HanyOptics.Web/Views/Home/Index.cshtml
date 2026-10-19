@@ -1,0 +1,70 @@
+@using HanyOptics.Domain.Enums
+@model IReadOnlyList<HanyOptics.Domain.Entities.Order>
+@{
+    ViewData["Title"] = "لوحة التحكم";
+
+    var recent = Model.OrderByDescending(o => o.OrderDate).Take(6).ToList();
+
+    static string StatusBadgeClass(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "badge-sold",
+        OrderStatus.Ready => "badge-ready",
+        OrderStatus.Delivered => "badge-delivered",
+        OrderStatus.Cancelled => "badge-cancelled",
+        _ => ""
+    };
+
+    static string StatusLabel(OrderStatus s) => s switch
+    {
+        OrderStatus.Sold => "بيع",
+        OrderStatus.Ready => "جاهز",
+        OrderStatus.Delivered => "تسليم",
+        OrderStatus.Cancelled => "ملغي",
+        _ => s.ToString()
+    };
+
+    static string Money(decimal n) => n.ToString("N0") + " ج";
+}
+
+<div class="two-col">
+    <div class="card">
+        <div class="card-header">
+            <span class="card-title">📋 آخر الطلبات</span>
+            <a class="btn btn-outline btn-sm" asp-controller="Orders" asp-action="Index">عرض الكل</a>
+        </div>
+        <div class="card-body">
+            @if (!recent.Any())
+            {
+                <div class="empty-state">لا توجد طلبات بعد</div>
+            }
+            else
+            {
+                <table>
+                    <thead><tr><th>الفاتورة</th><th>العميل</th><th>الحالة</th><th>المتبقي</th></tr></thead>
+                    <tbody>
+                    @foreach (var order in recent)
+                    {
+                        <tr>
+                            <td><b><bdi>@order.InvoiceNumber</bdi></b></td>
+                            <td>@order.CustomerName</td>
+                            <td><span class="badge @StatusBadgeClass(order.Status)">@StatusLabel(order.Status)</span></td>
+                            <td class="fw-bold @(order.RemainingAmount > 0 ? "c-red" : "c-green")">
+                                @(order.RemainingAmount > 0 ? Money(order.RemainingAmount) : "✅")
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><span class="card-title">⚡ إجراءات سريعة</span></div>
+        <div style="padding:18px;display:flex;flex-direction:column;gap:10px">
+            <a class="btn btn-primary btn-lg" asp-controller="Orders" asp-action="New">➕ تسجيل طلب جديد</a>
+            <a class="btn btn-outline btn-lg" asp-controller="Orders" asp-action="Index">📋 كل الطلبات</a>
+            <a class="btn btn-outline btn-lg" asp-controller="Customers" asp-action="Index">👥 العملاء</a>
+        </div>
+    </div>
+</div>

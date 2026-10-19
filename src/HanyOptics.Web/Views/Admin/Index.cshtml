@@ -1,0 +1,130 @@
+@model HanyOptics.BusinessLogic.Models.CreateUserRequest
+@{
+    ViewData["Title"] = "لوحة الأدمن";
+    var users = (IReadOnlyList<HanyOptics.BusinessLogic.Models.StaffUserListItem>)ViewBag.Users;
+}
+
+<div class="page-header">
+    <h2>🛠️ لوحة الأدمن — المستخدمين</h2>
+</div>
+
+@if (TempData["UserCreated"] is string created)
+{
+    <div class="alert alert-success">✅ @created</div>
+}
+
+<div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+<div class="section-divider"><span>➕ إنشاء مستخدم جديد</span></div>
+
+<form asp-action="CreateUser" method="post">
+    <div class="wizard-content">
+        <div class="form-row">
+            <div class="form-group">
+                <label>الاسم *</label>
+                <input asp-for="FullName" placeholder="مثال: مهند هاني" autocomplete="off" />
+                <span asp-validation-for="FullName" class="field-error"></span>
+            </div>
+            <div class="form-group">
+                <label>الإيميل (اسم الدخول) *</label>
+                @* Also stored as users.username, so one person is one row in each store and
+                   the two can be matched afterwards. *@
+                <input asp-for="Email" type="email" placeholder="مثال: mohanad@hanyoptics.local" autocomplete="off" />
+                <span asp-validation-for="Email" class="field-error"></span>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label>كلمة السر *</label>
+                @* autocomplete="new-password" so the browser does not helpfully paste the
+                   admin's own saved password into an account being made for someone else. *@
+                <input asp-for="Password" type="password" autocomplete="new-password" />
+                <span asp-validation-for="Password" class="field-error"></span>
+                <div class="form-hint">٦ حروف على الأقل.</div>
+            </div>
+            <div class="form-group">
+                <label>تأكيد كلمة السر *</label>
+                <input asp-for="ConfirmPassword" type="password" autocomplete="new-password" />
+                <span asp-validation-for="ConfirmPassword" class="field-error"></span>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>الصلاحية</label>
+            <select asp-for="IsAdmin">
+                <option value="false">🧑‍💼 موظف — الطلبات والعملاء والمخزون وقفلة اليوم</option>
+                <option value="true">🛠️ أدمن — كمان التقارير والأسعار وإنشاء المستخدمين</option>
+            </select>
+            @* Spelled out because the difference is money: an admin sees cost prices, item
+               margins and what every colleague sold. *@
+            <div class="form-hint">
+                الأدمن بيشوف التكلفة وسعر البيع في المخزون، وكل التقارير، ويقدر ينشئ مستخدمين.
+            </div>
+        </div>
+
+        <div class="wizard-footer">
+            <span class="text-muted text-sm">المستخدم هيقدر يدخل بالإيميل وكلمة السر دول على طول.</span>
+            <button type="submit" class="btn btn-primary btn-lg">✔️ إنشاء المستخدم</button>
+        </div>
+    </div>
+</form>
+
+<div class="section-divider"><span>👥 المستخدمين الحاليين</span></div>
+
+<div class="card">
+    <div class="card-body">
+        @if (users.Count == 0)
+        {
+            <div class="empty-state">مفيش مستخدمين.</div>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>الإيميل</th>
+                        <th>الصلاحية</th>
+                        <th>الحالة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var u in users)
+                {
+                    <tr>
+                        <td><b>@(u.FullName ?? "—")</b></td>
+                        <td><bdi>@u.Email</bdi></td>
+                        <td>
+                            @if (u.IsAdmin)
+                            {
+                                <span class="badge badge-admin">🛠️ أدمن</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-user">🧑‍💼 موظف</span>
+                            }
+                        </td>
+                        <td>
+                            @* An Identity login with no matching business row cannot have its
+                               work attributed - the stored procedures stamp that id. *@
+                            @if (u.HasBusinessRow)
+                            {
+                                <span class="badge badge-ready">سليم</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-cancelled">مفيش صف موظف مرتبط</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    </div>
+</div>
+
+<p class="text-muted mt-3" style="font-size:12px">
+    الصلاحية بتتقرا من التوكن وقت تسجيل الدخول — لو غيّرت صلاحية حد، لازم يخرج ويدخل تاني عشان تسري.
+</p>

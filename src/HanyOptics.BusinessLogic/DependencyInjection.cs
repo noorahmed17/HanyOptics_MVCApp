@@ -1,0 +1,35 @@
+using HanyOptics.BusinessLogic.Auth;
+using HanyOptics.BusinessLogic.Interfaces;
+using HanyOptics.BusinessLogic.Services;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace HanyOptics.BusinessLogic;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddHanyOpticsBusinessLogic(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddScoped<IOrderService, OrderService>();
+        services.AddScoped<INewOrderService, NewOrderService>();
+        services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<IFrameInventoryService, FrameInventoryService>();
+        services.AddScoped<IReportService, ReportService>();
+        services.AddScoped<IDailyCloseService, DailyCloseService>();
+        services.AddScoped<IDailyCloseReportService, DailyCloseReportService>();
+        services.AddScoped<IExpenseService, ExpenseService>();
+        services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<ICorrectionService, CorrectionService>();
+
+        services.AddScoped<IBusinessUserDirectory, BusinessUserDirectory>();
+        services.AddScoped<IUserAdminService, UserAdminService>();
+        services.AddScoped<IDoctorAdminService, DoctorAdminService>();
+
+        services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IIdentitySeeder, IdentitySeeder>();
+
+        return services;
+    }
+}

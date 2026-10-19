@@ -1,0 +1,237 @@
+@using HanyOptics.BusinessLogic.Models
+@using HanyOptics.Web.Models
+@{
+    ViewData["Title"] = "الموردون";
+    var suppliers = (IReadOnlyList<SupplierBalance>)ViewBag.Suppliers;
+    var detail = ViewBag.Detail as SupplierDetail;
+    var formOpen = TempData["SupplierFormOpen"] is true || suppliers.Count == 0;
+    var today = DateTime.Today.ToString("yyyy-MM-dd");
+}
+
+<div class="page-header">
+    <h2>🚚 الموردون</h2>
+</div>
+
+<p class="text-muted mb-3" style="font-size:13px">
+    تابع حساب كل مورد: ما اشتريته، وما أرجعته، وما دفعته، والمبلغ المستحق عليك.
+</p>
+
+@if (TempData["SupplierMessage"] is string message)
+{
+    <div class="alert alert-success">✅ @message</div>
+}
+@if (TempData["SupplierError"] is string error)
+{
+    <div class="alert alert-danger">⚠️ @error</div>
+}
+
+<div class="master-detail">
+    <div>
+        <div class="card card-pad">
+            <button type="button" class="collapsible-btn" onclick="this.nextElementSibling.classList.toggle('open')">
+                <span>➕ إضافة مورد</span><span>▾</span>
+            </button>
+            <div class="collapsible-content @(formOpen ? "open" : "")">
+                <form asp-action="Create" method="post">
+                    <div class="form-group">
+                        <label for="nsName">اسم المورد *</label>
+                        <input id="nsName" name="Name" maxlength="100" required placeholder="مثال: شركة الجمال للإطارات" autocomplete="off" />
+                    </div>
+                    <div class="form-group">
+                        <label for="nsPhone">رقم الهاتف (اختياري)</label>
+                        <input id="nsPhone" name="Phone" type="tel" maxlength="20" placeholder="01XXXXXXXXX" autocomplete="off" />
+                    </div>
+                    <div class="form-group">
+                        <label for="nsNotes">ملاحظات (اختياري)</label>
+                        <input id="nsNotes" name="Notes" maxlength="500" placeholder="مثال: الدفع شهريًا" autocomplete="off" />
+                    </div>
+                    <div class="alert alert-info" style="font-size:12px">
+                        ℹ️ لا تحتاج لإدخال المبلغ المستحق هنا؛ يُحسب تلقائيًا من الفواتير والدفعات. إذا كان عليك مبلغ سابق للمورد، سجّله فاتورة شراء بملاحظة «رصيد افتتاحي».
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block">حفظ المورد</button>
+                </form>
+            </div>
+        </div>
+
+        @foreach (var s in suppliers)
+        {
+            <a class="supplier-item @(detail?.Balance.SupplierId == s.SupplierId ? "selected" : "")"
+               asp-action="Index" asp-route-id="@s.SupplierId">
+                <span class="s-name">@s.Name</span>
+                @if (s.BalanceDue > 0)
+                {
+                    <span class="s-due c-red">مستحق: @ExpenseDisplay.Money(s.BalanceDue)</span>
+                }
+                else
+                {
+                    <span class="s-due c-green">لا يوجد مستحق</span>
+                }
+            </a>
+        }
+    </div>
+
+    <div>
+        @if (detail is null)
+        {
+            <div class="card"><div class="empty-state">أضف أول مورد للبدء.</div></div>
+        }
+        else
+        {
+            var b = detail.Balance;
+            <div class="card card-pad">
+                <div class="flex justify-between items-center mb-3">
+                    <div>
+                        <div style="font-size:17px;font-weight:700">@b.Name</div>
+                        <div class="text-muted text-sm num"><bdi>@(b.Phone ?? "بدون رقم")</bdi>@(detail.Notes is null ? "" : " · " + detail.Notes)</div>
+                    </div>
+                </div>
+
+                <div class="stats-grid compact">
+                    <div class="stat-card"><div class="stat-label">إجمالي الفواتير</div><div class="stat-value num">@ExpenseDisplay.Money(b.TotalInvoiced)</div></div>
+                    <div class="stat-card"><div class="stat-label">المرتجعات</div><div class="stat-value num">@ExpenseDisplay.Money(b.TotalReturned)</div></div>
+                    <div class="stat-card"><div class="stat-label">المدفوعات</div><div class="stat-value num">@ExpenseDisplay.Money(b.TotalPaid)</div></div>
+                    <div class="stat-card @(b.BalanceDue > 0 ? "due" : "settled")">
+                        <div class="stat-label">المبلغ المستحق</div>
+                        <div class="stat-value num">@(b.BalanceDue > 0 ? ExpenseDisplay.Money(b.BalanceDue) : "تم السداد")</div>
+                    </div>
+                </div>
+                <div class="form-hint">المبلغ المستحق = الفواتير − المرتجعات − المدفوعات. الدفعات تُسجَّل من «المصروفات والإيرادات» باختيار المورد.</div>
+
+                @* One question, three answers - and each answer opens a window with only its
+                   own fields. The two forms used to sit side by side with near-identical
+                   boxes, which made it easy to type a return into the invoice form. The
+                   colour and the "بعد التسجيل" line say which way the balance moves before
+                   anything is saved. *@
+                <div class="mini-title mt-3" style="border-top:1px solid #f1f5f9;padding-top:16px">ماذا تريد أن تسجّل؟</div>
+                <div class="supplier-actions">
+                    <button type="button" class="supplier-action tone-invoice" data-modal-open="invoiceModal">
+                        <span class="sa-icon">🧾</span>
+                        <span class="sa-title">فاتورة شراء</span>
+                        <span class="sa-desc">بضاعة استلمتها من المورد</span>
+                        <span class="sa-effect">المستحق يزيد ▲</span>
+                    </button>
+                    <button type="button" class="supplier-action tone-return" data-modal-open="returnModal">
+                        <span class="sa-icon">↩️</span>
+                        <span class="sa-title">مرتجع للمورد</span>
+                        <span class="sa-desc">بضاعة رجّعتها للمورد</span>
+                        <span class="sa-effect">المستحق يقل ▼</span>
+                    </button>
+                    <a class="supplier-action tone-payment" asp-controller="Expenses" asp-action="Index">
+                        <span class="sa-icon">💸</span>
+                        <span class="sa-title">دفعة للمورد</span>
+                        <span class="sa-desc">فلوس دفعتها للمورد — تُسجَّل من المصروفات</span>
+                        <span class="sa-effect">المستحق يقل ▼</span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="overlay" id="exOverlay"></div>
+
+            <div class="modal modal-sm" id="invoiceModal" role="dialog" aria-modal="true" aria-labelledby="invoiceTitle">
+                <form asp-action="AddInvoice" method="post">
+                    <div class="modal-header tone-invoice">
+                        <span class="modal-title" id="invoiceTitle">🧾 فاتورة شراء — @b.Name</span>
+                        <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="form-hint mb-3" style="font-size:12.5px">سجّل البضاعة التي اشتريتها، سواء دفعت ثمنها أم لا.</p>
+                        <input type="hidden" name="SupplierId" value="@b.SupplierId" />
+                        <div class="form-group">
+                            <label for="invAmt">قيمة الفاتورة (ج) *</label>
+                            <input id="invAmt" name="Amount" type="number" min="0.01" step="0.01" required placeholder="مثال: 22000" data-clear autocomplete="off" />
+                        </div>
+                        <div class="form-group">
+                            <label for="invDate">تاريخ الفاتورة</label>
+                            <input id="invDate" name="PurchaseDate" type="date" value="@today" />
+                        </div>
+                        <div class="form-group">
+                            <label for="invNote">ملاحظات (اختياري)</label>
+                            <input id="invNote" name="Notes" maxlength="500" placeholder="مثال: إطارات شمسية" data-clear autocomplete="off" />
+                        </div>
+                        <div class="balance-preview" data-balance-preview data-current="@b.BalanceDue.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-sign="1">
+                            المستحق الآن <b class="num">@ExpenseDisplay.Money(b.BalanceDue)</b> ← بعد التسجيل <b class="num" data-after>@ExpenseDisplay.Money(b.BalanceDue)</b>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                        <button type="submit" class="btn btn-primary">تسجيل الفاتورة</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="modal modal-sm" id="returnModal" role="dialog" aria-modal="true" aria-labelledby="returnTitle">
+                <form asp-action="AddReturn" method="post">
+                    <div class="modal-header tone-return">
+                        <span class="modal-title" id="returnTitle">↩️ مرتجع للمورد — @b.Name</span>
+                        <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="form-hint mb-3" style="font-size:12.5px">سجّل البضاعة التي أعدتها. يقل المستحق دون دفع أي مبلغ.</p>
+                        <input type="hidden" name="SupplierId" value="@b.SupplierId" />
+                        <div class="form-group">
+                            <label for="retAmt">قيمة المرتجع (ج) *</label>
+                            <input id="retAmt" name="Amount" type="number" min="0.01" step="0.01" required placeholder="مثال: 800" data-clear autocomplete="off" />
+                        </div>
+                        <div class="form-group">
+                            <label for="retDate">تاريخ المرتجع</label>
+                            <input id="retDate" name="ReturnDate" type="date" value="@today" />
+                        </div>
+                        <div class="form-group">
+                            <label for="retInv">من أي فاتورة؟ (اختياري)</label>
+                            <select id="retInv" name="PurchaseId">
+                                <option value="">غير مرتبط بفاتورة</option>
+                                @foreach (var i in detail.Invoices)
+                                {
+                                    <option value="@i.PurchaseId">فاتورة رقم @i.PurchaseId — @ExpenseDisplay.DateShort(i.PurchaseDate.ToDateTime(TimeOnly.MinValue)) — @ExpenseDisplay.Money(i.Amount)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="retNote">ملاحظات (اختياري)</label>
+                            <input id="retNote" name="Notes" maxlength="500" placeholder="مثال: إطارات بها عيوب" data-clear autocomplete="off" />
+                        </div>
+                        <div class="balance-preview" data-balance-preview data-current="@b.BalanceDue.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-sign="-1">
+                            المستحق الآن <b class="num">@ExpenseDisplay.Money(b.BalanceDue)</b> ← بعد التسجيل <b class="num" data-after>@ExpenseDisplay.Money(b.BalanceDue)</b>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                        <button type="submit" class="btn btn-return">تسجيل المرتجع</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span class="card-title">سجل الحساب</span></div>
+                <div class="card-body table-scroll">
+                    @if (detail.History.Count == 0)
+                    {
+                        <div class="empty-state">لا توجد حركات مع هذا المورد بعد.</div>
+                    }
+                    else
+                    {
+                        <table>
+                            <thead><tr><th>التاريخ</th><th>النوع</th><th class="num">المبلغ</th><th>ملاحظات</th></tr></thead>
+                            <tbody>
+                            @foreach (var h in detail.History)
+                            {
+                                var (css, label) = ExpenseDisplay.LedgerKind(h.Kind);
+                                <tr>
+                                    <td class="num">@ExpenseDisplay.DateShort(h.Date)</td>
+                                    <td><span class="badge @css">@label</span></td>
+                                    <td class="num fw-bold">@ExpenseDisplay.Money(h.Amount)</td>
+                                    <td>@(h.Note ?? "—")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/expenses.js" asp-append-version="true"></script>
+}

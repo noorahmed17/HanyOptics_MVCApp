@@ -1,0 +1,722 @@
+/* Ported from HanyOptics_Prototype.html / HanyOptics_Scenarios.html design system. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+/* The hidden attribute must always hide. Without this any class that sets display (a
+   .form-row is a grid) quietly overrides it, and a field meant to be gone stays on screen. */
+[hidden] { display: none !important; }
+body {
+    /* Tahoma first, not Segoe UI: Segoe UI's Arabic coverage is partial and only some
+       weights fall back to a properly-shaped Arabic face, which is why bold labels looked
+       right while normal-weight input values came out disconnected ("زبون عابر"). Tahoma
+       has complete, correctly-joined Arabic at every weight. */
+    font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
+    background: #f0f2f5;
+    color: #1a202c;
+    direction: rtl;
+}
+
+#app { display: flex; min-height: 100vh; }
+
+/* ─── SIDEBAR ─── */
+#sidebar { width: 230px; background: #1e2a3a; color: #e2e8f0; display: flex; flex-direction: column; position: fixed; top: 0; right: 0; bottom: 0; overflow-y: auto; z-index: 50; }
+.sb-logo { padding: 20px 18px; border-bottom: 1px solid #2d3a4a; }
+.sb-logo h1 { font-size: 18px; font-weight: 700; color: #fff; }
+.sb-logo p { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+.sb-nav { padding: 10px 0; flex: 1; }
+.sb-section { font-size: 10px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .05em; padding: 10px 18px 4px; }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 18px; cursor: pointer; color: #94a3b8; font-size: 13.5px; border-right: 3px solid transparent; transition: all .15s; text-decoration: none; }
+.nav-item:hover { background: #2d3a4a; color: #e2e8f0; }
+.nav-item.active { background: rgba(26, 86, 219, .15); color: #60a5fa; border-right-color: #60a5fa; }
+.nav-item.disabled { color: #4b5563; cursor: not-allowed; }
+.nav-item.disabled:hover { background: none; color: #4b5563; }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+.sb-footer { padding: 14px 18px; border-top: 1px solid #2d3a4a; font-size: 12px; color: #64748b; }
+.sb-footer span { color: #e2e8f0; font-weight: 500; }
+.sb-logout { background: none; border: none; color: #94a3b8; font-size: 12px; cursor: pointer; padding: 0; margin-top: 6px; text-decoration: underline; }
+.sb-logout:hover { color: #e2e8f0; }
+
+/* ─── MAIN ─── */
+/* min-width:0 on both is what stops wide content breaking the layout. A flex item defaults
+   to min-width:auto, meaning it grows to fit its widest child rather than constraining it -
+   so a wide table pushed the whole page sideways instead of scrolling inside its own box,
+   and the sidebar scrolled away with it. */
+#content { margin-right: 230px; flex: 1; display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
+.page { padding: 22px 26px; min-width: 0; }
+
+/* ─── CARDS ─── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.stat-card { background: #fff; border-radius: 12px; padding: 18px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, .05); }
+.stat-icon { font-size: 24px; margin-bottom: 8px; }
+.stat-label { font-size: 11px; color: #718096; font-weight: 500; margin-bottom: 5px; }
+.stat-value { font-size: 26px; font-weight: 700; color: #1a202c; line-height: 1; }
+.stat-sub { font-size: 11px; color: #a0aec0; margin-top: 4px; }
+.c-green { color: #057a55; } .c-blue { color: #1a56db; } .c-purple { color: #6d28d9; } .c-amber { color: #b45309; } .c-red { color: #dc2626; }
+
+.card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0, 0, 0, .05); overflow: hidden; margin-bottom: 18px; }
+.card-header { padding: 14px 18px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+.card-title { font-size: 14px; font-weight: 600; }
+.card-body { padding: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+    background: #f8fafc;
+    padding: 10px 14px;
+    text-align: right;
+    font-weight: 600;
+    font-size: 12px;
+    color: #475569;
+    border-bottom: 1px solid #e2e8f0;
+}
+td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tr.clickable:hover td { background: #fafbfc; cursor: pointer; }
+
+/* ─── BADGES ─── */
+.badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.badge-sold { background: #dbeafe; color: #1e40af; }
+.badge-ready { background: #d1fae5; color: #065f46; }
+.badge-delivered { background: #e0f2fe; color: #0369a1; }
+.badge-cancelled { background: #fee2e2; color: #991b1b; }
+.badge-admin { background: #ede9fe; color: #5b21b6; }
+.badge-user { background: #f1f5f9; color: #475569; }
+
+/* ─── BUTTONS ─── */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all .15s; text-decoration: none; }
+.btn-primary { background: #1a56db; color: #fff; } .btn-primary:hover { background: #1e40af; }
+.btn-success { background: #057a55; color: #fff; } .btn-success:hover { background: #046c4e; }
+.btn-danger { background: #dc2626; color: #fff; } .btn-danger:hover { background: #b91c1c; }
+.btn-outline { background: #fff; color: #374151; border: 1px solid #d1d5db; } .btn-outline:hover { background: #f9fafb; }
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+.btn-lg { padding: 11px 22px; font-size: 15px; }
+.btn-block { width: 100%; justify-content: center; }
+/* A disabled button that still looks clickable is worse than no button - the user presses
+   it and nothing at all happens. Applies to every .btn, whatever its colour. */
+.btn:disabled, .btn[disabled] { background: #e5e7eb; color: #9ca3af; border-color: #e5e7eb; cursor: not-allowed; }
+.btn:disabled:hover, .btn[disabled]:hover { background: #e5e7eb; }
+
+/* ─── FORMS ─── */
+.form-group { margin-bottom: 14px; }
+label { display: block; font-size: 12.5px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+input, select, textarea { width: 100%; padding: 9px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13.5px; font-family: inherit; background: #fff; color: #1a202c; transition: border .15s; direction: rtl; }
+
+/* Number fields look and behave like ordinary text boxes: no spinner arrows to nudge a
+   price by accident. The matching wheel guard is in site.js - together they stop a value
+   changing without anyone meaning to, which on a payment box means money moving unnoticed. */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, .1); }
+.form-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
+.field-error { font-size: 11.5px; color: #dc2626; margin-top: 4px; }
+
+/* ─── ALERTS ─── */
+.alert { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 8px; }
+.alert-warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+.alert-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
+.alert-danger { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.alert-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #057a55; }
+
+/* ─── MISC ─── */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.page-header h2 { font-size: 20px; font-weight: 700; }
+.page-header-title { font-size: 20px; font-weight: 700; color: #1a202c; text-decoration: none; }
+.page-header-title:hover { text-decoration: underline; }
+.page-header-title.disabled { color: #9ca3af; cursor: not-allowed; }
+.page-header-title.disabled:hover { text-decoration: none; }
+.flex { display: flex; } .gap-2 { gap: 8px; } .gap-3 { gap: 12px; } .items-center { align-items: center; }
+.justify-between { justify-content: space-between; } .flex-wrap { flex-wrap: wrap; }
+.mt-1 { margin-top: 4px; } .mt-2 { margin-top: 8px; } .mt-3 { margin-top: 12px; }
+.mb-2 { margin-bottom: 8px; } .mb-3 { margin-bottom: 12px; }
+.fw-bold { font-weight: 700; } .text-sm { font-size: 12px; } .text-muted { color: #9ca3af; }
+.empty-state { text-align: center; padding: 40px 20px; color: #9ca3af; }
+
+/* ─── AUTH PAGES (login/signup - not in the prototype, styled to match it) ─── */
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.auth-card { background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, .1); padding: 32px 30px; width: 100%; max-width: 400px; }
+.auth-logo { text-align: center; margin-bottom: 24px; }
+.auth-logo h1 { font-size: 20px; font-weight: 700; color: #1a202c; }
+.auth-logo p { font-size: 12px; color: #718096; margin-top: 4px; }
+.auth-footer { text-align: center; margin-top: 18px; font-size: 12.5px; color: #6b7280; }
+.auth-footer a { color: #1a56db; font-weight: 600; text-decoration: none; }
+.auth-footer a:hover { text-decoration: underline; }
+.validation-summary { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; color: #dc2626; }
+.validation-summary ul { list-style: none; }
+
+/* ─── WIZARD (new order) ─── */
+.wizard-steps { display: flex; margin-bottom: 24px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; }
+.wizard-step { flex: 1; padding: 14px 10px; text-align: center; border-left: 1px solid #e2e8f0; }
+.wizard-step:last-child { border-left: none; }
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: #e2e8f0; color: #6b7280; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+.step-label { font-size: 12px; color: #6b7280; font-weight: 500; }
+.wizard-step.active .step-num { background: #1a56db; color: #fff; }
+.wizard-step.active .step-label { color: #1a56db; font-weight: 600; }
+.wizard-step.done .step-num { background: #057a55; color: #fff; }
+.wizard-step.done .step-label { color: #057a55; }
+.wizard-content { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 24px; }
+.wizard-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 18px; border-top: 1px solid #f1f5f9; }
+
+.input-group { display: flex; gap: 8px; }
+.input-group input { flex: 1; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* The barcode a save produced. It is the reason for saving - it goes into BarTender to
+   print the label - so it is set large and monospaced to be read off the screen and typed
+   or copied without transcribing a character wrong. */
+.barcode-result { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 16px 18px; margin-bottom: 18px; }
+.barcode-result-head { font-size: 14px; font-weight: 700; color: #065f46; margin-bottom: 10px; }
+.barcode-result-label { font-size: 12px; color: #047857; margin-bottom: 4px; }
+.barcode-result-code { font-family: ui-monospace, "Consolas", monospace; font-size: 26px; font-weight: 700; letter-spacing: 2px; color: #065f46; margin-bottom: 10px; direction: ltr; text-align: right; }
+.barcode-copied { font-size: 12px; font-weight: 600; color: #057a55; margin-right: 8px; opacity: 0; transition: opacity .15s; }
+.barcode-copied.show { opacity: 1; }
+
+/* ─── PAGER ─── */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-top: 1px solid #f1f5f9; }
+.pager-info { font-size: 12px; color: #6b7280; font-variant-numeric: tabular-nums; }
+.pager-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pager-current { font-size: 12px; color: #374151; font-weight: 600; padding: 0 6px; font-variant-numeric: tabular-nums; }
+/* The ends of the range are spans, not links - there is nowhere to go, and a link that
+   does nothing is worse than one that is visibly unavailable. */
+.pager-disabled { background: #f8fafc; color: #cbd5e1; border-color: #eef2f7; cursor: default; }
+.pager-disabled:hover { background: #f8fafc; }
+
+/* ─── DAILY CLOSE ─── */
+/* The one number the whole screen exists to answer - what is in the drawer - so it gets
+   twice the width and the dark treatment instead of sitting level with four siblings. */
+.stat-card.hero { grid-column: span 2; background: linear-gradient(135deg, #1e2a3a, #28405c); border-color: #1e2a3a; color: #fff; }
+.stat-card.hero .stat-label { color: #a9bcd4; }
+.stat-card.hero .stat-value { color: #fff; font-size: 34px; }
+.stat-card.hero .stat-sub { color: #93a9c4; }
+
+/* .card-body has no padding because it usually holds a full-bleed table; prose inside a
+   card needs its own padded box. */
+.card-pad { padding: 16px 18px; }
+.card-note { font-size: 11.5px; color: #94a3b8; }
+
+/* Spells out where the working day starts and ends. Dashed, because it is a statement of
+   the rule rather than a figure read off the data. */
+.daywindow { margin-right: auto; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 7px 12px; font-size: 12px; color: #475569; }
+.daywindow b { color: #1a202c; }
+
+/* Cash vs visa at a glance, before anyone reads a single figure. */
+.splitbar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; margin: 4px 0 10px; }
+.splitbar div { height: 100%; }
+.legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: #475569; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 6px; }
+
+/* A running total that has to add up on screen, so the last row is set apart as the sum. */
+.breakdown { width: 100%; font-size: 13px; }
+.breakdown td { padding: 9px 0; border-bottom: 1px dashed #eef2f7; }
+.breakdown tr:last-child td { border-bottom: none; font-weight: 700; font-size: 14px; padding-top: 12px; border-top: 2px solid #e2e8f0; }
+
+.alerts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.alert-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 13px 15px; background: #fff; }
+.alert-box.warn { background: #fffbeb; border-color: #fde68a; }
+.alert-box.info { background: #f8fafc; }
+.alert-title { font-size: 12.5px; font-weight: 700; margin-bottom: 4px; }
+.alert-value { font-size: 19px; font-weight: 700; }
+.alert-desc { font-size: 11.5px; color: #6b7280; margin-top: 3px; }
+
+/* A totals row belongs to the table it sums, so it stays put visually with the header. */
+tfoot td { background: #f8fafc; font-weight: 700; border-top: 1px solid #e2e8f0; border-bottom: none; }
+
+/* Rows worth a second look: after midnight, and money going back out. */
+.row-night td { background: #fdfbff; }
+.row-refund td { background: #fffafa; }
+
+.badge-night { background: #f3e8ff; color: #6b21a8; }
+.badge-old { background: #f1f5f9; color: #475569; }
+.badge-fl { background: #ede9fe; color: #5b21b6; }
+.badge-fo { background: #fff7ed; color: #c2410c; }
+.badge-lr { background: #f0fdf4; color: #15803d; }
+
+/* ─── REPORTS ─── */
+.report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.report-card { display: flex; gap: 12px; align-items: flex-start; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; text-decoration: none; color: inherit; transition: all .15s; }
+.report-card:hover { border-color: #1a56db; box-shadow: 0 4px 12px rgba(26, 86, 219, .1); }
+.report-card-icon { font-size: 22px; line-height: 1; }
+.report-card-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.report-card-desc { font-size: 12px; color: #6b7280; line-height: 1.6; }
+.report-card-tag { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 600; color: #64748b; background: #f1f5f9; border-radius: 6px; padding: 2px 8px; }
+
+.filter-bar { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; }
+.filter-field label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+.filter-field input { width: 180px; }
+
+/* A report can carry a dozen columns; it scrolls inside its own card rather than making
+   the whole page scroll sideways. */
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 100%; white-space: nowrap; }
+
+/* Figures line up on their digits, which is the only way a column of money is readable. */
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.table-scroll tbody tr:hover td {
+    background: #fafbfc;
+}
+
+.table-scroll {
+    max-height: 70vh;
+}
+
+    .table-scroll thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+td.num .sub {
+    display: block;
+    margin-top: 3px;
+    font-weight: 400;
+}
+/* Outside a table the alignment is the container's business, but the digits should still
+   be the same width so a figure does not jitter as it updates. */
+.num { font-variant-numeric: tabular-nums; }
+
+/* Only for money that is genuinely allowed to go negative - a profit line, a net total.
+   A plain price never should, so a minus there stays black and reads as a data problem. */
+.money-negative { color: #dc2626; }
+
+.section-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; }
+.section-divider span { font-size: 12px; font-weight: 700; color: #374151; white-space: nowrap; padding: 3px 10px; background: #f1f5f9; border-radius: 6px; }
+.section-divider::before, .section-divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
+
+.cust-found { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; margin-top: 6px; display: none; align-items: center; justify-content: space-between; }
+.cust-found.show { display: flex; }
+.cust-name-big { font-size: 14px; font-weight: 700; color: #1e40af; }
+.cust-meta { font-size: 12px; color: #6b7280; }
+
+.frame-result { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px; margin-top: 8px; display: none; }
+.frame-result.show { display: block; }
+.frame-result-title { font-size: 13px; font-weight: 700; color: #065f46; margin-bottom: 6px; }
+.frame-meta { display: flex; gap: 16px; flex-wrap: wrap; }
+.frame-meta span { font-size: 12px; color: #374151; }
+.frame-meta b { color: #065f46; }
+.frame-error { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; margin-top: 8px; font-size: 13px; color: #dc2626; display: none; }
+.frame-error.show { display: block; }
+
+.rx-grid { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; margin-top: 8px; }
+.rx-grid table { font-size: 13px; }
+.rx-grid th { background: #f8fafc; font-size: 12px; padding: 8px 10px; text-align: center; }
+.rx-grid td { padding: 6px 8px; text-align: center; }
+.rx-grid input { padding: 6px 8px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; width: 72px; }
+
+.amount-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.amount-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+.amount-row.total { border-top: 2px solid #e2e8f0; margin-top: 8px; padding-top: 10px; }
+.amount-row.total .a-label { font-size: 15px; font-weight: 700; }
+.amount-row.total .a-val { font-size: 20px; font-weight: 800; color: #1a56db; }
+.a-label { font-size: 13px; color: #6b7280; }
+.a-val { font-size: 14px; font-weight: 600; color: #1a202c; }
+.remaining-box { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 16px; text-align: center; margin-top: 10px; }
+.remaining-label { font-size: 12px; color: #92400e; margin-bottom: 2px; }
+.remaining-val { font-size: 22px; font-weight: 800; color: #b45309; }
+
+.info-chip { display: inline-flex; align-items: center; gap: 4px; background: #f1f5f9; border-radius: 6px; padding: 3px 10px; font-size: 12px; color: #374151; }
+
+.collapsible-btn { background: none; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; color: #374151; width: 100%; text-align: right; display: flex; align-items: center; justify-content: space-between; }
+.collapsible-btn:hover { background: #f9fafb; }
+/* Animated open/close - max-height rather than display:none so the reveal can slide. */
+.collapsible-content { max-height: 0; padding-top: 0; overflow: hidden; transition: max-height .28s ease, padding-top .28s ease; }
+.collapsible-content.open { max-height: 800px; padding-top: 12px; }
+
+.badge-fl { background: #ede9fe; color: #5b21b6; }
+.badge-fo { background: #fff7ed; color: #c2410c; }
+.badge-lr { background: #f0fdf4; color: #15803d; }
+.badge-cash { background: #f0fdf4; color: #15803d; }
+.badge-visa { background: #eff6ff; color: #1d4ed8; }
+
+/* ─── STATUS TABS (matches HanyOptics_Prototype.html) ─── */
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 4px; width: fit-content; }
+.tab { padding: 7px 16px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; color: #6b7280; transition: all .15s; text-decoration: none; }
+.tab.active { background: #1a56db; color: #fff; }
+.tab:hover:not(.active) { background: #f3f4f6; }
+
+/* ─── MASTER-DETAIL (customers list) ─── */
+.master-detail { display: grid; grid-template-columns: 280px 1fr; gap: 18px; align-items: start; }
+.customer-list-item { display: block; padding: 10px 8px; border-radius: 8px; border-bottom: 1px solid #f1f5f9; text-decoration: none; color: inherit; }
+.customer-list-item:hover { background: #f8fafc; }
+.customer-list-item.selected { background: #eff6ff; }
+
+/* ─── DETAIL KEY/VALUE GRID (matches HanyOptics_Prototype.html) ─── */
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; }
+.detail-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f8fafc; }
+.detail-row:last-child { border-bottom: none; }
+.detail-label { font-size: 12px; color: #718096; font-weight: 500; }
+.detail-val { font-size: 13px; font-weight: 600; color: #1a202c; }
+.detail-section { margin-bottom: 20px; }
+.detail-section h4 { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; }
+
+/* ─── MODAL (order detail popup) ─── */
+.overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); z-index: 100; display: none; }
+.overlay.show { display: block; }
+.modal { position: fixed; top: 50%; right: 50%; transform: translate(50%, -50%); background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, .2); z-index: 101; display: none; max-height: 90vh; overflow-y: auto; width: 680px; max-width: 95vw; }
+.modal.show { display: block; }
+.modal-sm { width: 420px; }
+.modal-header { padding: 18px 20px; border-bottom: 1px solid #f1f5f9; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: #fff; z-index: 2; }
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close { width: 30px; height: 30px; border-radius: 50%; border: none; background: #f1f5f9; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: #6b7280; }
+.modal-close:hover { background: #e2e8f0; }
+.modal-body { padding: 20px; }
+.modal-footer { padding: 14px 20px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 10px; position: sticky; bottom: 0; background: #fff; }
+
+/* ─── PAYMENTS LIST (order detail popup) ─── */
+.payment-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+.payment-row:last-child { border-bottom: none; }
+.payment-amount { font-size: 15px; font-weight: 700; color: #057a55; }
+.payment-amount.refund { color: #dc2626; }
+.payment-info { font-size: 12px; color: #9ca3af; }
+
+/* ─── STATUS TIMELINE (order detail popup) ─── */
+.timeline { position: relative; padding-right: 20px; }
+.timeline::before { content: ''; position: absolute; right: 7px; top: 0; bottom: 0; width: 2px; background: #e2e8f0; }
+.tl-item { position: relative; padding: 0 20px 14px 0; margin-right: -20px; }
+.tl-item:last-child { padding-bottom: 0; }
+.tl-dot { position: absolute; right: -7px; top: 4px; width: 14px; height: 14px; border-radius: 50%; background: #1a56db; border: 2px solid #fff; box-shadow: 0 0 0 2px #1a56db; }
+.tl-dot.green { background: #057a55; box-shadow: 0 0 0 2px #057a55; }
+.tl-dot.red { background: #dc2626; box-shadow: 0 0 0 2px #dc2626; }
+.tl-time { font-size: 11px; color: #9ca3af; margin-bottom: 2px; }
+.tl-text { font-size: 13px; font-weight: 500; color: #374151; }
+.tl-note { font-size: 12px; color: #9ca3af; }
+
+/* ─── EXPENSES MODULE (حركة الدرج · المصروفات · الموردون · التصحيحات) ─── */
+
+/* Sidebar group: a <details>, so it opens and closes with no script and stays open by
+   itself while one of its pages is showing. */
+.nav-group > summary { list-style: none; }
+.nav-group > summary::-webkit-details-marker { display: none; }
+.nav-caret { margin-right: auto; font-size: 11px; transition: transform .15s; }
+.nav-group[open] > summary .nav-caret { transform: rotate(-90deg); }
+.nav-item.nav-sub { padding: 8px 18px 8px 18px; padding-right: 48px; font-size: 13px; }
+
+/* Segmented choice built from real radio buttons, so the form posts the value with no
+   script involved and the keyboard works as it does on any radio group. */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 9px; padding: 3px; }
+.seg label { position: relative; margin: 0; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.seg span { display: block; padding: 6px 14px; border-radius: 7px; font-size: 12.5px; font-weight: 600; color: #6b7280; white-space: nowrap; }
+.seg input:checked + span { background: #fff; color: #1a56db; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.seg input:disabled + span { opacity: .4; cursor: not-allowed; }
+.seg input:focus-visible + span { outline: 2px solid #3b82f6; outline-offset: 1px; }
+
+/* The three things that happen at the till, as three big choices. */
+.action-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.action-card { position: relative; margin: 0; }
+.action-card input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ac-body { display: flex; flex-direction: column; align-items: center; gap: 5px; text-align: center; padding: 16px 12px; border: 1.5px solid #e2e8f0; border-radius: 12px; background: #fff; cursor: pointer; transition: all .15s; height: 100%; }
+.ac-icon { font-size: 26px; line-height: 1; }
+.ac-title { font-size: 14px; font-weight: 700; color: #1a202c; }
+.ac-desc { font-size: 11.5px; color: #6b7280; font-weight: 400; line-height: 1.5; }
+.action-card:hover .ac-body { border-color: #93c5fd; box-shadow: 0 4px 12px rgba(26, 86, 219, .08); }
+.action-card input:focus-visible + .ac-body { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.action-card input:checked + .ac-body { border-color: #1a56db; background: #eff6ff; }
+.action-card.k-owner input:checked + .ac-body { border-color: #6d28d9; background: #f5f3ff; }
+.action-card.k-income input:checked + .ac-body { border-color: #057a55; background: #f0fdf4; }
+
+.badge-exp { background: #e0f2fe; color: #0369a1; }
+.badge-owner { background: #ede9fe; color: #5b21b6; }
+.badge-income { background: #dcfce7; color: #15803d; }
+.badge-drawer { background: #ecfdf5; color: #047857; }
+.badge-outside { background: #fff7ed; color: #c2410c; }
+
+tr.row-cancelled td { color: #9ca3af; }
+tr.row-cancelled .amount { text-decoration: line-through; }
+.amt-in { color: #057a55; font-weight: 700; }
+.amt-out { color: #dc2626; font-weight: 700; }
+td.actions { white-space: nowrap; text-align: left; }
+td.actions .btn + .btn, td.actions form + form, td.actions .btn + form { margin-right: 4px; }
+.inline-form { display: inline; }
+
+/* Monthly report: one bar per category, scaled to the largest. */
+.cat-bars { display: flex; flex-direction: column; gap: 10px; }
+.cat-row { display: grid; grid-template-columns: 140px 1fr 120px; align-items: center; gap: 12px; font-size: 12.5px; }
+.cat-name { color: #475569; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-track { background: #f1f5f9; border-radius: 6px; height: 10px; overflow: hidden; }
+.cat-fill { height: 100%; background: #1a56db; border-radius: 6px; }
+.cat-val { text-align: left; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Suppliers: the list on one side, the selected account on the other. */
+.supplier-item { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e8f0; text-decoration: none; color: inherit; margin-bottom: 6px; background: #fff; }
+.supplier-item:hover { background: #f8fafc; }
+.supplier-item.selected { border-color: #1a56db; background: #eff6ff; }
+.s-name { font-size: 13.5px; font-weight: 700; }
+.s-due { font-size: 12px; font-weight: 600; }
+
+.stats-grid.compact { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.stats-grid.compact .stat-card { padding: 12px 14px; }
+.stats-grid.compact .stat-value { font-size: 19px; }
+.stat-card.due .stat-value { color: #dc2626; }
+.stat-card.settled .stat-value { color: #057a55; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.mini-title { font-size: 13.5px; font-weight: 700; margin-bottom: 4px; }
+.search-bar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.search-bar .form-group { flex: 1; min-width: 200px; margin-bottom: 0; }
+
+@media (max-width: 900px) {
+    .action-cards, .two-col, .form-row, .master-detail { grid-template-columns: 1fr; }
+    .cat-row { grid-template-columns: 90px 1fr 90px; }
+}
+
+/* الموردون: what to record, as three separate choices rather than two look-alike forms
+   side by side. Each has its own colour, carried into the window it opens, and says which
+   way it moves the amount owed. */
+.supplier-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+.supplier-action { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 16px 12px; border: 1.5px solid #e2e8f0; border-top-width: 4px; border-radius: 12px; background: #fff; cursor: pointer; font-family: inherit; color: inherit; text-decoration: none; transition: all .15s; }
+.supplier-action:hover { box-shadow: 0 4px 12px rgba(0, 0, 0, .07); transform: translateY(-1px); }
+.supplier-action:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.sa-icon { font-size: 24px; line-height: 1; }
+.sa-title { font-size: 14px; font-weight: 700; color: #1a202c; }
+.sa-desc { font-size: 11.5px; color: #6b7280; line-height: 1.5; }
+.sa-effect { margin-top: 4px; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 20px; }
+.supplier-action.tone-invoice { border-top-color: #1a56db; }
+.supplier-action.tone-invoice .sa-effect { background: #fee2e2; color: #b91c1c; }
+.supplier-action.tone-return { border-top-color: #c2410c; }
+.supplier-action.tone-return .sa-effect,
+.supplier-action.tone-payment .sa-effect { background: #dcfce7; color: #15803d; }
+.supplier-action.tone-payment { border-top-color: #057a55; }
+
+.modal-header.tone-invoice { border-top: 4px solid #1a56db; }
+.modal-header.tone-return { border-top: 4px solid #c2410c; }
+.btn-return { background: #c2410c; color: #fff; }
+.btn-return:hover { background: #9a3412; }
+
+.balance-preview { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: #475569; }
+.balance-preview b { color: #1a202c; }
+
+@media (max-width: 900px) { .supplier-actions { grid-template-columns: 1fr; } }
+
+/* A pick-or-type box (a category, a lens description) says so with a permanent drop-down
+   arrow like a <select>. The browser's own list marker only appears on hover, so it is
+   replaced; clicking the box opens the list (site.js). */
+input.combo {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: left 12px center; padding-left: 32px; cursor: pointer;
+}
+input.combo::-webkit-calendar-picker-indicator { display: none !important; }
+
+/* Report KPI cards: totals run to millions (14,451,273.26 ج), which the general card - 180px
+   wide, 26px figures - cannot hold, so the ج wrapped onto a line of its own. Wider cards,
+   a figure sized to fit, and a smaller ج that never leaves the number's line. */
+.report-kpis { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.report-kpis .stat-card { min-width: 0; }
+.kpi-value { font-size: 21px; white-space: nowrap; display: flex; align-items: baseline; gap: 5px; }
+.kpi-unit { font-size: 14px; font-weight: 600; color: #64748b; }
+
+/* ─── DAILY CLOSE (إغلاق اليومية · التقرير الشهري · مصروفات الشهر) ─── */
+.rep-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin-bottom: 8px; }
+.rep-head h3 { font-size: 17px; font-weight: 700; }
+.rep-head p { font-size: 13px; color: #6b7280; margin-top: 2px; }
+.rep-picker { display: flex; align-items: center; gap: 8px; }
+.rep-picker label { margin: 0; font-size: 12.5px; color: #64748b; white-space: nowrap; }
+.rep-picker select { width: auto; min-width: 190px; }
+.rep-window { font-size: 12.5px; color: #64748b; margin-bottom: 16px; }
+.rep-window b { color: #1a202c; }
+
+/* The one figure each tab exists to answer, with the sum that produces it. */
+.rep-hero { display: grid; grid-template-columns: 1fr auto; gap: 18px 28px; align-items: center; background: linear-gradient(135deg, #1e2a3a, #28405c); color: #fff; border-radius: 12px; padding: 22px 24px; margin-bottom: 18px; }
+.rep-hero.neg { background: linear-gradient(135deg, #7f1d1d, #991b1b); }
+.rep-hero .lbl { font-size: 13px; color: #a9bcd4; font-weight: 600; }
+.rep-hero.neg .lbl { color: #fecaca; }
+.rep-hero .amt { font-size: 38px; font-weight: 800; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.rep-hero .formula { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: #cbd5e1; margin-top: 4px; }
+.rep-hero .formula b { color: #fff; }
+.rep-side { display: flex; flex-direction: column; gap: 8px; min-width: 250px; border-right: 1px solid rgba(255, 255, 255, .15); padding-right: 24px; }
+.rep-side .row { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: #cbd5e1; }
+.rep-side .row b { color: #fff; font-variant-numeric: tabular-nums; }
+.rep-side .row.total { border-top: 1px solid rgba(255, 255, 255, .15); padding-top: 8px; font-weight: 700; color: #fff; }
+.rep-side .row.total b { font-size: 17px; }
+.rep-side .row b.owner { color: #c4b5fd; }
+
+.rep-flows { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+.rep-flow-title { font-size: 12.5px; font-weight: 700; color: #64748b; margin-bottom: 8px; }
+.rep-flow-title .in { color: #057a55; }
+.rep-flow-title .out { color: #dc2626; }
+.rep-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.rep-kpis.wide { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin-bottom: 18px; }
+.rep-kpis .stat-card { padding: 13px 14px; }
+.rep-kpis .stat-value { font-size: 19px; white-space: nowrap; }
+.rep-kpis .stat-card.main { background: #f8fafc; }
+.stat-label .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; }
+
+.rep-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+/* Where the money came from: cash, visa, total per source; refunds subtract. */
+table.rec td, table.rec th { text-align: left; font-variant-numeric: tabular-nums; }
+table.rec td:first-child, table.rec th:first-child { text-align: right; }
+table.rec td:first-child small { display: block; color: #94a3b8; font-size: 11.5px; }
+table.rec td.z { color: #cbd5e1; }
+table.rec col.cash { background: #f0fdf4; }
+table.rec tr.minus td:not(:first-child):not(.z) { color: #dc2626; }
+table.rec tr.total td { font-weight: 700; border-top: 2px solid #cbd5e1; }
+
+/* The cash sum that must land on the drawer figure. */
+table.ledger td { padding: 8px 4px; border-bottom: 1px dashed #eef2f7; }
+table.ledger td.op { width: 20px; text-align: center; font-weight: 800; color: #94a3b8; }
+table.ledger td:last-child { text-align: left; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.ledger tr.minus td:last-child { color: #dc2626; }
+table.ledger tr.owner td:nth-child(2) { color: #6d28d9; font-weight: 600; }
+table.ledger tr.sum td { border-bottom: none; border-top: 2px solid #cbd5e1; font-weight: 700; padding-top: 10px; }
+table.ledger tr.sum td:last-child { font-size: 18px; color: #1a56db; }
+
+.rep-jump { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.rep-jump a { font-size: 12.5px; font-weight: 600; color: #374151; background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 5px 12px; text-decoration: none; }
+.rep-jump a:hover { border-color: #1a56db; color: #1a56db; }
+.rep-jump a b { color: #94a3b8; margin-right: 4px; }
+
+/* Expense categories: one bar per category, split by where the money came from. */
+.rep-legend { display: flex; gap: 14px; font-size: 11.5px; color: #64748b; }
+.rep-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-left: 5px; }
+.seg-d { background: #057a55; }
+.seg-o { background: #d97706; }
+.rep-bars { display: flex; flex-direction: column; gap: 10px; }
+.rep-bar { display: grid; grid-template-columns: minmax(90px, 130px) 1fr auto; gap: 10px; align-items: center; font-size: 12.5px; }
+.rep-bar .name { font-weight: 600; color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep-bar .track { display: flex; gap: 2px; height: 10px; }
+.rep-bar .track span { display: block; height: 100%; border-radius: 3px; }
+.rep-bar .val { font-weight: 700; min-width: 90px; text-align: left; font-variant-numeric: tabular-nums; }
+
+.mk { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.mk::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.mk-drawer { color: #047857; } .mk-outside { color: #b45309; } .mk-owner { color: #6d28d9; }
+.mk-income { color: #15803d; } .mk-info { color: #1d4ed8; } .mk-muted { color: #94a3b8; } .mk-bad { color: #dc2626; }
+td .sub { display: block; font-size: 11.5px; color: #94a3b8; }
+tr.row-link { cursor: pointer; }
+tr.row-link:hover td { background: #f8fafc; }
+tr.row-hl td { background: #eff6ff; }
+.delta-up { color: #dc2626; font-weight: 700; font-size: 12px; }
+.delta-down { color: #057a55; font-weight: 700; font-size: 12px; }
+.share { display: flex; align-items: center; gap: 8px; min-width: 120px; }
+.share .track { flex: 1; height: 7px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.share .track span { display: block; height: 100%; background: #d97706; }
+
+/* Net per day: bars above the line are good days, below it losing ones. */
+.rep-chart { position: relative; }
+.rep-chart svg { display: block; width: 100%; height: auto; }
+.rep-chart text { font-size: 11px; fill: #94a3b8; font-family: inherit; }
+.rep-chart .gl { stroke: #f1f5f9; }
+.rep-chart .zero { stroke: #cbd5e1; stroke-width: 1.5; }
+.rep-chart .hit { fill: transparent; cursor: pointer; }
+.rep-chart.hovering .bar { opacity: .4; }
+.rep-chart.hovering .bar.on { opacity: 1; }
+.rep-tip { position: absolute; pointer-events: none; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .25); padding: 9px 12px; font-size: 12px; min-width: 190px; z-index: 5; }
+.rep-tip b { display: block; margin-bottom: 4px; }
+.rep-tip .r { display: flex; justify-content: space-between; gap: 14px; }
+
+@media (max-width: 900px) {
+    .rep-flows, .rep-grid2 { grid-template-columns: 1fr; }
+    .rep-hero { grid-template-columns: 1fr; }
+    .rep-side { border-right: none; padding-right: 0; border-top: 1px solid rgba(255, 255, 255, .15); padding-top: 12px; min-width: 0; }
+}
+@media (max-width: 560px) { .rep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ─── MOBILE ─── */
+/* On a phone the 230px sidebar left the page about 160px to work in. Below 900px it
+   moves off-screen and the ☰ button slides it back in over the page; tapping the dark
+   overlay (or any link, which loads a new page) puts it away again. Screen only, so a
+   printed page comes out exactly as it does today. */
+.menu-toggle, .sidebar-overlay {
+    display: none;
+}
+
+@media screen and (max-width: 900px) {
+    #sidebar {
+        transform: translateX(100%);
+        transition: transform .2s ease;
+    }
+
+    #app.menu-open #sidebar {
+        transform: none;
+    }
+
+    .sb-logo {
+        padding-top: 62px;
+    }
+
+    #content {
+        margin-right: 0;
+    }
+
+    .page {
+        padding: 62px 14px 16px;
+    }
+
+    .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 60;
+        width: 40px;
+        height: 40px;
+        border: none;
+        border-radius: 10px;
+        background: #1e2a3a;
+        color: #fff;
+        font-size: 20px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    }
+
+    #app.menu-open .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .45);
+        z-index: 40;
+    }
+
+    /* A title and two buttons do not fit across a phone; let the buttons drop below. */
+    .page-header {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    /* Two cards a row instead of one, which also gives the drawer's double-width balance
+       card a second column to span. Report KPIs keep their own wider cards. */
+    .stats-grid:not(.report-kpis) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    /* A table wider than the phone scrolls sideways inside its box. .card and .rx-grid
+       clip their overflow for the rounded corners, so without this the extra columns
+       were cut off. */
+    .card-body, .rx-grid {
+        overflow-x: auto;
+    }
+
+    /* The suppliers page's detail column is a plain div, and a grid item will not shrink
+       below its widest content - the account table pushed the whole page sideways. */
+    .master-detail > div {
+        min-width: 0;
+    }
+
+        .card-body > table {
+            white-space: nowrap;
+        }
+
+    /* iPhone zooms the page in when a box with text under 16px is tapped, and stays
+       zoomed. 16px is the size at which it doesn't. */
+    input, select, textarea, .rx-grid input {
+        font-size: 16px;
+    }
+
+    /* Order pages give the form more of the phone's width - 24px each side was most of
+       what the prescription grid was missing. */
+    .wizard-content {
+        padding: 16px 12px;
+    }
+
+    /* The prescription boxes share the width left after the eye label instead of 72px
+       each, so the grid fits the phone and Axis is reachable without scrolling. */
+    .rx-grid th, .rx-grid td {
+        padding: 6px 4px;
+    }
+
+    .rx-grid input {
+        width: 100%;
+        padding: 6px 4px;
+    }
+
+}

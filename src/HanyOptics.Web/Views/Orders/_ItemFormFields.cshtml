@@ -1,0 +1,133 @@
+@model HanyOptics.BusinessLogic.Models.NewOrderItemRequest
+
+@*
+    The item fields shared by every place an order item is entered: step 2 of the
+    new-order wizard, adding an item to an order that already exists, and editing an item
+    still sitting in the draft. All of them bind the same NewOrderItemRequest and are
+    validated by the same INewOrderService.ValidateItemAsync, so one copy of the markup is
+    what stops the screens accepting different things.
+
+    Nothing here carries an element id. The edit popup puts a second copy of these fields
+    on a page that already has one, and ids would collide - with the modal's controls
+    silently driving the form underneath it. The behaviour in ~/js/order-item-form.js finds
+    everything through the data-role attributes below, scoped to this container, so the two
+    copies stay independent. Duplicate `name` attributes are harmless: the copies live in
+    separate <form> elements.
+*@
+<div data-item-form data-lookup-frame-url="@Url.Action("LookupFrame")">
+    <div class="section-divider"><span>📦 بيانات البند</span></div>
+
+    <div class="form-group">
+        <label>نوع البند</label>
+        <select asp-for="ItemType" data-role="itemType">
+            <option value="FrameLenses">🔷 إطار + عدسات (الأكثر شيوعاً)</option>
+            <option value="FrameOnly">🔶 إطار فقط</option>
+            <option value="LensesReplace">🔹 استبدال عدسات (إطار الزبون)</option>
+        </select>
+    </div>
+
+    <div data-role="frameSection">
+        <div class="section-divider"><span>🗃️ الإطار من المخزون</span></div>
+        <div class="form-group">
+            <label>باركود الإطار *</label>
+            <div class="input-group">
+                <input type="text" asp-for="FrameBarcode" data-role="barcodeInput" placeholder="HO-2026-XXXXX أو اسكان الباركود" />
+                <button type="button" class="btn btn-primary" data-role="searchFrameBtn">🔍 بحث</button>
+            </div>
+            <span asp-validation-for="FrameBarcode" class="field-error"></span>
+            <div class="frame-result" data-role="frameResult">
+                <div class="frame-result-title">✅ إطار موجود ومتاح</div>
+                <div class="frame-meta" data-role="frameMeta"></div>
+            </div>
+            <div class="frame-error" data-role="frameError"></div>
+        </div>
+        <div class="form-group">
+            <label>💰 السعر المتفق مع الزبون (ج) *</label>
+            <input type="number" asp-for="FrameAgreedPrice" data-role="framePriceInput" min="0" step="0.01" />
+            <span asp-validation-for="FrameAgreedPrice" class="field-error"></span>
+        </div>
+    </div>
+
+    <div data-role="extFrameSection" style="display:none">
+        <div class="section-divider"><span>📦 إطار الزبون</span></div>
+        <button type="button" class="collapsible-btn" data-role="extFrameToggleBtn">
+            <span>📦 وصف إطار الزبون (اختياري)</span><span data-role="extFrameArrow">▼</span>
+        </button>
+        <div class="collapsible-content" data-role="extFrameContent">
+            <div class="form-group">
+                <label>وصف إطار الزبون</label>
+                <input asp-for="ExternalFrameNotes" data-role="extFrameInput" placeholder="مثال: إطار Gucci أسود — جاب من عنده" />
+                <span asp-validation-for="ExternalFrameNotes" class="field-error"></span>
+                <div class="form-hint">اختياري — المهم هنا هو بيانات العدسات</div>
+            </div>
+        </div>
+    </div>
+
+    <div data-role="lensSection">
+        <div class="section-divider"><span>👁️ العدسات</span></div>
+        <div class="form-group">
+            <label>وصف العدسات *</label>
+            <input asp-for="LensDescription" data-role="lensDescInput" class="combo" list="lens-suggestions" autocomplete="off"
+                   placeholder="اختر من الأكثر استخدامًا أو اكتب" />
+            <span asp-validation-for="LensDescription" class="field-error"></span>
+        </div>
+        <div class="form-group">
+            <label>💰 سعر البيع (ج) *</label>
+            <input type="number" asp-for="LensSellPrice" data-role="lensSellInput" min="0" step="0.01" />
+            <span asp-validation-for="LensSellPrice" class="field-error"></span>
+        </div>
+        @* No supplier cost box. Nobody at the counter knows what the lab will charge at the
+           moment the order is taken, so it was being left blank or guessed - and a guessed
+           cost is worse than no cost, because it looks like a real figure in the profit
+           reports. See the note in NewOrderService. *@
+    </div>
+
+    <div data-role="doctorSection">
+        <div class="section-divider"><span>👁️ الروشتة الطبية</span></div>
+        <button type="button" class="collapsible-btn" data-role="rxToggleBtn">
+            <span>👁️ إدخال الروشتة (اختياري)</span><span data-role="rxArrow">▼</span>
+        </button>
+        <div class="collapsible-content" data-role="rxSection">
+            <div class="rx-grid">
+                <table>
+                    <thead><tr><th></th><th>كروي (Sph)</th><th>أسطواني (Cyl)</th><th>محور (Axis)</th></tr></thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يمنى</td>
+                            <td><input type="text" asp-for="RightSphere" data-rx-field placeholder="-2.25" /></td>
+                            <td><input type="text" asp-for="RightCylinder" data-rx-field placeholder="-0.75" /></td>
+                            <td><input type="text" asp-for="RightAxis" data-rx-field placeholder="90" /></td>
+                        </tr>
+                        <tr>
+                            <td style="padding:6px 10px;font-weight:600;color:#374151;white-space:nowrap">عين يسرى</td>
+                            <td><input type="text" asp-for="LeftSphere" data-rx-field placeholder="-1.75" /></td>
+                            <td><input type="text" asp-for="LeftCylinder" data-rx-field placeholder="-0.50" /></td>
+                            <td><input type="text" asp-for="LeftAxis" data-rx-field placeholder="85" /></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-row mt-2">
+                <div class="form-group">
+                    <label>PD — البُعد البؤري (ملم)</label>
+                    <input type="number" asp-for="Pd" data-rx-field placeholder="64" min="50" max="80" />
+                </div>
+                <div class="form-group">
+                    <label>ADD — للعدسات التقدمية</label>
+                    <input type="number" asp-for="AddPower" data-rx-field placeholder="2.00" step="0.25" min="0.75" max="3.50" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group mt-3">
+        <label>ملاحظات (اختياري)</label>
+        <input asp-for="Notes" placeholder="أي تعليمات إضافية..." />
+    </div>
+
+    <div class="amount-box mt-3">
+        <div class="amount-row"><span class="a-label">سعر الإطار</span><span class="a-val" data-role="previewFrame">٠ ج</span></div>
+        <div class="amount-row"><span class="a-label">سعر العدسات</span><span class="a-val" data-role="previewLens">٠ ج</span></div>
+        <div class="amount-row total"><span class="a-label">إجمالي البند</span><span class="a-val" data-role="previewTotal">٠ ج</span></div>
+    </div>
+</div>

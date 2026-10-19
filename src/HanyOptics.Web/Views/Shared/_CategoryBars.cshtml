@@ -1,0 +1,47 @@
+@model IReadOnlyList<HanyOptics.BusinessLogic.Models.CategorySplit>
+@using HanyOptics.Web.Models
+@using System.Globalization
+@*
+    One bar per expense category, split green (paid from the drawer's income) / amber (from
+    outside it), scaled to the largest. ViewData["Limit"]: show only the top N and fold the
+    rest into one "أنواع أخرى" line.
+*@
+@{
+    var limit = ViewData["Limit"] as int?;
+    var rows = Model.Select(c => (c.Category, c.FromDrawer, c.FromOutside, c.Total)).ToList();
+    if (limit is int l && rows.Count > l)
+    {
+        var rest = rows.Skip(l).ToList();
+        rows = rows.Take(l).ToList();
+        rows.Add(($"أنواع أخرى ({ExpenseDisplay.Number(rest.Count)})",
+                  rest.Sum(r => r.FromDrawer), rest.Sum(r => r.FromOutside), rest.Sum(r => r.Total)));
+    }
+    var max = rows.Count > 0 ? rows.Max(r => r.Total) : 0m;
+    string Width(decimal v) => (max > 0 ? v / max * 100 : 0).ToString("0.##", CultureInfo.InvariantCulture) + "%";
+}
+@if (rows.Count == 0)
+{
+    <div class="text-muted text-sm">لا توجد مصروفات.</div>
+}
+else
+{
+    <div class="rep-bars">
+        @foreach (var r in rows)
+        {
+            <div class="rep-bar">
+                <span class="name" title="@r.Category">@r.Category</span>
+                <div class="track">
+                    @if (r.FromDrawer > 0)
+                    {
+                        <span class="seg-d" style="width:@Width(r.FromDrawer)" title="من الإيرادات @ExpenseDisplay.Money(r.FromDrawer)"></span>
+                    }
+                    @if (r.FromOutside > 0)
+                    {
+                        <span class="seg-o" style="width:@Width(r.FromOutside)" title="من خارج الإيرادات @ExpenseDisplay.Money(r.FromOutside)"></span>
+                    }
+                </div>
+                <span class="val">@ExpenseDisplay.Money(r.Total)</span>
+            </div>
+        }
+    </div>
+}

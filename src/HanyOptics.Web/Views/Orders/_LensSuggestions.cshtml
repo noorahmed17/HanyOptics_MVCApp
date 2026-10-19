@@ -1,0 +1,14 @@
+@*
+    The drop-down behind the lens box (id lens-suggestions): the descriptions used most
+    often, most-used first. Rendered once per page, outside any form, so the item form and
+    the edit-item window that is fetched into the same page share one list.
+*@
+@{
+    var suggestions = ViewBag.LensSuggestions as IReadOnlyList<string> ?? [];
+}
+<datalist id="lens-suggestions">
+    @foreach (var lens in suggestions)
+    {
+        <option value="@lens"></option>
+    }
+</datalist>

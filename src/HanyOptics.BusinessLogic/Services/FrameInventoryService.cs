@@ -1,0 +1,291 @@
+using System.Data;
+using HanyOptics.BusinessLogic.Interfaces;
+using HanyOptics.BusinessLogic.Models;
+using HanyOptics.DataAccess.Persistence;
+using HanyOptics.Domain.Entities;
+using HanyOptics.Domain.Enums;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace HanyOptics.BusinessLogic.Services;
+
+public class FrameInventoryService : IFrameInventoryService
+{
+    private readonly HanyOpticsDbContext _dbContext;
+    private readonly ICurrentUser _currentUser;
+    private readonly ILogger<FrameInventoryService> _logger;
+
+    public FrameInventoryService(HanyOpticsDbContext dbContext, ICurrentUser currentUser, ILogger<FrameInventoryService> logger)
+    {
+        _dbContext = dbContext;
+        _currentUser = currentUser;
+        _logger = logger;
+    }
+
+    // The filters, in one place, so the listing and the summary can never drift apart -
+    // a summary built from a slightly different WHERE clause would quietly describe a
+    // different set of frames than the table under it.
+    private IQueryable<Frame> FilteredFrames(
+        FrameStatus? status,
+        FrameCategory? category,
+        FrameTrackingType? trackingType,
+        string? searchTerm)
+    {
+        var query = _dbContext.Frames.AsNoTracking().AsQueryable();
+
+        if (status.HasValue)
+            query = query.Where(f => f.Status == status.Value);
+        if (category.HasValue)
+            query = query.Where(f => f.Category == category.Value);
+        if (trackingType.HasValue)
+            query = query.Where(f => f.TrackingType == trackingType.Value);
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var pattern = $"%{searchTerm.Trim()}%";
+            query = query.Where(f =>
+                EF.Functions.Like(f.Barcode, pattern) ||
+                (f.Brand != null && EF.Functions.Like(f.Brand, pattern)) ||
+                (f.ModelName != null && EF.Functions.Like(f.ModelName, pattern)) ||
+                (f.Color != null && EF.Functions.Like(f.Color, pattern)));
+        }
+
+        return query;
+    }
+
+    public async Task<PagedResult<FrameListItem>> GetFramesAsync(
+        FrameStatus? status = null,
+        FrameCategory? category = null,
+        FrameTrackingType? trackingType = null,
+        string? searchTerm = null,
+        int? page = null,
+        int? pageSize = null)
+    {
+        var query = FilteredFrames(status, category, trackingType, searchTerm);
+
+        var total = await query.CountAsync();
+        var (currentPage, size) = PagedResult<FrameListItem>.Normalise(page, pageSize ?? PageSizes.Frames, total);
+
+        // Whatever is still sellable first - that is what someone standing at the counter
+        // with a customer needs to see - then newest, since recent stock is what staff are
+        // least likely to remember.
+        var items = await query
+            .OrderByDescending(f => f.QtyAvailable > 0)
+            .ThenByDescending(f => f.FrameId)
+            .Skip((currentPage - 1) * size)
+            .Take(size)
+            .Select(f => new FrameListItem
+            {
+                FrameId = f.FrameId,
+                Barcode = f.Barcode,
+                Brand = f.Brand,
+                ModelName = f.ModelName,
+                Color = f.Color,
+                Size = f.Size,
+                Category = f.Category,
+                TrackingType = f.TrackingType,
+                CostPrice = f.CostPrice,
+                SellPrice = f.SellPrice,
+                QtyAvailable = f.QtyAvailable,
+                QtyInitial = f.QtyInitial,
+                Status = f.Status,
+                Notes = f.Notes
+            })
+            .ToListAsync();
+
+        return new PagedResult<FrameListItem>
+        {
+            Items = items,
+            TotalCount = total,
+            Page = currentPage,
+            PageSize = size
+        };
+    }
+
+    // Aggregated by the database over the whole filtered set. It runs off the same
+    // FilteredFrames query the listing uses, so the cards and the table always describe the
+    // same frames even though the table only shows one page of them.
+    public async Task<FrameInventorySummary> SummariseAsync(
+        FrameStatus? status = null,
+        FrameCategory? category = null,
+        FrameTrackingType? trackingType = null,
+        string? searchTerm = null)
+    {
+        var query = FilteredFrames(status, category, trackingType, searchTerm);
+
+        // One round trip, and SUM over no rows is NULL in SQL rather than 0 - hence the
+        // casts to decimal? and the coalesce.
+        var totals = await query
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                LineCount = g.Count(),
+                Units = (int?)g.Sum(f => f.QtyAvailable),
+                AtCost = (decimal?)g.Sum(f => f.CostPrice * f.QtyAvailable),
+                AtSell = (decimal?)g.Sum(f => f.SellPrice * f.QtyAvailable)
+            })
+            .FirstOrDefaultAsync();
+
+        return new FrameInventorySummary
+        {
+            LineCount = totals?.LineCount ?? 0,
+            TotalUnitsAvailable = totals?.Units ?? 0,
+            StockValueAtCost = totals?.AtCost ?? 0m,
+            StockValueAtSell = totals?.AtSell ?? 0m
+        };
+    }
+
+    public async Task<AddFrameOutcome> AddFrameAsync(AddFrameRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Brand))
+            return AddFrameOutcome.Failure("أدخل الماركة");
+
+        // sp_generate_barcode hides the sell price inside the code, so there is no barcode
+        // to generate without one. Left blank is not the same as zero, but neither can be
+        // saved: zero would produce a code meaning "free".
+        if (request.SellPrice is null or <= 0)
+            return AddFrameOutcome.Failure("أدخل سعر البيع — الباركود بيتولّد منه");
+
+        // Cost is genuinely optional - stock sometimes arrives before the invoice does -
+        // so a blank box means "not known yet" and stores as 0 rather than blocking a save.
+        var costPrice = request.CostPrice ?? 0m;
+        if (costPrice < 0)
+            return AddFrameOutcome.Failure("التكلفة غير صحيحة");
+
+        // An individual frame is one physical piece, so its quantity is not the user's to
+        // set - whatever the form posted is replaced rather than validated.
+        var quantity = request.TrackingType == FrameTrackingType.Individual ? 1 : request.Quantity;
+        if (quantity < 1)
+            return AddFrameOutcome.Failure("الكمية غير صحيحة");
+
+        try
+        {
+            var frameIdParam = new SqlParameter("@p_frame_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
+            var barcodeOut = new SqlParameter("@p_barcode_out", SqlDbType.NVarChar, 50) { Direction = ParameterDirection.Output };
+
+            // Generating and inserting in one batch, with a retry, rather than two round
+            // trips. sp_generate_barcode checks the code is unused, but that check and our
+            // INSERT are not one instant: another till receiving stock at the same moment
+            // could take the code in between. The conditional INSERT catches that, and the
+            // loop simply asks for another code instead of failing in the user's face.
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                """
+                SET NOCOUNT ON;
+
+                DECLARE @attempt INT = 0, @barcode NVARCHAR(50), @done BIT = 0;
+
+                WHILE @attempt < 5 AND @done = 0
+                BEGIN
+                    EXEC sp_generate_barcode @sell_price = @p_sell, @barcode = @barcode OUTPUT;
+
+                    INSERT INTO frames (branch_id, barcode, tracking_type, category, brand, model_name,
+                                        color, size, cost_price, sell_price, qty_initial, qty_available,
+                                        status, notes)
+                    SELECT 1, @barcode, @p_tracking, @p_category, @p_brand, @p_model,
+                           @p_color, @p_size, @p_cost, @p_sell, @p_qty, @p_qty,
+                           'available', @p_notes
+                    WHERE NOT EXISTS (SELECT 1 FROM frames WHERE barcode = @barcode);
+
+                    IF @@ROWCOUNT = 1
+                    BEGIN
+                        SET @p_frame_id     = SCOPE_IDENTITY();
+                        SET @p_barcode_out  = @barcode;
+                        SET @done = 1;
+                    END
+
+                    SET @attempt = @attempt + 1;
+                END
+
+                IF @done = 0
+                    THROW 50000, N'تعذّر توليد باركود فريد للإطار — حاول تاني', 1;
+                """,
+                new SqlParameter("@p_tracking", SqlDbType.NVarChar, 10) { Value = request.TrackingType == FrameTrackingType.Bulk ? "bulk" : "individual" },
+                new SqlParameter("@p_category", SqlDbType.NVarChar, 10) { Value = request.Category == FrameCategory.Sun ? "sun" : "optical" },
+                new SqlParameter("@p_brand", SqlDbType.NVarChar, 100) { Value = request.Brand.Trim() },
+                new SqlParameter("@p_model", SqlDbType.NVarChar, 100) { Value = (object?)request.ModelName?.Trim() ?? DBNull.Value },
+                new SqlParameter("@p_color", SqlDbType.NVarChar, 50) { Value = (object?)request.Color?.Trim() ?? DBNull.Value },
+                new SqlParameter("@p_size", SqlDbType.NVarChar, 20) { Value = (object?)request.Size?.Trim() ?? DBNull.Value },
+                new SqlParameter("@p_cost", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = costPrice },
+                new SqlParameter("@p_sell", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = request.SellPrice.Value },
+                new SqlParameter("@p_qty", SqlDbType.Int) { Value = quantity },
+                new SqlParameter("@p_notes", SqlDbType.NVarChar, 500) { Value = (object?)request.Notes?.Trim() ?? DBNull.Value },
+                frameIdParam,
+                barcodeOut);
+
+            var frameId = frameIdParam.Value is int id ? id : 0;
+            var barcode = barcodeOut.Value as string;
+
+            _logger.LogInformation("Added frame {FrameId} to stock as {Barcode}, qty {Qty}.", frameId, barcode, quantity);
+            return AddFrameOutcome.Success(frameId, barcode ?? string.Empty);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogError(ex, "SQL error adding frame {Brand}. SqlErrors={SqlErrors}",
+                request.Brand, StoredProcedureErrors.Describe(ex));
+            return AddFrameOutcome.Failure(StoredProcedureErrors.ToUserMessage(ex, "الباركود ده مسجّل بالفعل"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error adding frame {Brand}.", request.Brand);
+            return AddFrameOutcome.Failure(StoredProcedureErrors.GenericMessage);
+        }
+    }
+
+    // Independent per-frame attempts, not one shared transaction - the same reasoning as
+    // BulkUpdateStatusAsync: a batch that mixes bulk and individually-tracked frames (a
+    // selection made by mistake, or the checkbox's own tracking-type restriction bypassed
+    // some other way) is expected to partially fail, and failing the whole batch over one
+    // frame that was never going to accept a restock would be worse than reporting exactly
+    // which ones didn't.
+    public async Task<BulkRestockResult> RestockFramesAsync(IReadOnlyList<int> frameIds, int qtyToAdd)
+    {
+        var barcodes = await _dbContext.Frames
+            .AsNoTracking()
+            .Where(f => frameIds.Contains(f.FrameId))
+            .ToDictionaryAsync(f => f.FrameId, f => f.Barcode);
+
+        // Checked once, up front, rather than letting sp_restock_bulk_frame reject every
+        // single call with the same message - a batch cannot be partially valid on this
+        // one condition the way it can be on tracking type.
+        if (qtyToAdd <= 0)
+        {
+            return new BulkRestockResult
+            {
+                Failures = frameIds
+                    .Select(id => new BulkRestockFailure(id, barcodes.GetValueOrDefault(id, id.ToString()), "الكمية المُضافة يجب أن تكون أكبر من صفر"))
+                    .ToList()
+            };
+        }
+
+        var recordedBy = _currentUser.RequireUserId();
+        var failures = new List<BulkRestockFailure>();
+        var successCount = 0;
+
+        foreach (var frameId in frameIds)
+        {
+            try
+            {
+                await _dbContext.Database.ExecuteSqlRawAsync(
+                    "EXEC sp_restock_bulk_frame @frame_id=@p_frame_id, @qty_to_add=@p_qty_to_add, @recorded_by=@p_recorded_by",
+                    new SqlParameter("@p_frame_id", frameId),
+                    new SqlParameter("@p_qty_to_add", qtyToAdd),
+                    new SqlParameter("@p_recorded_by", recordedBy));
+                successCount++;
+            }
+            catch (SqlException ex)
+            {
+                _logger.LogError(ex,
+                    "SQL error restocking frame {FrameId}. QtyToAdd={QtyToAdd} SqlErrors={SqlErrors}",
+                    frameId, qtyToAdd, StoredProcedureErrors.Describe(ex));
+
+                failures.Add(new BulkRestockFailure(
+                    frameId,
+                    barcodes.GetValueOrDefault(frameId, frameId.ToString()),
+                    StoredProcedureErrors.ToUserMessage(ex, "خطأ في البيانات")));
+            }
+        }
+
+        return new BulkRestockResult { SuccessCount = successCount, Failures = failures };
+    }
+}

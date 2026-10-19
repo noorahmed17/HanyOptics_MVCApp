@@ -1,0 +1,51 @@
+using HanyOptics.BusinessLogic.Models;
+using HanyOptics.Domain.Entities;
+
+namespace HanyOptics.BusinessLogic.Interfaces;
+
+// Backs the multi-step "new order" wizard (customer -> items -> payment).
+//
+// The wizard builds the order as an OrderDraft held outside the database; this service
+// only reads reference data and validates while that's going on. The single writing
+// method is CommitDraftAsync, called once when the user finishes the last step, so an
+// abandoned wizard can never leave a half-built order behind.
+//
+// CommitDraftAsync relies on the DB triggers (T1/T2/T3) to keep orders.total_amount /
+// paid_amount and frames.qty_available in sync - it only invokes the stored procedures,
+// it never computes or writes those derived values itself. It returns a typed outcome
+// (never lets a raw SqlException escape) so the controller can always show a friendly
+// Arabic message instead of the framework's exception page.
+public interface INewOrderService
+{
+    Task<CustomerLookupResult> LookupCustomerByPhoneAsync(string phone);
+    Task<FrameLookupResult> LookupFrameByBarcodeAsync(string barcode);
+    Task<IReadOnlyList<Doctor>> GetDoctorsAsync();
+
+    // The lens descriptions typed most often, most-used first - offered as the drop-down on
+    // the lens box so the counter picks a common one instead of retyping it (and spelling it
+    // a slightly different way each time).
+    Task<IReadOnlyList<string>> GetLensSuggestionsAsync();
+    Task<Customer?> GetCustomerAsync(int customerId);
+
+    // Checked while the user is still on step 1 so a clash is reported immediately rather
+    // than after they've entered every item. sp_create_order re-checks it authoritatively
+    // at commit time, which is what closes the race between two staff members.
+    Task<bool> IsInvoiceNumberTakenAsync(string invoiceNumber);
+
+    // Validates one item and resolves its barcode to a frame, without reserving anything.
+    Task<DraftItemOutcome> ValidateItemAsync(NewOrderItemRequest request);
+
+    // Turns an item already in the draft back into a form model, so it can be reopened and
+    // corrected. Pure translation - nothing is read from or written to the database.
+    NewOrderItemRequest ToRequest(OrderDraftItem item);
+
+    // The one and only write path: creates the order, its items and the opening payment
+    // as a single all-or-nothing unit.
+    Task<CommitDraftOutcome> CommitDraftAsync(OrderDraft draft, NewOrderPaymentRequest payment);
+
+    // Adds one item to an order that is already saved - the customer adding a second pair,
+    // or replacing an item that was cancelled. Lives here rather than on IOrderService
+    // because it reuses this service's item validation and its sp_add_order_item call, so
+    // an item added later is checked exactly like one entered in the wizard.
+    Task<AddItemToOrderOutcome> AddItemToExistingOrderAsync(int orderId, NewOrderItemRequest request);
+}
