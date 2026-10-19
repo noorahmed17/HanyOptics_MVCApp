@@ -607,3 +607,116 @@ tr.row-hl td { background: #eff6ff; }
     .rep-side { border-right: none; padding-right: 0; border-top: 1px solid rgba(255, 255, 255, .15); padding-top: 12px; min-width: 0; }
 }
 @media (max-width: 560px) { .rep-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ─── MOBILE ─── */
+/* On a phone the 230px sidebar left the page about 160px to work in. Below 900px it
+   moves off-screen and the ☰ button slides it back in over the page; tapping the dark
+   overlay (or any link, which loads a new page) puts it away again. Screen only, so a
+   printed page comes out exactly as it does today. */
+.menu-toggle, .sidebar-overlay {
+    display: none;
+}
+
+@media screen and (max-width: 900px) {
+    #sidebar {
+        transform: translateX(100%);
+        transition: transform .2s ease;
+    }
+
+    #app.menu-open #sidebar {
+        transform: none;
+    }
+
+    .sb-logo {
+        padding-top: 62px;
+    }
+
+    #content {
+        margin-right: 0;
+    }
+
+    .page {
+        padding: 62px 14px 16px;
+    }
+
+    .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 60;
+        width: 40px;
+        height: 40px;
+        border: none;
+        border-radius: 10px;
+        background: #1e2a3a;
+        color: #fff;
+        font-size: 20px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+    }
+
+    #app.menu-open .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .45);
+        z-index: 40;
+    }
+
+    /* A title and two buttons do not fit across a phone; let the buttons drop below. */
+    .page-header {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    /* Two cards a row instead of one, which also gives the drawer's double-width balance
+       card a second column to span. Report KPIs keep their own wider cards. */
+    .stats-grid:not(.report-kpis) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    /* A table wider than the phone scrolls sideways inside its box. .card and .rx-grid
+       clip their overflow for the rounded corners, so without this the extra columns
+       were cut off. */
+    .card-body, .rx-grid {
+        overflow-x: auto;
+    }
+
+    /* The suppliers page's detail column is a plain div, and a grid item will not shrink
+       below its widest content - the account table pushed the whole page sideways. */
+    .master-detail > div {
+        min-width: 0;
+    }
+
+        .card-body > table {
+            white-space: nowrap;
+        }
+
+    /* iPhone zooms the page in when a box with text under 16px is tapped, and stays
+       zoomed. 16px is the size at which it doesn't. */
+    input, select, textarea, .rx-grid input {
+        font-size: 16px;
+    }
+
+    /* Order pages give the form more of the phone's width - 24px each side was most of
+       what the prescription grid was missing. */
+    .wizard-content {
+        padding: 16px 12px;
+    }
+
+    /* The prescription boxes share the width left after the eye label instead of 72px
+       each, so the grid fits the phone and Axis is reachable without scrolling. */
+    .rx-grid th, .rx-grid td {
+        padding: 6px 4px;
+    }
+
+    .rx-grid input {
+        width: 100%;
+        padding: 6px 4px;
+    }
+
+}

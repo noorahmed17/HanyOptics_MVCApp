@@ -21,6 +21,8 @@
 <body>
 <div id="app">
 
+    <button type="button" id="menu-toggle" class="menu-toggle" aria-label="القائمة">☰</button>
+
     <aside id="sidebar">
         <div class="sb-logo">
             <h1>👓 هاني أوبتكس</h1>
@@ -81,6 +83,8 @@
             @RenderBody()
         </div>
     </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
 </div>
 @* Loaded on every page rather than per-screen: the scanner is a keyboard, so its input

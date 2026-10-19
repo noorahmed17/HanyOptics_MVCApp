@@ -32,3 +32,15 @@
         }
     });
 })();
+
+// On a phone the sidebar sits off-screen. The ☰ button slides it in over the page, and a
+// tap on the dark overlay slides it back. Following a link needs nothing here - the next
+// page loads with the sidebar closed.
+(function () {
+    var app = document.getElementById("app");
+    var toggle = document.getElementById("menu-toggle");
+    var overlay = document.getElementById("sidebar-overlay");
+    if (!app || !toggle || !overlay) return;
+    toggle.addEventListener("click", function () { app.classList.toggle("menu-open"); });
+    overlay.addEventListener("click", function () { app.classList.remove("menu-open"); });
+})();
