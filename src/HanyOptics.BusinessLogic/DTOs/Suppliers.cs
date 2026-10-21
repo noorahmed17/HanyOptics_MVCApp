@@ -1,5 +1,12 @@
 namespace HanyOptics.BusinessLogic.Models;
 
+// What a supplier sells, as suppliers.supplier_type stores it.
+public static class SupplierTypes
+{
+    public const string Frames = "frames";
+    public const string Lenses = "lenses";
+}
+
 // One row of vw_supplier_balances. BalanceDue is the view's own figure
 // (invoices - returns - payments), never recomputed here.
 public class SupplierBalance
@@ -11,6 +18,7 @@ public class SupplierBalance
     public decimal TotalReturned { get; init; }
     public decimal TotalPaid { get; init; }
     public decimal BalanceDue { get; init; }
+    public string SupplierType { get; init; } = SupplierTypes.Frames;
 }
 
 public class SupplierInvoiceOption
@@ -19,6 +27,11 @@ public class SupplierInvoiceOption
     public DateOnly PurchaseDate { get; init; }
     public decimal Amount { get; init; }
     public string? Notes { get; init; }
+
+    // The balance the supplier printed on the invoice, and what this system made it when
+    // the invoice was entered. Both null when the invoice carried no balance.
+    public decimal? StatedBalance { get; init; }
+    public decimal? SystemBalanceAtEntry { get; init; }
 }
 
 public static class SupplierLedgerKinds
@@ -51,6 +64,7 @@ public class CreateSupplierRequest
     public string? Name { get; set; }
     public string? Phone { get; set; }
     public string? Notes { get; set; }
+    public string? SupplierType { get; set; }
 }
 
 public class SupplierInvoiceRequest
@@ -59,6 +73,7 @@ public class SupplierInvoiceRequest
     public decimal? Amount { get; set; }
     public DateOnly? PurchaseDate { get; set; }
     public string? Notes { get; set; }
+    public decimal? StatedBalance { get; set; }
 }
 
 public class SupplierReturnRequest
@@ -67,5 +82,14 @@ public class SupplierReturnRequest
     public decimal? Amount { get; set; }
     public int? PurchaseId { get; set; }
     public DateOnly? ReturnDate { get; set; }
+    public string? Notes { get; set; }
+}
+
+public class SupplierPaymentRequest
+{
+    public int SupplierId { get; set; }
+    public decimal? Amount { get; set; }
+    public string FundingSource { get; set; } = FundingSources.Outside;
+    public string PaymentMethod { get; set; } = PaymentMethods.Cash;
     public string? Notes { get; set; }
 }

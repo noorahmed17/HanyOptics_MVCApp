@@ -25,13 +25,14 @@ public class SupplierService : ISupplierService
         _logger = logger;
     }
 
-    public Task<IReadOnlyList<SupplierBalance>> ListAsync() =>
-        WithConnectionAsync<IReadOnlyList<SupplierBalance>>(_dbContext, async connection =>
-            // Owed first, largest first - that is the order someone deciding who to pay
-            // reads the list in.
-            await QueryAsync(connection,
-                "SELECT * FROM dbo.vw_supplier_balances ORDER BY CASE WHEN balance_due > 0 THEN 0 ELSE 1 END, balance_due DESC, name;",
-                MapBalance));
+    public Task<IReadOnlyList<SupplierBalance>> ListAsync(string? type = null) =>
+    WithConnectionAsync<IReadOnlyList<SupplierBalance>>(_dbContext, async connection =>
+        // Owed first, largest first - that is the order someone deciding who to pay
+        // reads the list in.
+        await QueryAsync(connection,
+            "SELECT * FROM dbo.vw_supplier_balances WHERE (@type IS NULL OR supplier_type = @type) ORDER BY CASE WHEN balance_due > 0 THEN 0 ELSE 1 END, balance_due DESC, name;",
+            MapBalance,
+            NVarChar("@type", type, 10)));
 
     public Task<IReadOnlyList<SupplierOption>> GetOptionsAsync() =>
         WithConnectionAsync<IReadOnlyList<SupplierOption>>(_dbContext, async connection =>
@@ -55,13 +56,15 @@ public class SupplierService : ISupplierService
                 notes = await command.ExecuteScalarAsync() as string;
 
             var invoices = await QueryAsync(connection,
-                "SELECT purchase_id, purchase_date, total_amount, notes FROM dbo.purchase_invoices WHERE supplier_id = @id ORDER BY purchase_date DESC, purchase_id DESC;",
+                "SELECT purchase_id, purchase_date, total_amount, notes, stated_balance, system_balance_at_entry FROM dbo.purchase_invoices WHERE supplier_id = @id ORDER BY purchase_date DESC, purchase_id DESC;",
                 r => new SupplierInvoiceOption
                 {
                     PurchaseId = r.GetInt32(0),
                     PurchaseDate = DateOnly.FromDateTime(r.GetDateTime(1)),
                     Amount = r.GetDecimal(2),
-                    Notes = r.IsDBNull(3) ? null : r.GetString(3)
+                    Notes = r.IsDBNull(3) ? null : r.GetString(3),
+                    StatedBalance = r.IsDBNull(4) ? null : r.GetDecimal(4),
+                    SystemBalanceAtEntry = r.IsDBNull(5) ? null : r.GetDecimal(5)
                 },
                 new SqlParameter("@id", supplierId));
 
@@ -114,13 +117,14 @@ public class SupplierService : ISupplierService
                     ROLLBACK TRANSACTION;
                     THROW 50000, N'يوجد مورد بهذا الاسم بالفعل.', 1;
                 END
-                INSERT INTO dbo.suppliers (name, phone, notes) VALUES (@p_name, @p_phone, @p_notes);
+                INSERT INTO dbo.suppliers (name, phone, notes, supplier_type) VALUES (@p_name, @p_phone, @p_notes, @p_type);
                 SET @p_id = CAST(SCOPE_IDENTITY() AS INT);
                 COMMIT TRANSACTION;
                 """,
                 NVarChar("@p_name", name, 100),
                 NVarChar("@p_phone", Clean(request.Phone), 20),
                 NVarChar("@p_notes", Clean(request.Notes), 500),
+                NVarChar("@p_type", request.SupplierType == SupplierTypes.Lenses ? SupplierTypes.Lenses : SupplierTypes.Frames, 10),
                 idParam);
 
             return CreateOutcome.Success((int)idParam.Value!);
@@ -146,14 +150,20 @@ public class SupplierService : ISupplierService
             """
             IF NOT EXISTS (SELECT 1 FROM dbo.suppliers WHERE supplier_id = @p_supplier)
                 THROW 50000, N'المورد غير موجود.', 1;
-            INSERT INTO dbo.purchase_invoices (supplier_id, purchase_date, total_amount, notes, created_by)
-            VALUES (@p_supplier, ISNULL(@p_date, dbo.fn_business_date(SYSDATETIME())), @p_amount, @p_notes, @p_user);
+            -- What the account comes to once this invoice is in, kept beside the balance the
+            -- supplier printed on it, so a return or payment nobody entered shows as a gap.
+            DECLARE @after DECIMAL(12,2) =
+                ISNULL((SELECT balance_due FROM dbo.vw_supplier_balances WHERE supplier_id = @p_supplier), 0) + @p_amount;
+            INSERT INTO dbo.purchase_invoices (supplier_id, purchase_date, total_amount, notes, created_by, stated_balance, system_balance_at_entry)
+            VALUES (@p_supplier, ISNULL(@p_date, dbo.fn_business_date(SYSDATETIME())), @p_amount, @p_notes, @p_user,
+                    @p_stated, CASE WHEN @p_stated IS NULL THEN NULL ELSE @after END);
             """,
             new SqlParameter("@p_supplier", request.SupplierId),
             new SqlParameter("@p_date", SqlDbType.Date) { Value = request.PurchaseDate.HasValue ? request.PurchaseDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value },
             Money("@p_amount", request.Amount),
             NVarChar("@p_notes", Clean(request.Notes), 500),
-            new SqlParameter("@p_user", _currentUser.RequireUserId()));
+            new SqlParameter("@p_user", _currentUser.RequireUserId()),
+            Money("@p_stated", request.StatedBalance));
     }
 
     public Task<OperationResult> AddReturnAsync(SupplierReturnRequest request)
@@ -209,6 +219,7 @@ public class SupplierService : ISupplierService
         TotalInvoiced = r.Decimal("total_invoiced"),
         TotalReturned = r.Decimal("total_returned"),
         TotalPaid = r.Decimal("total_paid"),
-        BalanceDue = r.Decimal("balance_due")
+        BalanceDue = r.Decimal("balance_due"),
+        SupplierType = r.GetString(r.GetOrdinal("supplier_type"))
     };
 }

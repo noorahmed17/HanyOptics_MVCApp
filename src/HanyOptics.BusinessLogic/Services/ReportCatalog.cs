@@ -95,6 +95,37 @@ internal static class ReportCatalog
             ]
         },
 
+                new ReportDefinition
+        {
+            Key = "lens-profit",
+            Title = "ربح العدسات",
+            Description = "مبيعات العدسات ناقص فواتير شركات العدسات بعد المرتجعات، يومًا بيوم.",
+            Icon = "👓",
+            Group = ReportGroup.Money,
+            Sql = """
+                  SELECT report_date, lens_sales, lens_invoiced, lens_returned, lens_profit
+                  FROM vw_lens_profit_daily
+                  WHERE (@from IS NULL OR report_date >= @from)
+                    AND (@to   IS NULL OR report_date <= @to)
+                  """,
+            OrderBy = "report_date DESC",
+            Columns =
+            [
+                new() { Key = "report_date",   Label = "التاريخ",        Type = ReportColumnType.Date },
+                new() { Key = "lens_sales",    Label = "مبيعات العدسات", Type = ReportColumnType.Money },
+                new() { Key = "lens_invoiced", Label = "فواتير الشركات", Type = ReportColumnType.Money },
+                new() { Key = "lens_returned", Label = "المرتجعات",      Type = ReportColumnType.Money },
+                new() { Key = "lens_profit",   Label = "ربح العدسات",    Type = ReportColumnType.Money, SignedMoney = true }
+            ],
+            Kpis =
+            [
+                new() { Label = "مبيعات العدسات", Column = "lens_sales" },
+                new() { Label = "فواتير الشركات", Column = "lens_invoiced" },
+                new() { Label = "المرتجعات",      Column = "lens_returned" },
+                new() { Label = "ربح العدسات",    Column = "lens_profit" }
+            ]
+        },
+
         new ReportDefinition
         {
             Key = "staff-sales",
