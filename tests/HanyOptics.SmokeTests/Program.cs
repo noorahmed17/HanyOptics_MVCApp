@@ -594,13 +594,16 @@ var expUser =factory.CreateClient(new WebApplicationFactoryClientOptions { Allow
 var userDrawer = await expUser.GetAsync("/Drawer");
 var userDrawerHtml = await userDrawer.Content.ReadAsStringAsync();
 Check("User: حركة الدرج is open to staff", userDrawer.StatusCode == HttpStatusCode.OK);
-Check("User: the sidebar offers حركة الدرج only",
-      userDrawerHtml.Contains("حركة الدرج") && !userDrawerHtml.Contains("/Suppliers") && !userDrawerHtml.Contains("/Suppliers"));
-foreach (var url in new[] { "/Expenses", "/Suppliers" })
+Check("User: the sidebar offers حركة الدرج and شركات العدسات only",
+          userDrawerHtml.Contains("حركة الدرج") && userDrawerHtml.Contains("شركات العدسات")
+      && !userDrawerHtml.Contains("المصروفات والإيرادات"));
+foreach (var url in new[] { "/Expenses" })
 {
     var res = await expUser.GetAsync(url);
     Check($"User: {url} is refused", res.StatusCode != HttpStatusCode.OK, res.StatusCode.ToString());
 }
+var userSuppliers = await expUser.GetAsync("/Suppliers");
+Check("User: شركات العدسات opens for staff", userSuppliers.StatusCode == HttpStatusCode.OK, userSuppliers.StatusCode.ToString());
 var userCorr = await expUser.GetAsync("/Corrections?tab=entries");
 var userCorrHtml = await userCorr.Content.ReadAsStringAsync();
 Check("User: التصحيحات opens on الطلبات only",

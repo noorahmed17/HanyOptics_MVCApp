@@ -58,6 +58,10 @@
                     <a class="@NavClass("Suppliers") nav-sub" asp-controller="Suppliers" asp-action="Index">الموردون</a>
                     @* <a class="@NavClass("Corrections") nav-sub" asp-controller="Corrections" asp-action="Index">التصحيحات</a> *@
                 }
+                else
+                {
+                    <a class="@NavClass("Suppliers") nav-sub" asp-controller="Suppliers" asp-action="Index">شركات العدسات</a>
+                }
             </details>
             <a class="@NavClass("Corrections")" asp-controller="Corrections" asp-action="Index"><span class="nav-icon">✏️</span> التصحيحات</a>
             <a class="@NavClass("DoctorsAdmin")" asp-controller="DoctorsAdmin" asp-action="Index"><span class="nav-icon">🩺</span> الأطباء</a>

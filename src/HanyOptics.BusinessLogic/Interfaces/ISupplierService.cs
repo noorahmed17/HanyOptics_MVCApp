@@ -5,10 +5,11 @@ namespace HanyOptics.BusinessLogic.Interfaces;
 // Each supplier's account: what was bought, what went back, what was paid, what is owed.
 //
 // Balances are read from vw_supplier_balances. Payments to a supplier are expense rows
-// carrying its id (recorded from المصروفات والإيرادات), so nothing here writes money.
+// carrying its id (written through IExpenseService), so nothing here writes money.
 public interface ISupplierService
 {
-    Task<IReadOnlyList<SupplierBalance>> ListAsync();
+    // type: null for every supplier, or one of SupplierTypes.
+    Task<IReadOnlyList<SupplierBalance>> ListAsync(string? type = null);
 
     Task<IReadOnlyList<SupplierOption>> GetOptionsAsync();
 
