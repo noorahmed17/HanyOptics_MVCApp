@@ -91,7 +91,7 @@ public class DailyCloseReportService : IDailyCloseReportService
         // The same stretch of days at the start of the month before, capped at its end.
         var prevFirst = from.AddMonths(-1);
         var prevLast = new DateOnly(prevFirst.Year, prevFirst.Month, DateTime.DaysInMonth(prevFirst.Year, prevFirst.Month));
-        var compareTo = prevFirst.AddDays(to.DayNumber - from.DayNumber);
+        var compareTo = isCurrent ? prevFirst.AddDays(to.DayNumber - from.DayNumber) : prevLast;
         if (compareTo > prevLast) compareTo = prevLast;
 
         var entries = (await _expenses.GetEntriesBetweenAsync(from, to))

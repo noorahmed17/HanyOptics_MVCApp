@@ -44,3 +44,34 @@
     toggle.addEventListener("click", function () { app.classList.toggle("menu-open"); });
     overlay.addEventListener("click", function () { app.classList.remove("menu-open"); });
 })();
+
+// A slow connection makes a second tap on a save button look like the first did nothing,
+// and the same payment, expense or invoice is then recorded twice. The button is switched
+// off once the form is really on its way.
+//
+// Switched off after the event rather than inside it: a form stopped by its own check (a
+// missing reason, a confirm answered with إلغاء) or sent in the background only reports
+// defaultPrevented once every handler has run - and by then the clicked button's own
+// name/value (إضافة بند آخر / التالي) has already been read into the submission.
+(function () {
+    document.addEventListener("submit", function (e) {
+        var form = e.target;
+        if ((form.getAttribute("method") || "").toLowerCase() !== "post") return;
+        var button = e.submitter || form.querySelector('button[type="submit"]');
+        if (!button) return;
+        setTimeout(function () {
+            if (e.defaultPrevented) return;
+            button.disabled = true;
+            button.dataset.busy = "1";
+        }, 0);
+    });
+
+    // The browser's Back button can bring the page back exactly as it was left, with the
+    // button still switched off - so it is switched back on.
+    window.addEventListener("pageshow", function () {
+        document.querySelectorAll('button[data-busy="1"]').forEach(function (b) {
+            b.disabled = false;
+            delete b.dataset.busy;
+        });
+    });
+})();

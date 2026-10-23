@@ -351,10 +351,21 @@
         function stageEdit(event) {
             event.preventDefault();
             const form = event.target;
+
+            // Sent in the background, so the site-wide double-submit guard never sees it. A
+            // second click while the first is still on its way would stage the same payment
+            // twice; the popup is re-rendered on success, so the button only needs turning
+            // back on when the request fails.
+            const button = event.submitter;
+            if (button) button.disabled = true;
+
             fetch(form.action, { method: 'POST', body: new FormData(form) })
                 .then(r => r.ok ? r.text() : Promise.reject())
                 .then(html => { document.getElementById('orderDetailModal').innerHTML = html; })
-                .catch(() => alert('حدث خطأ غير متوقع — حاول مرة أخرى'));
+                .catch(() => {
+                    if (button) button.disabled = false;
+                    alert('حدث خطأ غير متوقع — حاول مرة أخرى');
+                });
         }
 
         function openPaymentModal() {

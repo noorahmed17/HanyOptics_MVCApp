@@ -28,11 +28,13 @@ public class AuthService : IAuthService
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
         if (user is null)
-            return AuthResult.Failure("Invalid email or password.");
+            return AuthResult.Failure("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
 
         var check = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
+        if (check.IsLockedOut)
+            return AuthResult.Failure("تم إيقاف الدخول لهذا الحساب مؤقتًا. حاول لاحقًا أو تواصل مع المدير.");
         if (!check.Succeeded)
-            return AuthResult.Failure("Invalid email or password.");
+            return AuthResult.Failure("البريد الإلكتروني أو كلمة المرور غير صحيحة.");
 
         return await IssueTokenAsync(user);
     }
