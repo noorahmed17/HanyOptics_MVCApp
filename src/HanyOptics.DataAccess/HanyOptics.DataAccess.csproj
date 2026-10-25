@@ -20,6 +20,10 @@
 		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0">
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
+		<!-- Microsoft.Data.SqlClient (under EF Core SqlServer) brings in Pkcs 9.0.4, which has two
+		     security advisories from 13 Oct 2026 (CVE-2026-84008, CVE-2026-70162). Referenced
+		     directly so the fixed version is used; can go once SqlClient depends on it itself. -->
+		<PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
 	</ItemGroup>
 
 	<ItemGroup>

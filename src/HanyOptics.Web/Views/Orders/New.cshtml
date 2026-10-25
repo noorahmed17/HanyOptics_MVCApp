@@ -144,11 +144,11 @@
             }
 
             walkInBtn.addEventListener('click', function () {
-                setWalkIn(walkInInput.value !== 'true');
+                setWalkIn(walkInInput.value.toLowerCase() !== 'true');
             });
 
             // Restore the toggle's look after a validation round-trip re-renders the form.
-            if (walkInInput.value === 'true') setWalkIn(true);
+            if (walkInInput.value.toLowerCase() === 'true') setWalkIn(true);
 
             phoneInput.addEventListener('input', function () {
                 const phone = phoneInput.value.trim();

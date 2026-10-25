@@ -127,7 +127,10 @@ public class OrdersController : Controller
             // Defaults to the customer's own name the first time step 2 is reached, but
             // once the counter has typed something here it must not be re-derived from
             // CustomerName on a later visit - it's a value in its own right from then on.
-            CustomerNameOnInvoice = draft.CustomerNameOnInvoice ?? draft.CustomerName
+            // A walk-in starts empty instead: "زبون عابر" is never the name wanted on the
+            // invoice, and a box left empty is still saved as زبون عابر (CreateOrderAsync).
+            CustomerNameOnInvoice = draft.CustomerNameOnInvoice
+        ?? (draft.IsWalkIn || WalkInCustomer.IsWalkInPhone(draft.Phone) ? null : draft.CustomerName)
         });
     }
 
