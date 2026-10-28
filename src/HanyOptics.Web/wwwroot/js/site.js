@@ -33,6 +33,60 @@
     });
 })();
 
+// A pick-or-type box whose list carries data-search-url (lens description, category) gets
+// its options from the server as the user types. The page only loads the 30 most-used,
+// so without this anything used once or twice stops showing up once there are many.
+//
+// Same rhythm as the orders search: waits for a pause in typing, and an emptied box goes
+// back to the list the page loaded without asking the server. An answer that arrives after
+// a newer one was asked for is ignored. Options are built as text, never HTML.
+// Delegated, so it covers boxes in windows fetched after page load too.
+(function () {
+    var timer = null;
+    var latest = 0;
+
+    function fill(list, values) {
+        list.replaceChildren.apply(list, values.map(function (text) {
+            var o = document.createElement("option");
+            o.value = text;
+            return o;
+        }));
+    }
+
+    document.addEventListener("input", function (e) {
+        var box = e.target;
+        if (!box.matches || !box.matches("input.combo[list]")) return;
+        var list = box.list;
+        var url = list && list.dataset.searchUrl;
+        if (!url) return;
+
+        // The list as the page rendered it, kept once so an emptied box can go back to it.
+        if (!list.initialOptions) {
+            list.initialOptions = Array.from(list.options).map(function (o) { return o.value; });
+        }
+
+        clearTimeout(timer);
+        var term = box.value.trim();
+        var ask = ++latest;
+
+        if (!term) {
+            fill(list, list.initialOptions);
+            return;
+        }
+
+        timer = setTimeout(function () {
+            var sep = url.indexOf("?") < 0 ? "?" : "&";
+            fetch(url + sep + "term=" + encodeURIComponent(term))
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (items) {
+                    if (!items || ask !== latest) return;
+                    fill(list, items);
+                })
+                .catch(function () { /* keep the current list - typing still works */ });
+        }, 300);
+    });
+})();
+
 // On a phone the sidebar sits off-screen. The ☰ button slides it in over the page, and a
 // tap on the dark overlay slides it back. Following a link needs nothing here - the next
 // page loads with the sidebar closed.

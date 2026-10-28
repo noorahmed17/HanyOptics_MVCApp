@@ -97,16 +97,26 @@ public class NewOrderService : INewOrderService
     public async Task<IReadOnlyList<Doctor>> GetDoctorsAsync() =>
         await _dbContext.Doctors.AsNoTracking().OrderBy(d => d.Name).ToListAsync();
 
-    public async Task<IReadOnlyList<string>> GetLensSuggestionsAsync() =>
-        await _dbContext.OrderItems
+    public async Task<IReadOnlyList<string>> GetLensSuggestionsAsync(string? term = null)
+    {
+        var query = _dbContext.OrderItems
             .AsNoTracking()
-            .Where(i => i.LensDescription != null && i.LensDescription != "")
+            .Where(i => i.LensDescription != null && i.LensDescription != "");
+
+        if (!string.IsNullOrWhiteSpace(term))
+        {
+            var t = term.Trim();
+            query = query.Where(i => i.LensDescription!.Contains(t));
+        }
+
+        return await query
             .GroupBy(i => i.LensDescription!)
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key)
             .Take(30)
             .Select(g => g.Key)
             .ToListAsync();
+    }
 
     public Task<bool> IsInvoiceNumberTakenAsync(string invoiceNumber) =>
         _dbContext.Orders.AsNoTracking().AnyAsync(o => o.InvoiceNumber == invoiceNumber);
@@ -176,7 +186,7 @@ public class NewOrderService : INewOrderService
             FrameLabel = needsFrame && frame is not null ? $"{frame.Brand} {frame.ModelName}".Trim() : null,
             FrameAgreedPrice = needsFrame ? request.FrameAgreedPrice ?? 0 : 0,
             ExternalFrameNotes = usesExternalFrame ? request.ExternalFrameNotes : null,
-            LensDescription = needsLens ? request.LensDescription : null,
+            LensDescription = needsLens ? request.LensDescription?.Trim() : null,
             LensSellPrice = needsLens ? request.LensSellPrice ?? 0 : 0,
             // Always zero. The counter does not know the lab's price when the order is
             // taken, so there is nothing truthful to record here - and a guessed figure

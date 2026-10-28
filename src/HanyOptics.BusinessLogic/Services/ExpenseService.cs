@@ -133,13 +133,16 @@ public class ExpenseService : IExpenseService
                 new SqlParameter("@m", month))
         });
 
-    public Task<IReadOnlyList<string>> GetCategorySuggestionsAsync(string entryType) =>
+        public Task<IReadOnlyList<string>> GetCategorySuggestionsAsync(string entryType, string? term = null) =>
         WithConnectionAsync<IReadOnlyList<string>>(_dbContext, async connection =>
         {
+            // CHARINDEX rather than LIKE: a typed % or _ is matched as itself, not as a wildcard.
+            var search = Clean(term);
             var used = await QueryAsync(connection,
-                "SELECT TOP (30) category FROM dbo.expenses WHERE entry_type = @type AND category IS NOT NULL AND cancelled_at IS NULL GROUP BY category ORDER BY COUNT(*) DESC;",
+                "SELECT TOP (30) category FROM dbo.expenses WHERE entry_type = @type AND category IS NOT NULL AND cancelled_at IS NULL AND (@term IS NULL OR CHARINDEX(@term, category) > 0) GROUP BY category ORDER BY COUNT(*) DESC;",
                 r => r.GetString(0),
-                NVarChar("@type", entryType, 12));
+                NVarChar("@type", entryType, 12),
+                NVarChar("@term", search, 100));
 
             var starters = entryType switch
             {
@@ -149,7 +152,7 @@ public class ExpenseService : IExpenseService
                 _ => []
             };
 
-            return used.Concat(starters).Distinct().ToList();
+            return used.Concat(search is null ? starters : starters.Where(s => s.Contains(search))).Distinct().ToList();
         });
 
     public async Task<IReadOnlyDictionary<string, IReadOnlyList<string>>> GetCategoryListsAsync() =>

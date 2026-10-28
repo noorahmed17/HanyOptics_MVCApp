@@ -75,4 +75,10 @@ public class DrawerController : Controller
         ExpenseEntryTypes.Income => "إيراد",
         _ => "مصروف"
     };
+
+    // The category box's list, re-asked as the user types (see site.js).
+    [HttpGet]
+    public async Task<IActionResult> SearchCategories(string type, string? term) =>
+        Json(await _expenses.GetCategorySuggestionsAsync(type, term));
+
 }

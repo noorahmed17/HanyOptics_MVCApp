@@ -23,7 +23,7 @@ public interface IExpenseService
 
     // Categories already in use for this entry type, plus a few sensible starters, for the
     // form's suggestion list.
-    Task<IReadOnlyList<string>> GetCategorySuggestionsAsync(string entryType);
+    Task<IReadOnlyList<string>> GetCategorySuggestionsAsync(string entryType, string? term = null);
 
     // The same, for all three entry types at once, keyed by entry type - what a form that
     // lets the user switch type needs, so its category box always has a list to offer.

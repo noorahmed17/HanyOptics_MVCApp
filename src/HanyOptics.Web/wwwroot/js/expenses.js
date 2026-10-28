@@ -61,8 +61,19 @@
 
         // Every type has its own list (rendered by _CategoryLists as cat-<type>), so the box
         // looks and works the same - a drop-down arrow with choices - whichever is picked.
+        //
+        // On a switch, the new list is asked for again with whatever is already typed (see
+        // site.js): pointing the box at another list raises no input event of its own, so
+        // the new type's rare categories would not show until the next keystroke. Not on the
+        // first sync at page load - the lists are fresh then and there is nothing to redo.
         var category = form.querySelector("input[data-category]");
-        if (category && type) category.setAttribute("list", "cat-" + type);
+        if (category && type) {
+            var previous = category.getAttribute("list");
+            var next = "cat-" + type;
+            category.setAttribute("list", next);
+            if (previous && previous !== next)
+                category.dispatchEvent(new Event("input", { bubbles: true }));
+        }
 
         checkDrawer(form);
     }

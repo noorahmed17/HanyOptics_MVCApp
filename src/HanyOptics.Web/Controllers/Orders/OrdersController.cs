@@ -147,6 +147,12 @@ public class OrdersController : Controller
         return Json(result);
     }
 
+    // The lens box's list, re-asked as the user types (see site.js).
+    [HttpGet]
+    public async Task<IActionResult> SearchLenses(string? term) =>
+        Json(await _newOrderService.GetLensSuggestionsAsync(term));
+
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> NewItem(NewOrderItemRequest model)
@@ -359,7 +365,7 @@ public class OrdersController : Controller
     {
         if (orderIds is not { Length: > 0 })
             return RedirectToAction(nameof(Index), new { status, deliveryType });
-
+        
         var result = await _orderService.BulkUpdateStatusAsync(orderIds, newStatus, notes);
 
         if (result.Failures.Count == 0)

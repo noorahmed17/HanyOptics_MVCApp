@@ -6,7 +6,7 @@
 @{
     var suggestions = ViewBag.LensSuggestions as IReadOnlyList<string> ?? [];
 }
-<datalist id="lens-suggestions">
+<datalist id="lens-suggestions" data-search-url="@Url.Action("SearchLenses", "Orders")">
     @foreach (var lens in suggestions)
     {
         <option value="@lens"></option>

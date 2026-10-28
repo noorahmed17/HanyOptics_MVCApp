@@ -6,7 +6,7 @@
 *@
 @foreach (var (type, options) in Model)
 {
-    <datalist id="cat-@type">
+        <datalist id="cat-@type" data-search-url="@Url.Action("SearchCategories", "Drawer", new { type })">
         @foreach (var option in options)
         {
             <option value="@option"></option>

@@ -24,7 +24,9 @@ public interface INewOrderService
     // The lens descriptions typed most often, most-used first - offered as the drop-down on
     // the lens box so the counter picks a common one instead of retyping it (and spelling it
     // a slightly different way each time).
-    Task<IReadOnlyList<string>> GetLensSuggestionsAsync();
+    // With a search term it narrows to descriptions containing it, still most-used first -
+    // asked again as the user types (Orders/SearchLenses), so one used only once is found too.
+    Task<IReadOnlyList<string>> GetLensSuggestionsAsync(string? term = null);
     Task<Customer?> GetCustomerAsync(int customerId);
 
     // Checked while the user is still on step 1 so a clash is reported immediately rather
