@@ -55,6 +55,45 @@ public class CustomerService : ICustomerService
         }
     }
 
+    // sp_create_customer owns the rules: a valid number that no other customer has, never
+    // the walk-in placeholder. It also records who added the customer in corrections_log.
+    public async Task<CreateOutcome> CreateAsync(string? name, string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return CreateOutcome.Failure("أدخل رقم هاتف العميل.");
+
+        // Same spelling and the same rule as the new-order wizard (see EgyptianMobile).
+        var normalizedPhone = EgyptianMobile.Normalize(phone);
+        if (normalizedPhone is null)
+            return CreateOutcome.Failure(EgyptianMobile.InvalidMessage);
+        if (WalkInCustomer.IsWalkInPhone(normalizedPhone))
+            return CreateOutcome.Failure("هذا الرقم مخصص لـ«زبون عابر». أدخل رقم العميل الحقيقي.");
+
+        try
+        {
+            var idParam = new SqlParameter("@p_customer_id", SqlDbType.Int) { Direction = ParameterDirection.Output };
+
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "EXEC dbo.sp_create_customer @phone = @p_phone, @name = @p_name, @created_by = @p_user, @customer_id = @p_customer_id OUTPUT",
+                NVarChar("@p_phone", normalizedPhone, 20),
+                NVarChar("@p_name", Clean(name), 100),
+                new SqlParameter("@p_user", _currentUser.RequireUserId()),
+                idParam);
+
+            return CreateOutcome.Success((int)idParam.Value!);
+        }
+        catch (SqlException ex)
+        {
+            _logger.LogWarning(ex, "SQL error creating customer. SqlErrors={SqlErrors}", StoredProcedureErrors.Describe(ex));
+            return CreateOutcome.Failure(StoredProcedureErrors.ToUserMessage(ex, "هذا الرقم مسجّل لعميل آخر."));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error creating customer.");
+            return CreateOutcome.Failure(StoredProcedureErrors.GenericMessage);
+        }
+    }
+
     public async Task<PagedResult<CustomerListItem>> SearchAsync(string? searchTerm, int? page, int? pageSize)
     {
         var query = _dbContext.Customers.AsNoTracking().AsQueryable();

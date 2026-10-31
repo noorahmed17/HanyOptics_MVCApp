@@ -73,6 +73,32 @@
             </div>
         </div>
 
+        @if (order.IsWalkIn)
+         {
+                <div class="card card-pad">
+                    <div class="mini-title mb-2">تسجيل الزبون العابر كعميل</div>
+                    <form asp-action="SetCustomer" method="post" class="search-bar">
+                        <input type="hidden" name="orderId" value="@order.OrderId" />
+                        <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                        <div class="form-group">
+                            <label for="custPhone">رقم الهاتف</label>
+                            <input id="custPhone" name="phone" maxlength="20" inputmode="tel" required autocomplete="off" placeholder="01xxxxxxxxx"
+                                   data-lookup-url="@Url.Action("LookupCustomer", "Orders")" />
+                        </div>
+                        <div class="form-group">
+                            <label for="custName">الاسم</label>
+                            <input id="custName" name="name" maxlength="100" autocomplete="off" />
+                        </div>
+                        <div class="form-group">
+                            <label for="custReason">السبب (اختياري)</label>
+                            <input id="custReason" name="reason" maxlength="500" placeholder="مثال: اتسجّل زبون عابر بالغلط" autocomplete="off" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">تسجيل وربط الطلب</button>
+                    </form>
+                    <div class="form-hint mt-2" id="custLookupHint">اكتب الرقم: لو مسجّل هيظهر اسمه، لو جديد هيتعمل عميل جديد.</div>
+                </div>
+         }
+
         <div class="card card-pad">
             <div class="mini-title mb-2">اسم العميل على الفاتورة</div>
             <form asp-action="SetCustomerName" method="post" class="search-bar">
@@ -89,6 +115,30 @@
                 <button type="submit" class="btn btn-primary">حفظ الاسم</button>
             </form>
             <div class="form-hint mt-2">يتغيّر الاسم المطبوع على هذه الفاتورة فقط، ولا تتغيّر بيانات العميل.</div>
+        </div>
+
+         <div class="card card-pad">
+            <div class="mini-title mb-2">الطبيب المُحوِّل</div>
+            <form asp-action="SetDoctor" method="post" class="search-bar">
+                <input type="hidden" name="orderId" value="@order.OrderId" />
+                <input type="hidden" name="invoice" value="@order.InvoiceNumber" />
+                <div class="form-group">
+                    <label for="doctorId">الطبيب</label>
+                    <select id="doctorId" name="doctorId">
+                        <option value="">— بدون طبيب —</option>
+                        @foreach (var d in (ViewBag.Doctors as IReadOnlyList<HanyOptics.Domain.Entities.Doctor> ?? new List<HanyOptics.Domain.Entities.Doctor>()))
+                        {
+                            <option value="@d.DoctorId" selected="@(order.DoctorId == d.DoctorId)">@d.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="docReason">السبب (اختياري)</label>
+                    <input id="docReason" name="reason" maxlength="500" placeholder="مثال: الطبيب اتسجّل غلط" autocomplete="off" />
+                </div>
+                <button type="submit" class="btn btn-primary">حفظ الطبيب</button>
+            </form>
+            <div class="form-hint mt-2">بيتطبّق على الطلب كله، زي تسجيل الطلب الجديد.</div>
         </div>
 
         <div class="card">
@@ -369,4 +419,46 @@ else
     <script src="~/js/expenses.js" asp-append-version="true"></script>
 
     <script src="~/js/frame-return.js" asp-append-version="true"></script>
+    <script>
+    (function () {
+        const phone = document.getElementById('custPhone');
+        if (!phone) return;
+        const name = document.getElementById('custName');
+        const hint = document.getElementById('custLookupHint');
+        const defaultHint = hint.textContent;
+        let timer, lastAuto = '', seq = 0;
+
+        const digitCount = v => (v.match(/[0-9\u0660-\u0669\u06F0-\u06F9]/g) || []).length;
+
+        phone.addEventListener('input', function () {
+            clearTimeout(timer);
+            seq++;
+            // The number changed, so a name the lookup filled in belongs to the old number -
+            // cleared now, before anything can be sent with it. A name typed by hand is kept.
+            if (name.value === lastAuto) name.value = '';
+            lastAuto = '';
+            hint.textContent = defaultHint;
+
+            const value = phone.value.trim();
+            if (digitCount(value) < 11) return;
+
+            timer = setTimeout(function () {
+                const mine = ++seq;
+                fetch(phone.dataset.lookupUrl + '?phone=' + encodeURIComponent(value))
+                    .then(r => r.ok ? r.json() : null)
+                    .then(data => {
+                        if (!data || mine !== seq) return;
+                        if (name.value === lastAuto) {
+                            name.value = data.found ? (data.name || '') : '';
+                            lastAuto = name.value;
+                        }
+                        hint.textContent = data.found
+                            ? 'عميل مسجّل: الطلب هيتربط بيه. لو غيّرت الاسم، اسمه هيتحدّث.'
+                            : 'رقم جديد: هيتعمل عميل جديد بالرقم والاسم ده.';
+                    })
+                    .catch(() => {});
+            }, 500);
+        });
+    })();
+</script>
 }

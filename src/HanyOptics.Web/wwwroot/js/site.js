@@ -115,8 +115,14 @@
         if (!button) return;
         setTimeout(function () {
             if (e.defaultPrevented) return;
-            button.disabled = true;
-            button.dataset.busy = "1";
+            // Every submit button of the form, not only the one tapped: a form with two
+            // (إضافة بند آخر / التالي) could otherwise be sent again from the other one.
+            Array.from(form.elements)
+                .filter(function (el) { return el.type === "submit"; })
+                .forEach(function (el) {
+                    el.disabled = true;
+                    el.dataset.busy = "1";
+                });
         }, 0);
     });
 

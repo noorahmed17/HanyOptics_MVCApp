@@ -60,6 +60,28 @@ public class CustomersController : Controller
 
         return RedirectToAction(nameof(Index), new { customerId, q, page });
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Create(string? name, string? phone)
+    {
+        var outcome = await _customerService.CreateAsync(name, phone);
+        if (!outcome.Succeeded)
+        {
+            // Its own TempData keys: CustomerError is only read inside an open customer's
+            // panel, so a refusal shown with it would wait there and pop up on the next
+            // customer opened instead of now.
+            TempData["CustomerCreateError"] = outcome.ErrorMessage;
+            TempData["CustomerFormOpen"] = true;
+            TempData["NewCustomerName"] = name ?? string.Empty;
+            TempData["NewCustomerPhone"] = phone ?? string.Empty;
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["CustomerMessage"] = "تمت إضافة العميل.";
+        // Searched by the new number so the customer is in the list, already selected.
+        return RedirectToAction(nameof(Index), new { customerId = outcome.Id, q = EgyptianMobile.Normalize(phone) });
+    }
 }
 
 public record CustomerDetailViewModel(

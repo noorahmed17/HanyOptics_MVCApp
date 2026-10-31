@@ -36,7 +36,7 @@ public class CorrectionService : ICorrectionService
         {
             var header = (await QueryAsync(connection,
                 """
-                SELECT o.order_id, o.invoice_number, o.customer_name, c.phone, o.status, o.order_date, o.delivered_at,
+                SELECT o.order_id, o.invoice_number, o.customer_name, c.phone, o.status, o.doctor_id, o.order_date, o.delivered_at,
                        o.total_amount, o.paid_amount, o.remaining_amount,
                        (SELECT TOP (1) l.old_status FROM dbo.order_status_log l
                          WHERE l.order_id = o.order_id AND l.new_status = N'delivered' ORDER BY l.log_id DESC) AS pre_delivery_status
@@ -51,6 +51,7 @@ public class CorrectionService : ICorrectionService
                     CustomerName = r.NullableString("customer_name"),
                     Phone = r.NullableString("phone"),
                     Status = r.GetString(r.GetOrdinal("status")),
+                    DoctorId = r.NullableInt("doctor_id"),
                     OrderDate = r.GetDateTime(r.GetOrdinal("order_date")),
                     DeliveredAt = r.NullableDateTime("delivered_at"),
                     Total = r.Decimal("total_amount"),
@@ -111,6 +112,7 @@ public class CorrectionService : ICorrectionService
                 InvoiceNumber = header.InvoiceNumber,
                 CustomerName = header.CustomerName,
                 CustomerPhone = header.Phone,
+                DoctorId = header.DoctorId,
                 Status = header.Status,
                 OrderDate = header.OrderDate,
                 DeliveredAt = header.DeliveredAt,
@@ -138,6 +140,31 @@ public class CorrectionService : ICorrectionService
             NVarChar("@p_name", Clean(customerName), 100),
             new SqlParameter("@p_user", _currentUser.RequireUserId()),
             NVarChar("@p_reason", Clean(reason), 500));
+
+    public Task<OperationResult> SetOrderDoctorAsync(int orderId, int? doctorId, string? reason) =>
+    RunAsync("setting order doctor",
+        "EXEC dbo.sp_admin_set_order_doctor @order_id = @p_order, @doctor_id = @p_doctor, @changed_by = @p_user, @reason = @p_reason",
+        new SqlParameter("@p_order", orderId),
+        IntParam("@p_doctor", doctorId),
+        new SqlParameter("@p_user", _currentUser.RequireUserId()),
+        NVarChar("@p_reason", Clean(reason), 500));
+
+    public Task<OperationResult> SetOrderCustomerAsync(int orderId, string? phone, string? name, string? reason)
+    {
+        var normalized = EgyptianMobile.Normalize(phone);
+        if (normalized is null)
+            return Task.FromResult(OperationResult.Failure(EgyptianMobile.InvalidMessage));
+        if (WalkInCustomer.IsWalkInPhone(normalized))
+            return Task.FromResult(OperationResult.Failure("هذا الرقم مخصص لـ«زبون عابر». أدخل رقم العميل الحقيقي."));
+
+        return RunAsync("converting walk-in order to customer",
+            "EXEC dbo.sp_admin_set_order_customer @order_id = @p_order, @phone = @p_phone, @name = @p_name, @changed_by = @p_user, @reason = @p_reason",
+            new SqlParameter("@p_order", orderId),
+            NVarChar("@p_phone", normalized, 20),
+            NVarChar("@p_name", Clean(name), 100),
+            new SqlParameter("@p_user", _currentUser.RequireUserId()),
+            NVarChar("@p_reason", Clean(reason), 500));
+    }
 
     public Task<OperationResult> CorrectPaymentAsync(int paymentId, string? newMethod, decimal? newAmount, string? reason)
     {
@@ -301,6 +328,8 @@ public class CorrectionService : ICorrectionService
         ("customer", "update") => "تعديل بيانات عميل",
         ("order", "return_item") => "مرتجع بعد التسليم",
         ("order", "exchange_frame") => "استبدال بعد التسليم",
+        ("order", "set_doctor") => "تعديل الطبيب",
+        ("order", "set_customer") => "تسجيل زبون عابر كعميل",
         _ => action
     };
 
@@ -309,8 +338,12 @@ public class CorrectionService : ICorrectionService
     private static readonly (string Key, string Label)[] ShownFields =
     [
         ("barcode", "الإطار"),
+        ("customer", "العميل"),                         // جديد
+        ("doctor_name", "الطبيب"),                      // جديد
         ("customer_name", "الاسم"),
         ("name", "الاسم"),
+        ("customer_row_name", "اسم العميل"),
+        ("customer_old_name", "اسم العميل قبل التحديث"),  // جديد
         ("phone", "الهاتف"),
         ("status", "الحالة"),
         ("entry_type", "النوع"),

@@ -73,6 +73,22 @@ public class CorrectionsController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetDoctor(int orderId, string invoice, int? doctorId, string? reason)
+    {
+        Report(await _corrections.SetOrderDoctorAsync(orderId, doctorId, reason), "تم تعديل الطبيب على الطلب.");
+        return BackToOrder(invoice);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetCustomer(int orderId, string invoice, string? phone, string? name, string? reason)
+    {
+        Report(await _corrections.SetOrderCustomerAsync(orderId, phone, name, reason), "تم تسجيل العميل وربط الطلب به.");
+        return BackToOrder(invoice);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> CorrectPayment(int paymentId, string invoice, string? newMethod, decimal? newAmount, string? reason)
     {
         Report(await _corrections.CorrectPaymentAsync(paymentId, newMethod, newAmount, reason), "تم تصحيح الدفعة.");
@@ -156,6 +172,9 @@ public class CorrectionsController : Controller
             // قايمة «وصف العدسات» في شاشة الاستبدال — نفس قايمة «طلب جديد» (الأكثر استخدامًا)
             if (!string.IsNullOrWhiteSpace(invoice))
                 ViewBag.LensSuggestions = await _newOrders.GetLensSuggestionsAsync();
+            
+            if (!string.IsNullOrWhiteSpace(invoice))
+                ViewBag.Doctors = await _newOrders.GetDoctorsAsync();
         }
         else
         {

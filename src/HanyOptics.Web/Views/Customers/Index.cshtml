@@ -7,6 +7,7 @@
     string? searchTerm = ViewBag.SearchTerm;
     int? selectedId = ViewBag.SelectedCustomerId;
     var arEg = new CultureInfo("ar-EG");
+    var formOpen = TempData["CustomerFormOpen"] is true;
 
     static string StatusBadgeClass(OrderStatus s) => s switch
     {
@@ -45,31 +46,61 @@
     </form>
 </div>
 
+@if (TempData["CustomerCreateError"] is string createError)
+{
+    <div class="alert alert-danger">⚠️ @createError</div>
+}
+
 <div class="master-detail">
-    <div class="card" style="height:fit-content">
-        <div class="card-body" id="customerList" style="padding:8px">
-            @if (customers.TotalCount == 0)
-            {
-                <div class="empty-state">
-                    @(string.IsNullOrWhiteSpace(searchTerm) ? "مفيش عملاء" : "مفيش عميل مطابق للبحث")
-                </div>
-            }
-            else
-            {
-                @foreach (var c in customers.Items)
-                {
-                    <a class="customer-list-item @(selectedId == c.CustomerId ? "selected" : "")"
-                       href="@Url.Action("Index", new { customerId = c.CustomerId, q = searchTerm, page = customers.Page })">
-                        <div style="font-weight:600;font-size:14px">@(c.Name ?? "بدون اسم")</div>
-                        <div class="flex gap-2 mt-1">
-                            <span class="text-sm text-muted">@(c.Phone ?? "—")</span>
-                            <span class="info-chip">@c.OrderCount طلب</span>
-                        </div>
-                    </a>
-                }
-            }
+    <div>
+        @* Same collapsible form as the suppliers page. It reopens by itself, with what was
+           typed, when the number was refused - see CustomersController.Create. *@
+        <div class="card card-pad">
+            <button type="button" class="collapsible-btn" onclick="this.nextElementSibling.classList.toggle('open')">
+                <span>➕ إضافة عميل</span><span>▾</span>
+            </button>
+            <div class="collapsible-content @(formOpen ? "open" : "")">
+                <form asp-action="Create" method="post">
+                    <div class="form-group">
+                        <label for="ncPhone">رقم الهاتف *</label>
+                        <input id="ncPhone" name="phone" type="tel" value="@(TempData["NewCustomerPhone"] as string)" maxlength="20"
+                               required placeholder="01XXXXXXXXX" autocomplete="off" style="direction:ltr;text-align:right" />
+                    </div>
+                    <div class="form-group">
+                        <label for="ncName">الاسم (اختياري)</label>
+                        <input id="ncName" name="name" value="@(TempData["NewCustomerName"] as string)" maxlength="100" autocomplete="off" />
+                    </div>
+                    <div class="form-hint mb-2">العميل بيتسجّل من غير فاتورة. لو الرقم مسجّل قبل كده، السيستم هيقولك هو بتاع مين.</div>
+                    <button type="submit" class="btn btn-primary btn-block">حفظ العميل</button>
+                </form>
+            </div>
         </div>
-        @await Html.PartialAsync("_Pager", HanyOptics.Web.Models.PagerInfo.From(customers))
+
+        <div class="card" style="height:fit-content">
+            <div class="card-body" id="customerList" style="padding:8px">
+                @if (customers.TotalCount == 0)
+                {
+                    <div class="empty-state">
+                        @(string.IsNullOrWhiteSpace(searchTerm) ? "مفيش عملاء" : "مفيش عميل مطابق للبحث")
+                    </div>
+                }
+                else
+                {
+                    @foreach (var c in customers.Items)
+                    {
+                        <a class="customer-list-item @(selectedId == c.CustomerId ? "selected" : "")"
+                           href="@Url.Action("Index", new { customerId = c.CustomerId, q = searchTerm, page = customers.Page })">
+                            <div style="font-weight:600;font-size:14px">@(c.Name ?? "بدون اسم")</div>
+                            <div class="flex gap-2 mt-1">
+                                <span class="text-sm text-muted">@(c.Phone ?? "—")</span>
+                                <span class="info-chip">@c.OrderCount طلب</span>
+                            </div>
+                        </a>
+                    }
+                }
+            </div>
+            @await Html.PartialAsync("_Pager", HanyOptics.Web.Models.PagerInfo.From(customers))
+        </div>
     </div>
 
     <div class="card">

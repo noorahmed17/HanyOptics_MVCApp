@@ -19,4 +19,8 @@ public interface ICustomerService
     // Name and phone only. Refused for the shared walk-in row and for a phone that already
     // belongs to someone else.
     Task<OperationResult> UpdateAsync(int customerId, string? name, string? phone);
+
+    // Phone required (Egyptian mobile, not already used), name optional. The id comes back
+    // so the page can open the new customer straight away.
+    Task<CreateOutcome> CreateAsync(string? name, string? phone);
 }

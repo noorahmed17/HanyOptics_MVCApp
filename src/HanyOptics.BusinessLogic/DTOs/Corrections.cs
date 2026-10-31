@@ -34,6 +34,8 @@ public class CorrectionOrder
     public string InvoiceNumber { get; init; } = string.Empty;
     public string? CustomerName { get; init; }
     public string? CustomerPhone { get; init; }
+    public int? DoctorId { get; init; }
+    public bool IsWalkIn => WalkInCustomer.IsWalkInPhone(CustomerPhone);
     public string Status { get; init; } = string.Empty;
     public DateTime OrderDate { get; init; }
     public DateTime? DeliveredAt { get; init; }

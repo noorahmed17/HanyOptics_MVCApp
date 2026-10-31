@@ -10,6 +10,8 @@ public interface ICorrectionService
     Task<CorrectionOrder?> FindOrderAsync(string invoiceNumber);
 
     Task<OperationResult> SetOrderCustomerNameAsync(int orderId, string? customerName, string? reason);
+    Task<OperationResult> SetOrderCustomerAsync(int orderId, string? phone, string? name, string? reason);
+    Task<OperationResult> SetOrderDoctorAsync(int orderId, int? doctorId, string? reason);
 
     Task<OperationResult> CorrectPaymentAsync(int paymentId, string? newMethod, decimal? newAmount, string? reason);
 
