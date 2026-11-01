@@ -8,8 +8,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace HanyOptics.Web.Controllers;
 
 // الموردون for the admin, شركات العدسات for the counter. Same page: staff see the lens labs
-// only and record an invoice or a payment - never a return, a new supplier, or a frame
-// dealer's account, whose figures are frame costs.
+// only and record an invoice, a return or a payment, dated today - never a new supplier or
+// a frame dealer's account, whose figures are frame costs.
 [Authorize]
 public class SuppliersController : Controller
 {
@@ -87,9 +87,18 @@ public class SuppliersController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    [Authorize(Roles = Roles.Admin)]
     public async Task<IActionResult> AddReturn(SupplierReturnRequest model)
     {
+        var detail = await _suppliers.GetAsync(model.SupplierId);
+        if (detail is null)
+            return NotFound();
+        if (!CanUse(detail))
+            return Forbid();
+
+        // Same as an invoice: the counter records today's return; a back-dated one is the admin's.
+        if (!IsAdmin)
+            model.ReturnDate = null;
+
         var outcome = await _suppliers.AddReturnAsync(model);
         Report(outcome, $"تم تسجيل مرتجع بقيمة {ExpenseDisplay.Money(model.Amount ?? 0)}.");
         return RedirectToAction(nameof(Index), new { id = model.SupplierId });
@@ -104,6 +113,9 @@ public class SuppliersController : Controller
             return NotFound();
         if (!CanUse(detail))
             return Forbid();
+        // The counter records a payment as made now; only the admin may date one in the past.
+        if (!IsAdmin)
+            model.PaidAt = null;
 
         // An expense carrying the supplier's id - the same row the full form writes - filed
         // under the supplier's name so the monthly report groups it as before.
@@ -115,7 +127,8 @@ public class SuppliersController : Controller
             PaymentMethod = model.PaymentMethod,
             Category = detail.Balance.Name,
             Description = model.Notes,
-            SupplierId = model.SupplierId
+            SupplierId = model.SupplierId,
+            PaidAt = model.PaidAt
         });
         Report(outcome, $"تم تسجيل دفعة بقيمة {ExpenseDisplay.Money(model.Amount ?? 0)}.");
         return RedirectToAction(nameof(Index), new { id = model.SupplierId });

@@ -21,7 +21,7 @@
 <p class="text-muted mb-3" style="font-size:13px">
     @(isAdmin
         ? "تابع حساب كل مورد: ما اشتريته، وما أرجعته، وما دفعته، والمبلغ المستحق عليك."
-        : "سجّل فواتير شركات العدسات والمبالغ المدفوعة لها، وتابع المستحق لكل شركة.")
+        : "سجّل فواتير شركات العدسات ومرتجعاتها والمبالغ المدفوعة لها، وتابع المستحق لكل شركة.")
 </p>
 
 @if (TempData["SupplierMessage"] is string message)
@@ -156,15 +156,12 @@
                         <span class="sa-desc">بضاعة استلمتها من المورد</span>
                         <span class="sa-effect">المستحق يزيد ▲</span>
                     </button>
-                    @if (isAdmin)
-                    {
-                        <button type="button" class="supplier-action tone-return" data-modal-open="returnModal">
-                            <span class="sa-icon">↩️</span>
-                            <span class="sa-title">مرتجع للمورد</span>
-                            <span class="sa-desc">بضاعة رجّعتها للمورد</span>
-                            <span class="sa-effect">المستحق يقل ▼</span>
-                        </button>
-                    }
+                    <button type="button" class="supplier-action tone-return" data-modal-open="returnModal">
+                        <span class="sa-icon">↩️</span>
+                        <span class="sa-title">مرتجع للمورد</span>
+                        <span class="sa-desc">بضاعة رجّعتها للمورد</span>
+                        <span class="sa-effect">المستحق يقل ▼</span>
+                    </button>
                     <button type="button" class="supplier-action tone-payment" data-modal-open="paymentModal">
                         <span class="sa-icon">💸</span>
                         <span class="sa-title">دفعة للمورد</span>
@@ -216,50 +213,50 @@
                 </form>
             </div>
 
-            @if (isAdmin)
-            {
-                <div class="modal modal-sm" id="returnModal" role="dialog" aria-modal="true" aria-labelledby="returnTitle">
-                    <form asp-action="AddReturn" method="post">
-                        <div class="modal-header tone-return">
-                            <span class="modal-title" id="returnTitle">↩️ مرتجع للمورد — @b.Name</span>
-                            <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+            <div class="modal modal-sm" id="returnModal" role="dialog" aria-modal="true" aria-labelledby="returnTitle">
+                <form asp-action="AddReturn" method="post">
+                    <div class="modal-header tone-return">
+                        <span class="modal-title" id="returnTitle">↩️ مرتجع للمورد — @b.Name</span>
+                        <button type="button" class="modal-close" data-modal-close aria-label="إغلاق">✕</button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="form-hint mb-3" style="font-size:12.5px">سجّل البضاعة التي أعدتها. يقل المستحق دون دفع أي مبلغ.</p>
+                        <input type="hidden" name="SupplierId" value="@b.SupplierId" />
+                        <div class="form-group">
+                            <label for="retAmt">قيمة المرتجع (ج) *</label>
+                            <input id="retAmt" name="Amount" type="number" min="0.01" step="0.01" required placeholder="مثال: 800" data-clear autocomplete="off" />
                         </div>
-                        <div class="modal-body">
-                            <p class="form-hint mb-3" style="font-size:12.5px">سجّل البضاعة التي أعدتها. يقل المستحق دون دفع أي مبلغ.</p>
-                            <input type="hidden" name="SupplierId" value="@b.SupplierId" />
-                            <div class="form-group">
-                                <label for="retAmt">قيمة المرتجع (ج) *</label>
-                                <input id="retAmt" name="Amount" type="number" min="0.01" step="0.01" required placeholder="مثال: 800" data-clear autocomplete="off" />
-                            </div>
+                        @if (isAdmin)
+                        {
                             <div class="form-group">
                                 <label for="retDate">تاريخ المرتجع</label>
                                 <input id="retDate" name="ReturnDate" type="date" value="@today" />
                             </div>
-                            <div class="form-group">
-                                <label for="retInv">من أي فاتورة؟ (اختياري)</label>
-                                <select id="retInv" name="PurchaseId">
-                                    <option value="">غير مرتبط بفاتورة</option>
-                                    @foreach (var i in detail.Invoices)
-                                    {
-                                        <option value="@i.PurchaseId">فاتورة رقم @i.PurchaseId — @ExpenseDisplay.DateShort(i.PurchaseDate.ToDateTime(TimeOnly.MinValue)) — @ExpenseDisplay.Money(i.Amount)</option>
-                                    }
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="retNote">ملاحظات (اختياري)</label>
-                                <input id="retNote" name="Notes" maxlength="500" placeholder="مثال: إطارات بها عيوب" data-clear autocomplete="off" />
-                            </div>
-                            <div class="balance-preview" data-balance-preview data-current="@b.BalanceDue.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-sign="-1">
-                                المستحق الآن <b class="num">@Owed(b.BalanceDue)</b> ← بعد التسجيل <b class="num" data-after>@Owed(b.BalanceDue)</b>
-                            </div>
+                        }
+                        <div class="form-group">
+                            <label for="retInv">من أي فاتورة؟ (اختياري)</label>
+                            <select id="retInv" name="PurchaseId">
+                                <option value="">غير مرتبط بفاتورة</option>
+                                @foreach (var i in detail.Invoices)
+                                {
+                                    <option value="@i.PurchaseId">فاتورة رقم @i.PurchaseId — @ExpenseDisplay.DateShort(i.PurchaseDate.ToDateTime(TimeOnly.MinValue)) — @ExpenseDisplay.Money(i.Amount)</option>
+                                }
+                            </select>
                         </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
-                            <button type="submit" class="btn btn-return">تسجيل المرتجع</button>
+                        <div class="form-group">
+                            <label for="retNote">ملاحظات (اختياري)</label>
+                            <input id="retNote" name="Notes" maxlength="500" placeholder="مثال: إطارات بها عيوب" data-clear autocomplete="off" />
                         </div>
-                    </form>
-                </div>
-            }
+                        <div class="balance-preview" data-balance-preview data-current="@b.BalanceDue.ToString(System.Globalization.CultureInfo.InvariantCulture)" data-sign="-1">
+                            المستحق الآن <b class="num">@Owed(b.BalanceDue)</b> ← بعد التسجيل <b class="num" data-after>@Owed(b.BalanceDue)</b>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline" data-modal-close>رجوع</button>
+                        <button type="submit" class="btn btn-return">تسجيل المرتجع</button>
+                    </div>
+                </form>
+            </div>
 
             @* js-expense-form: expenses.js shows the payment method only for money from
                outside the drawer, and forces cash when it comes from the drawer. *@
@@ -292,6 +289,14 @@
                                 <label><input type="radio" name="PaymentMethod" value="@PaymentMethods.Visa" /><span>بطاقة</span></label>
                             </div>
                         </div>
+                        @if (isAdmin)
+                        {
+                            <div class="form-group">
+                                <label for="payDate">تاريخ الدفعة (اختياري)</label>
+                                <input id="payDate" name="PaidAt" type="datetime-local" />
+                                <div class="form-hint">اتركه فارغًا لدفعة الآن، واستخدمه فقط لتسجيل دفعة سابقة.</div>
+                            </div>
+                        }
                         <div class="form-group">
                             <label for="payNote">ملاحظات (اختياري)</label>
                             <input id="payNote" name="Notes" maxlength="500" placeholder="مثال: دفعة مع المندوب" data-clear autocomplete="off" />

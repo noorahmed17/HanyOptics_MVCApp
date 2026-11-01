@@ -79,7 +79,9 @@ public class SupplierService : ISupplierService
                     SELECT CAST(return_date AS DATETIME2), created_at, N'return', amount, notes
                     FROM dbo.purchase_returns WHERE supplier_id = @id
                     UNION ALL
-                    SELECT paid_at, created_at, N'payment', amount, ISNULL(description, category)
+                    -- The business day (06:00 cutoff), like invoices and returns: a payment made at 02:00
+                    -- shows on the day whose daily close counts it, not on the next calendar day.
+                    SELECT CAST(dbo.fn_business_date(paid_at) AS DATETIME2), created_at, N'payment', amount, ISNULL(description, category)
                     FROM dbo.expenses WHERE supplier_id = @id AND entry_type = N'expense' AND cancelled_at IS NULL
                 ) h
                 ORDER BY d DESC, seq DESC;

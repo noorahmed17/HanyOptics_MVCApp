@@ -92,4 +92,6 @@ public class SupplierPaymentRequest
     public string FundingSource { get; set; } = FundingSources.Outside;
     public string PaymentMethod { get; set; } = PaymentMethods.Cash;
     public string? Notes { get; set; }
+    // Admin only (the controller clears it for the counter). Empty = now, as on the expense form.
+    public DateTime? PaidAt { get; set; }
 }
