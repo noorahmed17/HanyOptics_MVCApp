@@ -72,16 +72,22 @@ public class SupplierService : ISupplierService
             // history always adds up to the balance shown above it.
             var history = await QueryAsync(connection,
                 """
-                SELECT d, kind, amount, note FROM (
-                    SELECT CAST(purchase_date AS DATETIME2) AS d, created_at AS seq, N'invoice' AS kind, total_amount AS amount, notes AS note
+                SELECT d, kind, amount, note, inv_date, inv_amount, inv_note FROM (
+                    SELECT CAST(purchase_date AS DATETIME2) AS d, created_at AS seq, N'invoice' AS kind, total_amount AS amount, notes AS note,
+                           CAST(NULL AS DATETIME2) AS inv_date, CAST(NULL AS DECIMAL(10,2)) AS inv_amount, CAST(NULL AS NVARCHAR(500)) AS inv_note
                     FROM dbo.purchase_invoices WHERE supplier_id = @id
                     UNION ALL
-                    SELECT CAST(return_date AS DATETIME2), created_at, N'return', amount, notes
-                    FROM dbo.purchase_returns WHERE supplier_id = @id
+                    -- A return tied to an invoice brings that invoice along, so the line can say which one.
+                    SELECT CAST(r.return_date AS DATETIME2), r.created_at, N'return', r.amount, r.notes,
+                           CAST(i.purchase_date AS DATETIME2), i.total_amount, i.notes
+                    FROM dbo.purchase_returns r
+                    LEFT JOIN dbo.purchase_invoices i ON i.purchase_id = r.purchase_id
+                    WHERE r.supplier_id = @id
                     UNION ALL
                     -- The business day (06:00 cutoff), like invoices and returns: a payment made at 02:00
                     -- shows on the day whose daily close counts it, not on the next calendar day.
-                    SELECT CAST(dbo.fn_business_date(paid_at) AS DATETIME2), created_at, N'payment', amount, ISNULL(description, category)
+                    SELECT CAST(dbo.fn_business_date(paid_at) AS DATETIME2), created_at, N'payment', amount, ISNULL(description, category),
+                           NULL, NULL, NULL
                     FROM dbo.expenses WHERE supplier_id = @id AND entry_type = N'expense' AND cancelled_at IS NULL
                 ) h
                 ORDER BY d DESC, seq DESC;
@@ -91,7 +97,10 @@ public class SupplierService : ISupplierService
                     Date = r.GetDateTime(0),
                     Kind = r.GetString(1),
                     Amount = r.GetDecimal(2),
-                    Note = r.IsDBNull(3) ? null : r.GetString(3)
+                    Note = r.IsDBNull(3) ? null : r.GetString(3),
+                    FromInvoiceDate = r.IsDBNull(4) ? null : r.GetDateTime(4),
+                    FromInvoiceAmount = r.IsDBNull(5) ? null : r.GetDecimal(5),
+                    FromInvoiceNote = r.IsDBNull(6) ? null : r.GetString(6)
                 },
                 new SqlParameter("@id", supplierId));
 

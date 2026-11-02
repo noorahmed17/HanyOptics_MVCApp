@@ -239,9 +239,10 @@
                                 <option value="">غير مرتبط بفاتورة</option>
                                 @foreach (var i in detail.Invoices)
                                 {
-                                    <option value="@i.PurchaseId">فاتورة رقم @i.PurchaseId — @ExpenseDisplay.DateShort(i.PurchaseDate.ToDateTime(TimeOnly.MinValue)) — @ExpenseDisplay.Money(i.Amount)</option>
+                                    <option value="@i.PurchaseId">@ExpenseDisplay.DateShort(i.PurchaseDate.ToDateTime(TimeOnly.MinValue)) — @ExpenseDisplay.Money(i.Amount)@(i.Notes is null ? "" : " — " + i.Notes)</option>
                                 }
                             </select>
+                            <div class="form-hint">للمتابعة فقط: يظهر في سجل الحساب، ولا يغيّر المبلغ المستحق.</div>
                         </div>
                         <div class="form-group">
                             <label for="retNote">ملاحظات (اختياري)</label>
@@ -331,7 +332,20 @@
                                     <td class="num">@ExpenseDisplay.DateShort(h.Date)</td>
                                     <td><span class="badge @css">@label</span></td>
                                     <td class="num fw-bold">@ExpenseDisplay.Money(h.Amount)</td>
-                                    <td>@(h.Note ?? "—")</td>
+                                    <td>
+                                        @if (h.FromInvoiceDate is DateTime fromDate)
+                                        {
+                                            <div>من فاتورة @ExpenseDisplay.DateShort(fromDate) — @ExpenseDisplay.Money(h.FromInvoiceAmount ?? 0)@(h.FromInvoiceNote is null ? "" : " — " + h.FromInvoiceNote)</div>
+                                            @if (h.Note is not null)
+                                            {
+                                                <div class="text-muted text-sm">@h.Note</div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            @(h.Note ?? "—")
+                                        }
+                                    </td>
                                 </tr>
                             }
                             </tbody>

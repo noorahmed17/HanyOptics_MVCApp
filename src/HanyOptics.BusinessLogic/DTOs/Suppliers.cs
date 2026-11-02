@@ -49,6 +49,12 @@ public class SupplierLedgerEntry
     public string Kind { get; init; } = SupplierLedgerKinds.Invoice;
     public decimal Amount { get; init; }
     public string? Note { get; init; }
+
+    // A return tied to an invoice: that invoice's date, amount and note, so the history can
+    // say which purchase the goods came back from. Null for everything else.
+    public DateTime? FromInvoiceDate { get; init; }
+    public decimal? FromInvoiceAmount { get; init; }
+    public string? FromInvoiceNote { get; init; }
 }
 
 public class SupplierDetail

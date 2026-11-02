@@ -668,6 +668,8 @@ public class OrdersController : Controller
             .Select(id => id!.Value);
         var frameBarcodes = await _orderService.GetFrameBarcodesAsync(frameIds);
 
+        // The lens box in تغيير العدسات picks from the same list as the order form.
+        ViewBag.LensSuggestions = await _newOrderService.GetLensSuggestionsAsync();
         ViewBag.PendingEditError = error;
         return PartialView("_OrderDetail", new OrderDetailViewModel(order, customer, doctor, pendingEdits, frameBarcodes));
     }

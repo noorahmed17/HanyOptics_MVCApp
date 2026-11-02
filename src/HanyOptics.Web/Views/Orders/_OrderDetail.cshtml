@@ -643,8 +643,8 @@
                    is free text and the price is whatever was agreed. *@
                 <div class="form-group">
                     <label>👁️ نوع العدسات *</label>
-                    <input type="text" name="lensDescription" id="lensDescriptionInput"
-                           placeholder="مثال: عدسات أحادية 1.67 AR — Essilor" required />
+                    <input type="text" name="lensDescription" id="lensDescriptionInput" maxlength="200" autocomplete="off"
+                           class="combo" list="lens-suggestions" placeholder="اختر من الأكثر استخدامًا أو اكتب" required />
                 </div>
 
                 @* The price lives here rather than in تعديل سعر الإطار: new lenses almost
@@ -668,6 +668,7 @@
             <button type="submit" form="lensForm" class="btn btn-primary">إضافة للتغييرات المعلقة</button>
         </div>
     </div>
+    <partial name="_LensSuggestions" />
 }
 
 @if (canRefund)
