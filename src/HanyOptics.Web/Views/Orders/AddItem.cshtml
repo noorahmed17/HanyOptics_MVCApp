@@ -4,8 +4,7 @@
 @{
     ViewData["Title"] = "إضافة بند";
     var order = (HanyOptics.Domain.Entities.Order)ViewBag.Order;
-    var arEg = new CultureInfo("ar-EG");
-    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
 
     // Unlike the wizard, the order is already real - so the item goes in the moment this
     // form is submitted, and the totals shown here are the live ones from the database.

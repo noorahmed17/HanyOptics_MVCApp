@@ -23,7 +23,7 @@
         _ => s.ToString()
     };
 
-    static string Money(decimal n) => n.ToString("N0") + " ج";
+    static string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
 }
 
 <div class="two-col">

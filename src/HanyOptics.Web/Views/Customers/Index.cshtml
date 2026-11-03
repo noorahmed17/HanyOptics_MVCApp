@@ -27,7 +27,7 @@
         _ => s.ToString()
     };
 
-    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
     string FormatDate(DateTime d) => d.ToString("d MMM yyyy", arEg);
 }
 

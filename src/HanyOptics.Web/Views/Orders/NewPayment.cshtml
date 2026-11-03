@@ -4,7 +4,7 @@
     ViewData["Title"] = "طلب جديد";
     // Still nothing in the database - the order is written only when this step is submitted.
     var draft = (OrderDraft)ViewBag.Draft;
-    static string Money(decimal n) => n.ToString("N0") + " ج";
+    static string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
     var frameTotal = draft.FrameTotal;
     var lensTotal = draft.LensTotal;
 }

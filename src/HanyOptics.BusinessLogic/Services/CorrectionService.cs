@@ -384,7 +384,7 @@ public class CorrectionService : ICorrectionService
     private static string FormatValue(string key, JsonElement value)
     {
         if (key == "amount" && value.TryGetDecimal(out var amount))
-            return amount.ToString("N0", ArEg) + " ج";
+            return amount.ToString(amount % 1 == 0 ? "N0" : "N2", ArEg) + " ج";
 
         if (key == "paid_at" && value.TryGetDateTime(out var at))
             return at.ToString("d MMM yyyy h:mm tt", ArEg);

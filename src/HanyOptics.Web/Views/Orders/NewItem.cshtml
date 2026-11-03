@@ -22,7 +22,7 @@
         HanyOptics.Domain.Enums.OrderItemType.LensesReplace => "badge-lr",
         _ => ""
     };
-    static string Money(decimal n) => n.ToString("N0") + " ج";
+    static string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
 }
 
 <div class="page-header">

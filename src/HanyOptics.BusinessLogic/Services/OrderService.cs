@@ -263,7 +263,7 @@ public class OrderService : IOrderService
             ? (returnOldFrameToStock ? " (الإطار القديم يعود للمخزون)" : " (الإطار القديم يُشطب)")
             : string.Empty;
 
-        var summary = $"تغيير الإطار إلى {replacementLabel} — {newFrameAgreedPrice:N0} ج{oldFrameNote}";
+        var summary = $"تغيير الإطار إلى {replacementLabel} — {Pounds(newFrameAgreedPrice)} ج{oldFrameNote}";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -292,7 +292,7 @@ public class OrderService : IOrderService
         if (frame is null)
             return StagedEditOutcome.Failure("الإطار غير موجود");
 
-        var summary = $"تعيين إطار تعويضي: {FrameLabel(frame)} — {newFrameAgreedPrice:N0} ج";
+        var summary = $"تعيين إطار تعويضي: {FrameLabel(frame)} — {Pounds(newFrameAgreedPrice)} ج";
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
 
@@ -334,7 +334,7 @@ public class OrderService : IOrderService
         // this screen a number bigger than what's owed is almost always a typo, and the
         // app has no notion of customer credit to put the excess into.
         if (amount > owed)
-            return StagedEditOutcome.Failure($"المبلغ أكبر من المتبقي ({owed:N0} ج)");
+            return StagedEditOutcome.Failure($"المبلغ أكبر من المتبقي ({Pounds(owed)} ج)");
 
         // Derived, not chosen - same rule as the wizard's opening payment. 'full' only fits
         // a payment that covers the whole order on its own; anything settling the rest of a
@@ -345,8 +345,8 @@ public class OrderService : IOrderService
             : PaymentType.Deposit;
 
         var remainingAfter = owed - amount;
-        var summary = $"تسجيل دفعة: {amount:N0} ج ({PaymentTypeLabel(paymentType)}، {(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
-            + (remainingAfter > 0 ? $" — المتبقي بعدها {remainingAfter:N0} ج" : " — يكتمل السداد");
+        var summary = $"تسجيل دفعة: {Pounds(amount)} ج ({PaymentTypeLabel(paymentType)}، {(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
+            + (remainingAfter > 0 ? $" — المتبقي بعدها {Pounds(remainingAfter)} ج" : " — يكتمل السداد");
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -381,11 +381,11 @@ public class OrderService : IOrderService
         // Mirrors sp_add_payment's own guard - you can never hand back more than was
         // actually taken. Caught here so the figure is shown before تأكيد rather than after.
         if (amount > refundable)
-            return StagedEditOutcome.Failure($"قيمة الاسترداد أكبر من المدفوع ({refundable:N0} ج)");
+            return StagedEditOutcome.Failure($"قيمة الاسترداد أكبر من المدفوع ({Pounds(refundable)} ج)");
 
         var remainingPaid = refundable - amount;
-        var summary = $"استرداد: {amount:N0} ج ({(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
-            + (remainingPaid > 0 ? $" — يتبقى مدفوع {remainingPaid:N0} ج" : " — يُرد كامل المدفوع");
+        var summary = $"استرداد: {Pounds(amount)} ج ({(method == PaymentMethod.Visa ? "فيزا" : "نقدي")})"
+            + (remainingPaid > 0 ? $" — يتبقى مدفوع {Pounds(remainingPaid)} ج" : " — يُرد كامل المدفوع");
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -432,7 +432,7 @@ public class OrderService : IOrderService
         // Only mentioned when it actually moved - listing an unchanged price as a change
         // makes the pending list harder to read, not more complete.
         if (lensSellPrice.Value != item.LensSellPrice)
-            summary += $" — السعر: {lensSellPrice.Value:N0} ج (كان: {item.LensSellPrice:N0} ج)";
+            summary += $" — السعر: {Pounds(lensSellPrice.Value)} ج (كان: {Pounds(item.LensSellPrice)} ج)";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -478,8 +478,8 @@ public class OrderService : IOrderService
         // can be seen before تأكيد commits it. The lens half is shown too, unchanged, so
         // the new item total is not a number that appears from nowhere.
         var newTotal = frameAgreedPrice.Value + item.LensSellPrice;
-        var summary = $"تعديل سعر الإطار: {item.FrameAgreedPrice:N0} ← {frameAgreedPrice.Value:N0} ج"
-                    + $" — إجمالي البند {item.ItemTotal:N0} ← {newTotal:N0} ج";
+        var summary = $"تعديل سعر الإطار: {Pounds(item.FrameAgreedPrice)} ← {Pounds(frameAgreedPrice.Value)} ج"
+                    + $" — إجمالي البند {Pounds(item.ItemTotal)} ← {Pounds(newTotal)} ج";
 
         if (!string.IsNullOrWhiteSpace(notes))
             summary += $" ({notes})";
@@ -524,7 +524,7 @@ public class OrderService : IOrderService
             .AsNoTracking()
             .CountAsync(i => i.OrderId == item.OrderId && i.ItemId != itemId && i.Status == OrderItemStatus.Active);
 
-        var summary = $"إلغاء البند: {ItemTypeLabel(item.ItemType)} — {item.ItemTotal:N0} ج"
+        var summary = $"إلغاء البند: {ItemTypeLabel(item.ItemType)} — {Pounds(item.ItemTotal)} ج"
             + (disposition == CancelledFrameDisposition.Damage ? " (الإطار تالف)" : " (إرجاع الإطار للمخزون)");
 
         if (otherActiveItems == 0)
@@ -851,6 +851,11 @@ public class OrderService : IOrderService
     // both are invisible, and unseen bidi controls in source read differently from how
     // they run.
     private static string IsolateBidi(string text) => (char)0x2066 + text + (char)0x2069;
+
+
+    // Whole pounds as the rest of the app shows them; piasters only when there are any -
+    // the same rule as ExpenseDisplay.Money - so a pending edit never shows 800 for 799.50.
+    private static string Pounds(decimal value) => value.ToString(value % 1 == 0 ? "N0" : "N2");
 
     private static string StatusLabel(OrderStatus s) => s switch
     {

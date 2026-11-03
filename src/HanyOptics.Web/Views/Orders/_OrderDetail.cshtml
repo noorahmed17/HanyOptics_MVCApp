@@ -69,7 +69,7 @@
     static IReadOnlyList<OrderStatus> NextStatuses(OrderStatus current) =>
         new[] { OrderStatus.Ready, OrderStatus.Delivered, OrderStatus.Cancelled };
 
-    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
     string FormatDateTime(DateTime d) => d.ToString("d MMM, HH:mm", arEg);
 
     var nextStatuses = NextStatuses(order.Status);

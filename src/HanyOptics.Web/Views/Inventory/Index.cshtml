@@ -16,7 +16,7 @@
 
     var arEg = new CultureInfo("ar-EG");
 
-    string Money(decimal n) => n.ToString("N0", arEg) + " ج";
+    string Money(decimal n) => HanyOptics.Web.Models.ExpenseDisplay.Money(n);
 
     static string StatusLabel(FrameStatus s) => s switch
     {
